@@ -136,19 +136,16 @@ def render_progress_sources(console: Console, sources: list[dict[str, object]]) 
 
 
 def render_thinking_delta(console: Console, text: str, *, at_line_start: bool) -> bool:
-    """Print dim thinking text with a leading tab on each line. Returns next at_line_start."""
+    """Print dim thinking text. Returns next at_line_start."""
     if not text:
         return at_line_start
-    indented = text.replace("\n", "\n\t")
-    if at_line_start:
-        indented = "\t" + indented
-    console.print(Text(indented, style="dim"), end="")
+    console.print(Text(text, style="dim"), end="")
     return text.endswith("\n")
 
 
 def render_thinking_done(console: Console, duration_seconds: float) -> None:
     console.print()
-    console.print(Text(f"\tThought for {duration_seconds:.1f} seconds", style="dim"))
+    console.print(Text(f"Thought for {duration_seconds:.1f} seconds", style="dim"))
 
 
 def render_persisted_thinking(
@@ -160,13 +157,11 @@ def render_persisted_thinking(
     """Replay stored thinking as a stable dim block (not streamed end='')."""
     if not thinking_text and not thinking_seconds:
         return
-    console.print(Text("\tThought process", style="dim bold"))
+    console.print(Text("Thought process", style="dim bold"))
     if thinking_text:
-        lines = thinking_text.splitlines() or [thinking_text]
-        block = "\n".join(f"\t{line}" for line in lines)
-        console.print(Text(block, style="dim"))
+        console.print(Text(thinking_text, style="dim"))
     if thinking_seconds is not None and thinking_seconds > 0:
-        console.print(Text(f"\tThought for {thinking_seconds:.1f} seconds", style="dim"))
+        console.print(Text(f"Thought for {thinking_seconds:.1f} seconds", style="dim"))
 
 
 def render_ask_response(console: Console, response: AskResponse) -> None:

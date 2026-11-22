@@ -58,14 +58,14 @@ async def index_passage(
         token_count=max(1, len(text.split())),
         created_at=datetime.now(UTC),
     )
-    vectors = await embedder.embed((text,))
+    embedded = await embedder.embed((text,))
     await vector_index.upsert_passages(
         engagement_id=engagement_id,
         document_id=doc_id,
         document_path=path,
         document_version=1,
         passages=(passage,),
-        embeddings=(vectors[0],),
+        embeddings=(embedded.vectors[0],),
         embedding_model=embedder.model_name,
     )
     return passage

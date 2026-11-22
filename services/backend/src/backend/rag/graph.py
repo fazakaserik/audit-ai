@@ -29,13 +29,14 @@ from backend.rag.state import AskState
 from domain.answer import Answer, Question
 from domain.document import FolderPath
 from domain.engagement import EngagementId
-from domain.session import Turn
+from domain.session import LlmUsage, Turn
 
 
 @dataclass(frozen=True, slots=True)
 class AskGraphResult:
     answer: Answer
     standalone_question: str
+    usage: LlmUsage
 
 
 async def run_ask_graph(
@@ -104,4 +105,8 @@ def _require_result(state: AskState, standalone_question: str) -> AskGraphResult
     if answer is None:
         msg = "ask graph finished without an answer"
         raise RuntimeError(msg)
-    return AskGraphResult(answer=answer, standalone_question=standalone_question)
+    return AskGraphResult(
+        answer=answer,
+        standalone_question=standalone_question,
+        usage=state.get("usage") or LlmUsage(),
+    )

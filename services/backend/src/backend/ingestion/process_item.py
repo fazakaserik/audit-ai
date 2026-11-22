@@ -159,15 +159,15 @@ async def process_upload_item(
         passage_count=len(passages),
         model=embedder.model_name,
     )
-    embeddings = await embedder.embed([p.text for p in passages])
-    log.info("ingest_embed_done", path=path, vector_count=len(embeddings))
+    embedded = await embedder.embed([p.text for p in passages])
+    log.info("ingest_embed_done", path=path, vector_count=len(embedded.vectors))
     await vector_index.upsert_passages(
         engagement_id=engagement_id,
         document_id=document_id,
         document_path=path,
         document_version=version,
         passages=passages,
-        embeddings=embeddings,
+        embeddings=embedded.vectors,
         embedding_model=embedder.model_name,
     )
     await uploads.refresh_status(item.upload_id)

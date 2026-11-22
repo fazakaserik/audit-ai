@@ -11,6 +11,7 @@ from backend.api.contracts.v1.responses import (
     DocumentResponse,
     EngagementResponse,
     InsufficientEvidenceResponse,
+    LlmUsageResponse,
     SessionDetailResponse,
     SessionSummaryResponse,
     SuggestedClientQuestionResponse,
@@ -23,8 +24,16 @@ from domain.answer import Answer, Answered, AnswerStatus, Citation, Insufficient
 from domain.common import RequestId
 from domain.document import Document
 from domain.engagement import Engagement
-from domain.session import Session, SessionId, Turn, TurnId
+from domain.session import LlmUsage, Session, SessionId, Turn, TurnId
 from domain.upload import Upload, UploadItem
+
+
+def usage_to_response(usage: LlmUsage) -> LlmUsageResponse:
+    return LlmUsageResponse(
+        prompt_tokens=usage.prompt_tokens,
+        completion_tokens=usage.completion_tokens,
+        total_tokens=usage.total_tokens,
+    )
 
 
 def citation_to_response(citation: Citation) -> CitationResponse:
@@ -46,7 +55,11 @@ def answer_to_response(
     session_id: SessionId,
     turn_id: TurnId,
     request_id: RequestId,
+    usage: LlmUsage | None = None,
+    session_total_tokens: int | None = None,
 ) -> AskResponse:
+    usage_response = usage_to_response(usage or LlmUsage())
+    total = session_total_tokens if session_total_tokens is not None else usage_response.total_tokens
     match answer:
         case Answered():
             return AnsweredResponse(
@@ -56,6 +69,8 @@ def answer_to_response(
                 session_id=session_id,
                 turn_id=turn_id,
                 request_id=request_id,
+                usage=usage_response,
+                session_total_tokens=total,
             )
         case InsufficientEvidence():
             return InsufficientEvidenceResponse(
@@ -74,6 +89,8 @@ def answer_to_response(
                 session_id=session_id,
                 turn_id=turn_id,
                 request_id=request_id,
+                usage=usage_response,
+                session_total_tokens=total,
             )
         case _ as unreachable:
             assert_never(unreachable)
@@ -147,12 +164,21 @@ def session_to_summary(session: Session) -> SessionSummaryResponse:
     )
 
 
-def turn_to_response(turn: Turn, *, request_id: RequestId) -> TurnResponse:
+def turn_to_response(
+    turn: Turn,
+    *,
+    request_id: RequestId,
+    session_total_tokens: int | None = None,
+) -> TurnResponse:
+    usage = turn.usage or LlmUsage()
+    total = session_total_tokens if session_total_tokens is not None else usage.total_tokens
     answer_response = answer_to_response(
         turn.answer,
         session_id=turn.session_id,
         turn_id=turn.id,
         request_id=request_id,
+        usage=usage,
+        session_total_tokens=total,
     )
     return TurnResponse(
         id=turn.id,
@@ -176,6 +202,13 @@ def session_to_detail(
     request_id: RequestId,
 ) -> SessionDetailResponse:
     summary = session_to_summary(session)
+    running = 0
+    turn_responses: list[TurnResponse] = []
+    for turn in turns:
+        running += turn.usage.total_tokens if turn.usage is not None else 0
+        turn_responses.append(
+            turn_to_response(turn, request_id=request_id, session_total_tokens=running)
+        )
     return SessionDetailResponse(
         id=summary.id,
         engagement_id=summary.engagement_id,
@@ -183,7 +216,7 @@ def session_to_detail(
         turn_count=summary.turn_count,
         created_at=summary.created_at,
         updated_at=summary.updated_at,
-        turns=tuple(turn_to_response(t, request_id=request_id) for t in turns),
+        turns=tuple(turn_responses),
     )
 
 

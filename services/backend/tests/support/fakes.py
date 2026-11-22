@@ -12,8 +12,10 @@ from pydantic import BaseModel
 
 from backend.application.ports import (
     ChatMessage,
+    EmbedResult,
     RetrievalScope,
     ScoredPassage,
+    StructuredResult,
     ThinkingCallbacks,
 )
 from domain.document import Document, DocumentId, DocumentPath, FolderPath
@@ -26,7 +28,7 @@ from domain.document.paths import (
 from domain.engagement import Engagement, EngagementId
 from domain.errors import ModelTimeoutError, ModelUnavailableError, NotFoundError
 from domain.passage import Passage
-from domain.session import Session, SessionId, Turn
+from domain.session import LlmUsage, Session, SessionId, Turn
 from domain.upload import (
     Upload,
     UploadId,
@@ -51,6 +53,7 @@ class FakeChatModel:
         supports_thinking: bool = False,
         thinking_text: str = "",
         thinking_seconds: float = 0.0,
+        usage: LlmUsage | None = None,
     ) -> None:
         self._response = response
         self._responses = list(responses) if responses is not None else None
@@ -58,6 +61,7 @@ class FakeChatModel:
         self._supports_thinking = supports_thinking
         self._thinking_text = thinking_text
         self._thinking_seconds = thinking_seconds
+        self._usage = usage or LlmUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15)
         self.calls: list[tuple[tuple[ChatMessage, ...], type[BaseModel]]] = []
 
     @property
@@ -81,7 +85,7 @@ class FakeChatModel:
         schema: type[TModel],
         *,
         thinking: ThinkingCallbacks | None = None,
-    ) -> TModel:
+    ) -> StructuredResult[TModel]:
         self.calls.append((tuple(messages), schema))
         if thinking is not None and self._supports_thinking:
             if self._thinking_text:
@@ -97,7 +101,7 @@ class FakeChatModel:
                     f"does not match schema {schema.__name__}"
                 )
                 raise TypeError(msg)
-            return next_item
+            return StructuredResult(value=next_item, usage=self._usage)
         if self._response is None:
             msg = "FakeChatModel has no response configured"
             raise AssertionError(msg)
@@ -107,7 +111,7 @@ class FakeChatModel:
                 f"does not match schema {schema.__name__}"
             )
             raise TypeError(msg)
-        return self._response
+        return StructuredResult(value=self._response, usage=self._usage)
 
 
 class FakeEmbedder:
@@ -116,9 +120,11 @@ class FakeEmbedder:
         *,
         model_name: str = "fake-embed",
         dimensions: int = 8,
+        usage: LlmUsage | None = None,
     ) -> None:
         self._model_name = model_name
         self._dimensions = dimensions
+        self._usage = usage or LlmUsage(prompt_tokens=3, completion_tokens=0, total_tokens=3)
 
     @property
     def model_name(self) -> str:
@@ -128,11 +134,11 @@ class FakeEmbedder:
     def dimensions(self) -> int:
         return self._dimensions
 
-    async def embed(self, texts: Sequence[str]) -> list[list[float]]:
+    async def embed(self, texts: Sequence[str]) -> EmbedResult:
         # Deterministic unit vector shared across texts so offline retrieval
         # tests are not sensitive to cosine thresholds.
         base = [1.0] + [0.0] * (self._dimensions - 1)
-        return [list(base) for _ in texts]
+        return EmbedResult(vectors=[list(base) for _ in texts], usage=self._usage)
 
 
 @dataclass

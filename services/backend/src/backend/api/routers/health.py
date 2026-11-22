@@ -38,8 +38,8 @@ async def ready(
         checks["postgres"] = DependencyCheck(ok=False, detail=type(exc).__name__)
 
     try:
-        vectors = await container.embedder.embed(["health-check"])
-        if not vectors or not vectors[0]:
+        embedded = await container.embedder.embed(["health-check"])
+        if not embedded.vectors or not embedded.vectors[0]:
             checks["embeddings"] = DependencyCheck(ok=False, detail="empty_embedding")
         else:
             checks["embeddings"] = DependencyCheck(ok=True)

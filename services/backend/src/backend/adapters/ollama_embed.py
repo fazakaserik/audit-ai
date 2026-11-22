@@ -12,7 +12,9 @@ from tenacity import retry, retry_if_exception, stop_after_attempt
 
 from backend.adapters._embedding_dims import dimensions_for
 from backend.adapters._retry import MAX_ATTEMPTS, RETRY_WAIT
+from backend.application.ports import EmbedResult
 from domain.errors import ModelTimeoutError, ModelUnavailableError
+from domain.session import LlmUsage
 
 
 def _is_transient(exc: BaseException) -> bool:
@@ -45,9 +47,9 @@ class OllamaEmbedder:
     def dimensions(self) -> int:
         return self._dimensions
 
-    async def embed(self, texts: Sequence[str]) -> list[list[float]]:
+    async def embed(self, texts: Sequence[str]) -> EmbedResult:
         if not texts:
-            return []
+            return EmbedResult(vectors=[], usage=LlmUsage())
         async with self._semaphore:
             try:
                 return await self._embed_once(texts)
@@ -62,9 +64,12 @@ class OllamaEmbedder:
         wait=RETRY_WAIT,
         retry=retry_if_exception(_is_transient),
     )
-    async def _embed_once(self, texts: Sequence[str]) -> list[list[float]]:
+    async def _embed_once(self, texts: Sequence[str]) -> EmbedResult:
         response = await self._client.embed(
             model=self._model,
             input=cast(Any, list(texts)),
         )
-        return [[float(value) for value in vector] for vector in response.embeddings]
+        vectors = [[float(value) for value in vector] for vector in response.embeddings]
+        prompt = getattr(response, "prompt_eval_count", None)
+        usage = LlmUsage.from_counts(prompt_tokens=prompt, total_tokens=prompt)
+        return EmbedResult(vectors=vectors, usage=usage)

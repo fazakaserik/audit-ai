@@ -112,6 +112,14 @@ class SuggestedClientQuestionResponse(BaseModel):
     rationale: str
 
 
+class LlmUsageResponse(BaseModel):
+    model_config = _CFG
+
+    prompt_tokens: Annotated[int, Field(ge=0)]
+    completion_tokens: Annotated[int, Field(ge=0)]
+    total_tokens: Annotated[int, Field(ge=0)]
+
+
 class AnsweredResponse(BaseModel):
     model_config = _CFG
 
@@ -121,6 +129,8 @@ class AnsweredResponse(BaseModel):
     session_id: UUID
     turn_id: UUID
     request_id: RequestId
+    usage: LlmUsageResponse
+    session_total_tokens: Annotated[int, Field(ge=0)]
 
 
 class InsufficientEvidenceResponse(BaseModel):
@@ -136,6 +146,8 @@ class InsufficientEvidenceResponse(BaseModel):
     session_id: UUID
     turn_id: UUID
     request_id: RequestId
+    usage: LlmUsageResponse
+    session_total_tokens: Annotated[int, Field(ge=0)]
 
 
 AskResponse = AnsweredResponse | InsufficientEvidenceResponse

@@ -9,7 +9,7 @@ from backend.rag.prompts import AnswerGenerationResult
 from domain.answer import Answer, Citation, InsufficientReason, Question
 from domain.document import FolderPath
 from domain.engagement import EngagementId
-from domain.session import Turn
+from domain.session import LlmUsage, Turn
 
 
 class AskState(TypedDict, total=False):
@@ -23,3 +23,4 @@ class AskState(TypedDict, total=False):
     insufficient_reason: InsufficientReason | None
     partial_citations: tuple[Citation, ...]
     answer: Answer | None
+    usage: LlmUsage

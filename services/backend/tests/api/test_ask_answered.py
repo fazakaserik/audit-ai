@@ -51,7 +51,7 @@ async def test_post_ask_answered_with_citations() -> None:
     )
 
     embedder = FakeEmbedder()
-    vectors = await embedder.embed((passage_text, "payment terms contoso"))
+    embedded = await embedder.embed((passage_text, "payment terms contoso"))
     vector_index = InMemoryVectorIndex()
     await vector_index.upsert_passages(
         engagement_id=engagement_id,
@@ -59,7 +59,7 @@ async def test_post_ask_answered_with_citations() -> None:
         document_path="contracts/contoso.pdf",
         document_version=1,
         passages=(passage,),
-        embeddings=(vectors[0],),
+        embeddings=(embedded.vectors[0],),
         embedding_model=embedder.model_name,
     )
 
@@ -99,3 +99,7 @@ async def test_post_ask_answered_with_citations() -> None:
     assert "session_id" in body
     assert "turn_id" in body
     assert "request_id" in body
+    assert body["usage"]["prompt_tokens"] >= 10
+    assert body["usage"]["completion_tokens"] >= 5
+    assert body["usage"]["total_tokens"] >= 15
+    assert body["session_total_tokens"] == body["usage"]["total_tokens"]

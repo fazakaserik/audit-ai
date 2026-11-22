@@ -20,7 +20,12 @@ from domain.answer import Answer, Question
 from domain.common import new_uuid, utc_now
 from domain.engagement import EngagementId
 from domain.errors import NotFoundError
-from domain.session import Session, SessionId, Turn, TurnId
+from domain.session import LlmUsage, Session, SessionId, Turn, TurnId
+
+
+def _session_total_tokens(prior_turns: Sequence[Turn], usage: LlmUsage) -> int:
+    prior = sum(turn.usage.total_tokens for turn in prior_turns if turn.usage is not None)
+    return prior + usage.total_tokens
 
 
 def _title_from_question(text: str) -> str:
@@ -80,6 +85,8 @@ async def _persist_turn(
     question: Question,
     answer: Answer,
     standalone_question: str,
+    usage: LlmUsage,
+    prior_turns: Sequence[Turn],
     progress: CollectingAskProgress | None = None,
 ) -> AskResult:
     sessions: SessionRepository = bound.sessions
@@ -95,6 +102,7 @@ async def _persist_turn(
         created_at=now,
         thinking_text=thinking_text,
         thinking_seconds=thinking_seconds,
+        usage=usage,
     )
     await sessions.add_turn(turn)
     title_update = _title_from_question(question.text) if session.turn_count == 0 else None
@@ -104,6 +112,8 @@ async def _persist_turn(
         session_id=session.id,
         turn_id=turn.id,
         standalone_question=standalone_question,
+        usage=usage,
+        session_total_tokens=_session_total_tokens(prior_turns, usage),
     )
 
 
@@ -144,6 +154,8 @@ async def ask_question(
         question=question,
         answer=graph_result.answer,
         standalone_question=graph_result.standalone_question,
+        usage=graph_result.usage,
+        prior_turns=prior_turns,
         progress=progress,
     )
 
@@ -202,6 +214,8 @@ async def ask_question_stream(
                 question=question,
                 answer=graph_result.answer,
                 standalone_question=graph_result.standalone_question,
+                usage=graph_result.usage,
+                prior_turns=prior_turns,
                 progress=progress,
             )
             await emit({"type": "final", "result": result})

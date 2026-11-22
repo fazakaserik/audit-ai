@@ -18,8 +18,9 @@ from pydantic import BaseModel
 from tenacity import retry, retry_if_exception, stop_after_attempt
 
 from backend.adapters._retry import MAX_ATTEMPTS, RETRY_WAIT
-from backend.application.ports import ChatMessage, ThinkingCallbacks
+from backend.application.ports import ChatMessage, StructuredResult, ThinkingCallbacks
 from domain.errors import ModelTimeoutError, ModelUnavailableError
+from domain.session import LlmUsage
 
 TModel = TypeVar("TModel", bound=BaseModel)
 
@@ -60,7 +61,7 @@ class OpenAIChatModel:
         schema: type[TModel],
         *,
         thinking: ThinkingCallbacks | None = None,
-    ) -> TModel:
+    ) -> StructuredResult[TModel]:
         _ = thinking
         async with self._semaphore:
             try:
@@ -85,7 +86,7 @@ class OpenAIChatModel:
         self,
         messages: Sequence[ChatMessage],
         schema: type[TModel],
-    ) -> TModel:
+    ) -> StructuredResult[TModel]:
         vendor_messages = [
             {"role": message.role, "content": message.content} for message in messages
         ]
@@ -100,4 +101,10 @@ class OpenAIChatModel:
             refusal = completion.choices[0].message.refusal
             detail = refusal if isinstance(refusal, str) and refusal else "empty structured output"
             raise ModelUnavailableError(f"OpenAI chat returned no parsed content: {detail}")
-        return parsed
+        usage_raw = completion.usage
+        usage = LlmUsage.from_counts(
+            prompt_tokens=getattr(usage_raw, "prompt_tokens", None) if usage_raw else None,
+            completion_tokens=getattr(usage_raw, "completion_tokens", None) if usage_raw else None,
+            total_tokens=getattr(usage_raw, "total_tokens", None) if usage_raw else None,
+        )
+        return StructuredResult(value=parsed, usage=usage)

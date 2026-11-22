@@ -33,20 +33,18 @@ def test_render_progress_stage_and_sources_dim() -> None:
     assert "Retrieve passages…" in text
     assert "Sources: policies/expense-policy.md (0.81)" in text
     thought_line = next(line for line in text.splitlines() if "Thought for" in line)
-    assert thought_line.startswith(" ")
-    assert thought_line.lstrip().startswith("Thought for 20.4 seconds")
+    assert thought_line.startswith("Thought for 20.4 seconds")
 
 
-def test_render_thinking_delta_tabs_each_line() -> None:
+def test_render_thinking_delta_prints_plain_lines() -> None:
     buffer = StringIO()
     console = Console(file=buffer, force_terminal=True, width=80, color_system=None)
     at_start = render_thinking_delta(console, "line one\n", at_line_start=True)
     assert at_start is True
     render_thinking_delta(console, "line two", at_line_start=at_start)
     lines = [line for line in buffer.getvalue().splitlines() if line.strip()]
-    assert all(line.startswith(" ") for line in lines)
-    assert lines[0].lstrip() == "line one"
-    assert lines[1].lstrip() == "line two"
+    assert lines[0] == "line one"
+    assert lines[1] == "line two"
 
 
 def test_render_persisted_thinking_and_turn_replay() -> None:
@@ -61,7 +59,7 @@ def test_render_persisted_thinking_and_turn_replay() -> None:
     assert "Thought process" in text
     assert "Checking policy…" in text
     thought_line = next(line for line in text.splitlines() if "Thought for" in line)
-    assert thought_line.lstrip().startswith("Thought for 2.5 seconds")
+    assert thought_line.startswith("Thought for 2.5 seconds")
 
     session_id = str(uuid4())
     turn_id = str(uuid4())
@@ -89,6 +87,12 @@ def test_render_persisted_thinking_and_turn_replay() -> None:
             "session_id": session_id,
             "turn_id": turn_id,
             "request_id": str(uuid4()),
+            "usage": {
+                "prompt_tokens": 100,
+                "completion_tokens": 20,
+                "total_tokens": 120,
+            },
+            "session_total_tokens": 120,
         },
         "created_at": datetime.now(UTC).isoformat(),
         "thinking_text": "Checking policy…",

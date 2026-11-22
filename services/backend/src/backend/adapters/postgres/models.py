@@ -191,6 +191,7 @@ class SessionTurnRow(Base):
     answer: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     thinking_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     thinking_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    llm_usage: Mapped[dict[str, object] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
     session: Mapped[SessionRow] = relationship(back_populates="turns")

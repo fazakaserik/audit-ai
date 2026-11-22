@@ -76,6 +76,8 @@ async def post_ask(
         session_id=result.session_id,
         turn_id=result.turn_id,
         request_id=_request_id(request),
+        usage=result.usage,
+        session_total_tokens=result.session_total_tokens,
     )
 
 
@@ -113,6 +115,8 @@ async def post_ask_stream(
                     session_id=result.session_id,
                     turn_id=result.turn_id,
                     request_id=request_id,
+                    usage=result.usage,
+                    session_total_tokens=result.session_total_tokens,
                 )
                 yield _sse(
                     {

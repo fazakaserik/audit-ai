@@ -8,6 +8,7 @@ from uuid import UUID
 
 import questionary
 from prompt_toolkit import PromptSession
+from prompt_toolkit.formatted_text import HTML
 from rich.console import Console
 from rich.status import Status
 from rich.text import Text
@@ -17,6 +18,7 @@ from backend.api.contracts.v1.responses import (
     CitationResponse,
     DocumentResponse,
     EngagementResponse,
+    LlmUsageResponse,
     SessionSummaryResponse,
     UploadSummaryResponse,
 )
@@ -61,6 +63,38 @@ class ReplState:
         self.session_id: UUID | None = None
         self.last_answer: AskResponse | None = None
         self.last_citations: tuple[CitationResponse, ...] = ()
+        self.last_usage: LlmUsageResponse | None = None
+        self.session_total_tokens: int = 0
+
+    def clear_usage(self) -> None:
+        self.last_usage = None
+        self.session_total_tokens = 0
+
+    def apply_usage_from_answer(self, response: AskResponse) -> None:
+        self.last_usage = response.usage
+        self.session_total_tokens = response.session_total_tokens
+
+
+def _format_token_count(value: int | None) -> str:
+    if value is None:
+        return "—"
+    return f"{value:,}"
+
+
+def _token_toolbar(state: ReplState) -> HTML:
+    usage = state.last_usage
+    ctx = _format_token_count(usage.prompt_tokens if usage is not None else None)
+    last = _format_token_count(usage.total_tokens if usage is not None else None)
+    session = (
+        _format_token_count(state.session_total_tokens)
+        if usage is not None or state.session_total_tokens > 0
+        else "—"
+    )
+    return HTML(
+        f"<style bg='ansibrightblack' fg='ansiwhite'>"
+        f" ctx <b>{ctx}</b> · last <b>{last}</b> · session <b>{session}</b> "
+        f"</style>"
+    )
 
 
 def _collect_citations(response: AskResponse) -> tuple[CitationResponse, ...]:
@@ -112,8 +146,14 @@ def _load_session(
     detail = client.get_session(engagement_id, session_uuid)
     state.session_id = detail.id
     if detail.turns:
-        state.last_answer = detail.turns[-1].answer
-        state.last_citations = _collect_citations(state.last_answer)
+        last = detail.turns[-1].answer
+        state.last_answer = last
+        state.last_citations = _collect_citations(last)
+        state.apply_usage_from_answer(last)
+    else:
+        state.last_answer = None
+        state.last_citations = ()
+        state.clear_usage()
     render_session_detail(console, detail)
 
 
@@ -321,6 +361,7 @@ def _handle_slash(
             console.print(HELP_TEXT)
         case "/new":
             state.session_id = None
+            state.clear_usage()
             console.print("Next question starts a new session.")
         case "/engagement":
             selected = _select_engagement(client, console)
@@ -328,6 +369,7 @@ def _handle_slash(
             state.session_id = None
             state.last_answer = None
             state.last_citations = ()
+            state.clear_usage()
             console.print(f"Active engagement: {state.engagement_id}")
         case "/sessions":
             if state.engagement_id is None:
@@ -447,7 +489,7 @@ def _ask_question(
                     if not saw_thinking:
                         status.stop()
                         console.print()
-                        console.print(Text("\tThought process", style="dim bold"))
+                        console.print(Text("Thought process", style="dim bold"))
                         saw_thinking = True
                     thinking_at_line_start = render_thinking_delta(
                         console,
@@ -484,6 +526,7 @@ def _ask_question(
     state.session_id = _session_from_response(response)
     state.last_answer = response
     state.last_citations = _collect_citations(response)
+    state.apply_usage_from_answer(response)
     render_ask_response(console, response)
 
 
@@ -493,8 +536,10 @@ def _session_from_response(response: AskResponse) -> UUID:
 
 def run_repl() -> None:
     console = Console()
-    session: PromptSession[str] = PromptSession()
     state = ReplState()
+    session: PromptSession[str] = PromptSession(
+        bottom_toolbar=lambda: _token_toolbar(state),
+    )
 
     with AuditApiClient.from_env() as client:
         try:

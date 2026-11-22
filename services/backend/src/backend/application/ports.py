@@ -13,7 +13,7 @@ from domain.answer import Answer
 from domain.document import Document, DocumentId, DocumentPath, FolderPath
 from domain.engagement import Engagement, EngagementId
 from domain.passage import Passage
-from domain.session import Session, SessionId, Turn, TurnId
+from domain.session import LlmUsage, Session, SessionId, Turn, TurnId
 from domain.upload import Upload, UploadId, UploadItem, UploadItemId
 
 TModel = TypeVar("TModel", bound=BaseModel)
@@ -31,6 +31,18 @@ class ThinkingCallbacks:
 
     on_delta: Callable[[str], Awaitable[None]]
     on_seconds: Callable[[float], None]
+
+
+@dataclass(frozen=True, slots=True)
+class StructuredResult[TModel: BaseModel]:
+    value: TModel
+    usage: LlmUsage
+
+
+@dataclass(frozen=True, slots=True)
+class EmbedResult:
+    vectors: list[list[float]]
+    usage: LlmUsage
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,11 +69,11 @@ class ChatModel(Protocol):
         schema: type[TModel],
         *,
         thinking: ThinkingCallbacks | None = None,
-    ) -> TModel: ...
+    ) -> StructuredResult[TModel]: ...
 
 
 class Embedder(Protocol):
-    async def embed(self, texts: Sequence[str]) -> list[list[float]]: ...
+    async def embed(self, texts: Sequence[str]) -> EmbedResult: ...
 
     @property
     def model_name(self) -> str: ...
@@ -216,6 +228,8 @@ class AskResult:
     session_id: SessionId
     turn_id: TurnId
     standalone_question: str
+    usage: LlmUsage
+    session_total_tokens: int
 
 
 @dataclass(frozen=True, slots=True)

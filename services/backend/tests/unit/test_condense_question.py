@@ -90,7 +90,7 @@ async def test_condense_uses_chat_when_prior_turns_exist() -> None:
 async def test_follow_up_retrieval_uses_condensed_query_not_prior_answer() -> None:
     passage_text = "Net payment terms are thirty calendar days from invoice date."
     embedder = FakeEmbedder()
-    vectors = await embedder.embed((passage_text,))
+    embedded = await embedder.embed((passage_text,))
     vector_index = InMemoryVectorIndex()
     engagement_id = EngagementId("northwind-fy2025")
     doc_id = DocumentId(uuid.uuid4())
@@ -111,7 +111,7 @@ async def test_follow_up_retrieval_uses_condensed_query_not_prior_answer() -> No
         document_path="contracts/contoso.pdf",
         document_version=1,
         passages=(passage,),
-        embeddings=(vectors[0],),
+        embeddings=(embedded.vectors[0],),
         embedding_model=embedder.model_name,
     )
 

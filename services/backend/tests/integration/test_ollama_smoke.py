@@ -30,8 +30,8 @@ async def test_ollama_embed_and_chat() -> None:
         timeout_seconds=120,
         max_concurrent_calls=1,
     )
-    vectors = await embedder.embed(["ping"])
-    assert vectors and len(vectors[0]) > 0
+    embedded = await embedder.embed(["ping"])
+    assert embedded.vectors and len(embedded.vectors[0]) > 0
     chat = OllamaChatModel(
         base_url=base,
         model=model,
@@ -42,4 +42,4 @@ async def test_ollama_embed_and_chat() -> None:
         [ChatMessage(role="user", content='Reply with JSON {"ok": true}')],
         _Ping,
     )
-    assert result.ok is True
+    assert result.value.ok is True

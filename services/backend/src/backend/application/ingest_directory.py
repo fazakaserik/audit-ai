@@ -110,14 +110,14 @@ async def ingest_directory(
             )
             for chunk in chunks
         ]
-        embeddings = await embedder.embed([p.text for p in passages])
+        embedded = await embedder.embed([p.text for p in passages])
         await vector_index.upsert_passages(
             engagement_id=engagement_id,
             document_id=document_id,
             document_path=document_path,
             document_version=version,
             passages=passages,
-            embeddings=embeddings,
+            embeddings=embedded.vectors,
             embedding_model=embedder.model_name,
         )
         docs_indexed += 1

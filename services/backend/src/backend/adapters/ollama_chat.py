@@ -15,8 +15,15 @@ from pydantic import BaseModel, ValidationError
 from tenacity import retry, retry_if_exception, stop_after_attempt
 
 from backend.adapters._retry import MAX_ATTEMPTS, RETRY_WAIT
-from backend.application.ports import ChatMessage, ThinkingCallbacks
+from backend.application.ports import ChatMessage, StructuredResult, ThinkingCallbacks
 from domain.errors import ModelTimeoutError, ModelUnavailableError
+from domain.session import LlmUsage
+
+
+def _usage_from_ollama(response: object) -> LlmUsage:
+    prompt = getattr(response, "prompt_eval_count", None)
+    completion = getattr(response, "eval_count", None)
+    return LlmUsage.from_counts(prompt_tokens=prompt, completion_tokens=completion)
 
 TModel = TypeVar("TModel", bound=BaseModel)
 
@@ -95,7 +102,7 @@ class OllamaChatModel:
         schema: type[TModel],
         *,
         thinking: ThinkingCallbacks | None = None,
-    ) -> TModel:
+    ) -> StructuredResult[TModel]:
         async with self._semaphore:
             try:
                 return await self._generate_structured_once(messages, schema, thinking=thinking)
@@ -116,7 +123,7 @@ class OllamaChatModel:
         schema: type[TModel],
         *,
         thinking: ThinkingCallbacks | None,
-    ) -> TModel:
+    ) -> StructuredResult[TModel]:
         await self._ensure_thinking_capability()
         vendor_messages = [
             {"role": message.role, "content": message.content} for message in messages
@@ -128,6 +135,7 @@ class OllamaChatModel:
             started = time.perf_counter()
             content_parts: list[str] = []
             thinking_parts: list[str] = []
+            usage = LlmUsage()
             stream = await self._client.chat(
                 model=self._model,
                 messages=cast(Any, vendor_messages),
@@ -137,6 +145,8 @@ class OllamaChatModel:
                 options={"temperature": 0},
             )
             async for chunk in stream:
+                if getattr(chunk, "done", False):
+                    usage = _usage_from_ollama(chunk)
                 message = chunk.message
                 delta_thinking = getattr(message, "thinking", None)
                 if isinstance(delta_thinking, str) and delta_thinking:
@@ -150,7 +160,7 @@ class OllamaChatModel:
                 content="".join(content_parts) or None,
                 thinking="".join(thinking_parts) or None,
             )
-            return schema.model_validate_json(payload)
+            return StructuredResult(value=schema.model_validate_json(payload), usage=usage)
 
         response = await self._client.chat(
             model=self._model,
@@ -163,4 +173,7 @@ class OllamaChatModel:
             content=response.message.content,
             thinking=getattr(response.message, "thinking", None),
         )
-        return schema.model_validate_json(payload)
+        return StructuredResult(
+            value=schema.model_validate_json(payload),
+            usage=_usage_from_ollama(response),
+        )

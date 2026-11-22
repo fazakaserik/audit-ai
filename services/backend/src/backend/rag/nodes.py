@@ -23,6 +23,14 @@ from domain.answer import (
     InsufficientReason,
     SuggestedClientQuestion,
 )
+from domain.session import LlmUsage
+
+
+def _merge_usage(state: AskState, usage: LlmUsage) -> LlmUsage:
+    current = state.get("usage")
+    if current is None:
+        return usage
+    return current + usage
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,7 +115,10 @@ async def condense_question(state: AskState, deps: AskGraphDeps) -> AskState:
         CondenseQuestionResult,
         thinking=_thinking(deps),
     )
-    return {"standalone_question": result.standalone_question}
+    return {
+        "standalone_question": result.value.standalone_question,
+        "usage": _merge_usage(state, result.usage),
+    }
 
 
 async def retrieve(state: AskState, deps: AskGraphDeps) -> AskState:
@@ -116,7 +127,7 @@ async def retrieve(state: AskState, deps: AskGraphDeps) -> AskState:
     question = state["question"]
     query_text = _query_text(state)
     folder = state.get("folder_scope", question.folder_scope)
-    vectors = await deps.embedder.embed((query_text,))
+    embedded = await deps.embedder.embed((query_text,))
     scope = RetrievalScope(
         engagement_id=state["engagement_id"],
         folder_prefix=folder,
@@ -124,7 +135,7 @@ async def retrieve(state: AskState, deps: AskGraphDeps) -> AskState:
     )
     scored = await deps.vector_index.search(
         query_text,
-        vectors[0],
+        embedded.vectors[0],
         scope,
         embedding_model=deps.embedder.model_name,
         min_score=deps.settings.relevance_threshold,
@@ -133,7 +144,10 @@ async def retrieve(state: AskState, deps: AskGraphDeps) -> AskState:
         await deps.progress.sources(
             [SourceHit(path=row.document_path, score=row.score) for row in scored]
         )
-    update: AskState = {"scored_passages": scored}
+    update: AskState = {
+        "scored_passages": scored,
+        "usage": _merge_usage(state, embedded.usage),
+    }
     if not scored:
         update["insufficient_reason"] = InsufficientReason.NO_RELEVANT_PASSAGES
     return update
@@ -164,8 +178,11 @@ async def generate_answer(state: AskState, deps: AskGraphDeps) -> AskState:
         AnswerGenerationResult,
         thinking=_thinking(deps),
     )
-    update: AskState = {"generation": generation}
-    if not generation.sufficient or not generation.answer_text.strip():
+    update: AskState = {
+        "generation": generation.value,
+        "usage": _merge_usage(state, generation.usage),
+    }
+    if not generation.value.sufficient or not generation.value.answer_text.strip():
         update["insufficient_reason"] = InsufficientReason.MODEL_JUDGED_INSUFFICIENT
     return update
 

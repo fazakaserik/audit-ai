@@ -63,7 +63,7 @@ async def test_post_ask_stream_progress_and_final() -> None:
     )
 
     embedder = FakeEmbedder()
-    vectors = await embedder.embed((passage_text, "meal limits"))
+    embedded = await embedder.embed((passage_text, "meal limits"))
     vector_index = InMemoryVectorIndex()
     await vector_index.upsert_passages(
         engagement_id=engagement_id,
@@ -71,7 +71,7 @@ async def test_post_ask_stream_progress_and_final() -> None:
         document_path="policies/expense-policy.md",
         document_version=1,
         passages=(passage,),
-        embeddings=(vectors[0],),
+        embeddings=(embedded.vectors[0],),
         embedding_model=embedder.model_name,
     )
 
@@ -116,6 +116,8 @@ async def test_post_ask_stream_progress_and_final() -> None:
         final = events[-1]["response"]
         assert isinstance(final, dict)
         assert final["status"] == "answered"
+        assert final["usage"]["total_tokens"] >= 15
+        assert final["session_total_tokens"] >= final["usage"]["total_tokens"]
         sources = next(event for event in events if event.get("type") == "sources")
         assert sources["sources"][0]["path"] == "policies/expense-policy.md"
 
@@ -128,3 +130,4 @@ async def test_post_ask_stream_progress_and_final() -> None:
         assert len(turns) == 1
         assert turns[0]["thinking_text"] == "Checking policy passages…"
         assert turns[0]["thinking_seconds"] == round(1.26, 1)
+        assert turns[0]["answer"]["usage"]["total_tokens"] >= 15

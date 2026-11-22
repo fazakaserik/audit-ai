@@ -40,7 +40,7 @@ from domain.document.paths import (
 from domain.engagement import Engagement, EngagementId
 from domain.errors import ConflictError, NotFoundError
 from domain.passage import PassageId
-from domain.session import Session, SessionId, Turn, TurnId
+from domain.session import LlmUsage, Session, SessionId, Turn, TurnId
 from domain.upload import (
     Upload,
     UploadId,
@@ -176,6 +176,7 @@ def _upload_item_from_row(row: UploadItemRow) -> UploadItem:
 
 def _turn_from_row(row: SessionTurnRow) -> Turn:
     question_data = row.question
+    usage = LlmUsage.model_validate(row.llm_usage) if row.llm_usage is not None else None
     return Turn(
         id=TurnId(row.id),
         session_id=SessionId(row.session_id),
@@ -186,6 +187,7 @@ def _turn_from_row(row: SessionTurnRow) -> Turn:
         created_at=_aware(row.created_at),
         thinking_text=row.thinking_text,
         thinking_seconds=row.thinking_seconds,
+        usage=usage,
     )
 
 
@@ -406,6 +408,7 @@ class PostgresSessionRepository:
             answer=_answer_to_dict(turn.answer),
             thinking_text=turn.thinking_text,
             thinking_seconds=turn.thinking_seconds,
+            llm_usage=turn.usage.model_dump(mode="json") if turn.usage is not None else None,
             created_at=turn.created_at,
         )
         self._session.add(row)
