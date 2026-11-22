@@ -8,6 +8,7 @@ from typing import Literal
 from backend.application.ports import ChatModel, Embedder, RetrievalScope, VectorIndex
 from backend.config import Settings
 from backend.rag.citations import filter_and_build_citations
+from backend.rag.progress import AskProgress, SourceHit
 from backend.rag.prompts import (
     AnswerGenerationResult,
     CondenseQuestionResult,
@@ -30,6 +31,7 @@ class AskGraphDeps:
     embedder: Embedder
     vector_index: VectorIndex
     settings: Settings
+    progress: AskProgress | None = None
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -82,20 +84,35 @@ def _query_text(state: AskState) -> str:
     return state["question"].text
 
 
+def _thinking(deps: AskGraphDeps):
+    if deps.progress is None or not deps.chat.supports_thinking:
+        return None
+    return deps.progress.thinking_callbacks()
+
+
 async def condense_question(state: AskState, deps: AskGraphDeps) -> AskState:
     question = state["question"]
     prior = state.get("prior_turns", ())
     if not prior:
         return {"standalone_question": question.text}
 
+    if deps.progress is not None:
+        await deps.progress.stage("condense")
+
     limit = deps.settings.session_context_turns
     recent = prior[-limit:] if limit > 0 else ()
     messages = build_condense_messages(prior_turns=recent, new_question=question.text)
-    result = await deps.chat.generate_structured(messages, CondenseQuestionResult)
+    result = await deps.chat.generate_structured(
+        messages,
+        CondenseQuestionResult,
+        thinking=_thinking(deps),
+    )
     return {"standalone_question": result.standalone_question}
 
 
 async def retrieve(state: AskState, deps: AskGraphDeps) -> AskState:
+    if deps.progress is not None:
+        await deps.progress.stage("retrieve")
     question = state["question"]
     query_text = _query_text(state)
     folder = state.get("folder_scope", question.folder_scope)
@@ -112,13 +129,19 @@ async def retrieve(state: AskState, deps: AskGraphDeps) -> AskState:
         embedding_model=deps.embedder.model_name,
         min_score=deps.settings.relevance_threshold,
     )
+    if deps.progress is not None and scored:
+        await deps.progress.sources(
+            [SourceHit(path=row.document_path, score=row.score) for row in scored]
+        )
     update: AskState = {"scored_passages": scored}
     if not scored:
         update["insufficient_reason"] = InsufficientReason.NO_RELEVANT_PASSAGES
     return update
 
 
-async def grade_evidence(state: AskState, _deps: AskGraphDeps) -> AskState:
+async def grade_evidence(state: AskState, deps: AskGraphDeps) -> AskState:
+    if deps.progress is not None:
+        await deps.progress.stage("grade")
     scored = state.get("scored_passages", [])
     if not scored:
         return {"insufficient_reason": InsufficientReason.NO_RELEVANT_PASSAGES}
@@ -126,6 +149,8 @@ async def grade_evidence(state: AskState, _deps: AskGraphDeps) -> AskState:
 
 
 async def generate_answer(state: AskState, deps: AskGraphDeps) -> AskState:
+    if deps.progress is not None:
+        await deps.progress.stage("generate")
     question = state["question"]
     scored = state["scored_passages"]
     messages = build_generation_messages(
@@ -134,14 +159,20 @@ async def generate_answer(state: AskState, deps: AskGraphDeps) -> AskState:
         auditor_role=question.auditor_role,
         topic=question.topic,
     )
-    generation = await deps.chat.generate_structured(messages, AnswerGenerationResult)
+    generation = await deps.chat.generate_structured(
+        messages,
+        AnswerGenerationResult,
+        thinking=_thinking(deps),
+    )
     update: AskState = {"generation": generation}
     if not generation.sufficient or not generation.answer_text.strip():
         update["insufficient_reason"] = InsufficientReason.MODEL_JUDGED_INSUFFICIENT
     return update
 
 
-async def finalize(state: AskState, _deps: AskGraphDeps) -> AskState:
+async def finalize(state: AskState, deps: AskGraphDeps) -> AskState:
+    if deps.progress is not None:
+        await deps.progress.stage("finalize")
     generation = state.get("generation")
     if generation is None:
         return {"insufficient_reason": InsufficientReason.MODEL_JUDGED_INSUFFICIENT}
@@ -157,7 +188,9 @@ async def finalize(state: AskState, _deps: AskGraphDeps) -> AskState:
     return {"answer": Answered(text=text, citations=citations)}
 
 
-async def suggest_client_questions(state: AskState, _deps: AskGraphDeps) -> AskState:
+async def suggest_client_questions(state: AskState, deps: AskGraphDeps) -> AskState:
+    if deps.progress is not None:
+        await deps.progress.stage("suggest")
     reason = state.get("insufficient_reason", InsufficientReason.MODEL_JUDGED_INSUFFICIENT)
     partial = state.get("partial_citations", ())
     question = state["question"]

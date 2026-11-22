@@ -43,19 +43,27 @@ migration message:
     uv run alembic -c services/backend/alembic.ini revision --autogenerate -m "{{message}}"
 
 compose-up:
-    {{compose}} up -d
+    {{compose}} up -d --build
 
 compose-down:
     {{compose}} down
+
+compose-restart:
+    just compose-down
+    just compose-up
 
 compose-clean:
     {{compose}} down -v --remove-orphans
 
 compose-dev-up:
-    {{compose_dev}} up -d
+    {{compose_dev}} up -d --build
 
 compose-dev-down:
     {{compose_dev}} down
+
+compose-dev-restart:
+    just compose-dev-down
+    just compose-dev-up
 
 compose-dev-clean:
     {{compose_dev}} down -v --remove-orphans

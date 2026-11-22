@@ -9,13 +9,18 @@ import typer
 from rich.console import Console
 from rich.status import Status
 
+from cli import __version__
 from cli.client import AuditApiClient, CliApiError
 from cli.render import (
+    render_document_bytes,
+    render_document_listing,
+    render_engagement,
     render_engagements,
     render_error,
     render_session_detail,
     render_session_summaries,
     render_upload_status,
+    render_upload_summaries,
 )
 from cli.repl import run_repl
 from domain.engagement import EngagementId
@@ -29,12 +34,14 @@ app = typer.Typer(
 )
 
 engagements_app = typer.Typer(help="Manage engagements")
-uploads_app = typer.Typer(help="Upload job status")
+uploads_app = typer.Typer(help="Upload jobs")
 sessions_app = typer.Typer(help="Chat sessions")
+documents_app = typer.Typer(help="Engagement documents")
 
 app.add_typer(engagements_app, name="engagements")
 app.add_typer(uploads_app, name="uploads")
 app.add_typer(sessions_app, name="sessions")
+app.add_typer(documents_app, name="documents")
 
 
 def _client() -> AuditApiClient:
@@ -57,8 +64,6 @@ def main(ctx: typer.Context) -> None:
 @app.command("version")
 def version() -> None:
     """Print CLI version."""
-    from cli import __version__
-
     typer.echo(f"audit-ai {__version__}")
 
 
@@ -75,6 +80,21 @@ def engagements_list(
             _exit_api_error(exc)
         else:
             render_engagements(console, page.items)
+
+
+@engagements_app.command("show")
+def engagements_show(
+    id: str = typer.Option(..., "--id", help="Engagement id"),
+) -> None:
+    """Show one engagement."""
+    engagement_id: EngagementId = id
+    with _client() as client:
+        try:
+            engagement = client.get_engagement(engagement_id)
+        except CliApiError as exc:
+            _exit_api_error(exc)
+        else:
+            render_engagement(console, engagement)
 
 
 @engagements_app.command("create")
@@ -125,6 +145,23 @@ def upload(
                     raise typer.Exit(code=1)
 
 
+@uploads_app.command("list")
+def uploads_list(
+    engagement: str = typer.Option(..., "--engagement"),
+    limit: int = typer.Option(50, min=1, max=200),
+    offset: int = typer.Option(0, min=0),
+) -> None:
+    """List upload jobs for an engagement."""
+    engagement_id: EngagementId = engagement
+    with _client() as client:
+        try:
+            page = client.list_uploads(engagement_id, limit=limit, offset=offset)
+        except CliApiError as exc:
+            _exit_api_error(exc)
+        else:
+            render_upload_summaries(console, page.items)
+
+
 @uploads_app.command("status")
 def uploads_status(
     engagement: str = typer.Option(..., "--engagement"),
@@ -139,6 +176,47 @@ def uploads_status(
             _exit_api_error(exc)
         else:
             render_upload_status(console, result)
+
+
+@documents_app.command("list")
+def documents_list(
+    engagement: str = typer.Option(..., "--engagement"),
+    prefix: str | None = typer.Option(None, "--prefix", help="Folder to list under"),
+    depth: int | None = typer.Option(None, "--depth", min=1, help="Max path depth under prefix"),
+    limit: int = typer.Option(50, min=1, max=200),
+    offset: int = typer.Option(0, min=0),
+) -> None:
+    """List documents and child folders."""
+    engagement_id: EngagementId = engagement
+    with _client() as client:
+        try:
+            listing = client.list_documents(
+                engagement_id,
+                prefix=prefix,
+                depth=depth,
+                limit=limit,
+                offset=offset,
+            )
+        except CliApiError as exc:
+            _exit_api_error(exc)
+        else:
+            render_document_listing(console, listing, prefix=prefix or "")
+
+
+@documents_app.command("get")
+def documents_get(
+    engagement: str = typer.Option(..., "--engagement"),
+    path: str = typer.Option(..., "--path", help="Document path"),
+) -> None:
+    """Download and print a document."""
+    engagement_id: EngagementId = engagement
+    with _client() as client:
+        try:
+            content = client.get_document_content(engagement_id, path)
+        except CliApiError as exc:
+            _exit_api_error(exc)
+        else:
+            render_document_bytes(console, path, content)
 
 
 @sessions_app.command("list")

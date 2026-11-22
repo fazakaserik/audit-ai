@@ -17,6 +17,7 @@ from backend.api.contracts.v1.responses import (
     TurnResponse,
     UploadItemResponse,
     UploadResponse,
+    UploadSummaryResponse,
 )
 from domain.answer import Answer, Answered, AnswerStatus, Citation, InsufficientEvidence
 from domain.common import RequestId
@@ -107,6 +108,18 @@ def upload_item_to_response(item: UploadItem) -> UploadItemResponse:
         document_path=item.document_path,
         status=item.status,
         reason=item.reason,
+    )
+
+
+def upload_to_summary(upload: Upload) -> UploadSummaryResponse:
+    return UploadSummaryResponse(
+        id=upload.id,
+        engagement_id=upload.engagement_id,
+        target_folder=upload.target_folder,
+        status=upload.status,
+        completed_at=upload.completed_at,
+        created_at=upload.created_at,
+        updated_at=upload.updated_at,
     )
 
 

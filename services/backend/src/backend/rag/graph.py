@@ -24,6 +24,7 @@ from backend.rag.nodes import (
     route_after_retrieve,
     suggest_client_questions,
 )
+from backend.rag.progress import AskProgress
 from backend.rag.state import AskState
 from domain.answer import Answer, Question
 from domain.document import FolderPath
@@ -44,7 +45,16 @@ async def run_ask_graph(
     folder_scope: FolderPath | None,
     prior_turns: Sequence[Turn] = (),
     deps: AskGraphDeps,
+    progress: AskProgress | None = None,
 ) -> AskGraphResult:
+    if progress is not None and deps.progress is None:
+        deps = AskGraphDeps(
+            chat=deps.chat,
+            embedder=deps.embedder,
+            vector_index=deps.vector_index,
+            settings=deps.settings,
+            progress=progress,
+        )
     state: AskState = {
         "engagement_id": engagement_id,
         "question": question,

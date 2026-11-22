@@ -78,10 +78,7 @@ async def test_condense_uses_chat_when_prior_turns_exist() -> None:
         "prior_turns": (prior,),
     }
     update = await condense_question(state, deps)
-    assert (
-        update["standalone_question"]
-        == "What is the Contoso payment period in days?"
-    )
+    assert update["standalone_question"] == "What is the Contoso payment period in days?"
     assert len(chat.calls) == 1
     _, schema = chat.calls[0]
     assert schema is CondenseQuestionResult

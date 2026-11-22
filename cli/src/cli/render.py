@@ -13,12 +13,15 @@ from rich.text import Text
 from backend.api.contracts.v1.responses import (
     AskResponse,
     CitationResponse,
+    DocumentListingResponse,
+    DocumentResponse,
     EngagementResponse,
     SessionDetailResponse,
     SessionSummaryResponse,
     SuggestedClientQuestionResponse,
     TurnResponse,
     UploadResponse,
+    UploadSummaryResponse,
 )
 from cli.client import CliApiError, unwrap_answer, unwrap_insufficient
 from domain.answer import InsufficientReason
@@ -35,19 +38,26 @@ def render_error(console: Console, error: CliApiError) -> None:
     console.print(Panel("\n".join(lines), title="API error", border_style="red"))
 
 
-def _format_citation_line(citation: CitationResponse) -> str:
+def _format_citation_line(citation: CitationResponse) -> Text:
     location = citation.document_path
     if citation.page is not None:
         location = f"{location} (p. {citation.page})"
     if citation.heading_path:
         location = f"{location} — {' / '.join(citation.heading_path)}"
-    return f"[{citation.marker}] {location}\n    {citation.snippet}"
+    line = Text()
+    line.append(f"[{citation.marker}] {location}\n", style="bold")
+    line.append(citation.snippet, style="dim")
+    return line
 
 
 def render_citations(console: Console, citations: tuple[CitationResponse, ...]) -> None:
     if not citations:
         return
-    body = "\n\n".join(_format_citation_line(c) for c in citations)
+    body = Text()
+    for index, citation in enumerate(citations):
+        if index:
+            body.append("\n\n")
+        body.append_text(_format_citation_line(citation))
     console.print(Panel(body, title="Citations", border_style="cyan"))
 
 
@@ -75,14 +85,14 @@ def render_suggestions(
     )
 
 
-def render_speaker(console: Console, role: Literal["you", "assistant"]) -> None:
+def render_speaker(console: Console, role: Literal["you", "agent"]) -> None:
     """Print a blank line then a bold colored speaker label."""
     console.print()
     match role:
         case "you":
             console.print(Text("You", style="bold cyan"))
-        case "assistant":
-            console.print(Text("Assistant", style="bold green"))
+        case "agent":
+            console.print(Text("Agent", style="bold green"))
         case _:
             assert_never(role)
 
@@ -90,6 +100,55 @@ def render_speaker(console: Console, role: Literal["you", "assistant"]) -> None:
 def render_user_message(console: Console, question: str) -> None:
     render_speaker(console, "you")
     console.print(question)
+
+
+_STAGE_LABELS: dict[str, str] = {
+    "condense": "Condense question…",
+    "retrieve": "Retrieve passages…",
+    "grade": "Grade evidence…",
+    "generate": "Generate answer…",
+    "suggest": "Suggest client questions…",
+    "finalize": "Finalize answer…",
+}
+
+
+def stage_label(stage: str) -> str:
+    return _STAGE_LABELS.get(stage, stage)
+
+
+def render_progress_stage(console: Console, stage: str) -> None:
+    console.print(Text(stage_label(stage), style="dim"))
+
+
+def render_progress_sources(console: Console, sources: list[dict[str, object]]) -> None:
+    if not sources:
+        console.print(Text("Sources: (none)", style="dim"))
+        return
+    parts: list[str] = []
+    for item in sources:
+        path = str(item.get("path", ""))
+        score = item.get("score")
+        if isinstance(score, (int, float)):
+            parts.append(f"{path} ({score:.2f})")
+        else:
+            parts.append(path)
+    console.print(Text("Sources: " + ", ".join(parts), style="dim"))
+
+
+def render_thinking_delta(console: Console, text: str, *, at_line_start: bool) -> bool:
+    """Print dim thinking text with a leading tab on each line. Returns next at_line_start."""
+    if not text:
+        return at_line_start
+    indented = text.replace("\n", "\n")
+    if at_line_start:
+        indented = indented
+    console.print(Text(indented, style="dim"), end="")
+    return text.endswith("\n")
+
+
+def render_thinking_done(console: Console, duration_seconds: float) -> None:
+    console.print()
+    console.print(Text(f"\tThought for {duration_seconds:.1f} seconds", style="dim"))
 
 
 def render_ask_response(console: Console, response: AskResponse) -> None:
@@ -114,8 +173,8 @@ def render_ask_response(console: Console, response: AskResponse) -> None:
         console.print(Text(f"session_id: {insufficient.session_id}", style="dim"))
 
 
-def render_assistant_message(console: Console, response: AskResponse) -> None:
-    render_speaker(console, "assistant")
+def render_agent_message(console: Console, response: AskResponse) -> None:
+    render_speaker(console, "agent")
     render_ask_response(console, response)
 
 
@@ -131,6 +190,76 @@ def render_engagements(console: Console, engagements: tuple[EngagementResponse, 
             item.name,
             str(item.document_count),
             item.updated_at.isoformat(),
+        )
+    console.print(table)
+
+
+def render_engagement(console: Console, engagement: EngagementResponse) -> None:
+    console.print(
+        Text(
+            f"{engagement.id} — {engagement.name} ({engagement.document_count} docs)",
+            style="bold",
+        )
+    )
+    console.print(Text(f"created_at: {engagement.created_at.isoformat()}", style="dim"))
+    console.print(Text(f"updated_at: {engagement.updated_at.isoformat()}", style="dim"))
+
+
+def render_document_listing(
+    console: Console,
+    listing: DocumentListingResponse,
+    *,
+    prefix: str,
+) -> None:
+    location = prefix if prefix else "/"
+    table = Table(title=f"Documents — {location}")
+    table.add_column("Path", style="cyan")
+    table.add_column("Type")
+    table.add_column("Bytes", justify="right")
+    table.add_column("Searchable")
+    for folder in listing.folders:
+        table.add_row(f"[{folder}]", "folder", "", "")
+    for item in listing.items:
+        table.add_row(
+            item.path,
+            item.content_type.value,
+            str(item.size_bytes),
+            "yes" if item.searchable else "no",
+        )
+    console.print(table)
+    console.print(
+        Text(
+            f"total documents: {listing.total} (showing {len(listing.items)})",
+            style="dim",
+        )
+    )
+
+
+def render_documents(console: Console, documents: tuple[DocumentResponse, ...]) -> None:
+    table = Table(title="Documents")
+    table.add_column("Path", style="cyan")
+    table.add_column("Type")
+    table.add_column("Bytes", justify="right")
+    for item in documents:
+        table.add_row(item.path, item.content_type.value, str(item.size_bytes))
+    console.print(table)
+
+
+def render_upload_summaries(
+    console: Console,
+    uploads: tuple[UploadSummaryResponse, ...],
+) -> None:
+    table = Table(title="Uploads")
+    table.add_column("Upload ID", style="cyan")
+    table.add_column("Folder")
+    table.add_column("Status")
+    table.add_column("Created")
+    for item in uploads:
+        table.add_row(
+            str(item.id),
+            item.target_folder,
+            item.status.value,
+            item.created_at.isoformat(),
         )
     console.print(table)
 
@@ -164,7 +293,7 @@ def render_session_detail(console: Console, session: SessionDetailResponse) -> N
 
 def render_turn(console: Console, turn: TurnResponse) -> None:
     render_user_message(console, turn.question)
-    render_assistant_message(console, turn.answer)
+    render_agent_message(console, turn.answer)
 
 
 def render_upload_status(console: Console, upload: UploadResponse) -> None:

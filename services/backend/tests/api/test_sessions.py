@@ -7,7 +7,12 @@ import httpx
 from backend.rag.prompts import AnswerGenerationResult, CondenseQuestionResult
 from domain.engagement import EngagementId
 from support.ask_api import build_ask_app, index_passage, post_ask, seed_engagement
-from support.fakes import FakeChatModel, FakeEmbedder, InMemoryEngagementRepository, InMemoryVectorIndex
+from support.fakes import (
+    FakeChatModel,
+    FakeEmbedder,
+    InMemoryEngagementRepository,
+    InMemoryVectorIndex,
+)
 
 
 async def test_ask_creates_session_and_follow_up_continues() -> None:
@@ -75,10 +80,7 @@ async def test_ask_creates_session_and_follow_up_continues() -> None:
         turns = detail.json()["turns"]
         assert len(turns) == 2
         assert turns[0]["standalone_question"] == "What are payment terms?"
-        assert (
-            turns[1]["standalone_question"]
-            == "What penalties apply for late Contoso payment?"
-        )
+        assert turns[1]["standalone_question"] == "What penalties apply for late Contoso payment?"
 
 
 async def test_get_session_wrong_engagement_returns_404() -> None:

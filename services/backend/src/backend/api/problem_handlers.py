@@ -25,6 +25,11 @@ _STATUS: dict[ErrorCode, int] = {
     ErrorCode.INTERNAL_ERROR: 500,
 }
 
+
+def http_status_for(code: ErrorCode) -> int:
+    """Map a domain error code to an HTTP status."""
+    return _STATUS.get(code, 500)
+
 _TITLE: dict[ErrorCode, str] = {
     ErrorCode.VALIDATION_ERROR: "Validation Error",
     ErrorCode.NOT_FOUND: "Not Found",

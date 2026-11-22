@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, TypeVar
@@ -26,6 +26,14 @@ class ChatMessage:
 
 
 @dataclass(frozen=True, slots=True)
+class ThinkingCallbacks:
+    """Optional native thinking stream hooks for ChatModel adapters."""
+
+    on_delta: Callable[[str], Awaitable[None]]
+    on_seconds: Callable[[float], None]
+
+
+@dataclass(frozen=True, slots=True)
 class ScoredPassage:
     passage: Passage
     document_path: DocumentPath
@@ -40,10 +48,15 @@ class RetrievalScope:
 
 
 class ChatModel(Protocol):
+    @property
+    def supports_thinking(self) -> bool: ...
+
     async def generate_structured(
         self,
         messages: Sequence[ChatMessage],
         schema: type[TModel],
+        *,
+        thinking: ThinkingCallbacks | None = None,
     ) -> TModel: ...
 
 
@@ -123,9 +136,12 @@ class DocumentRepository(Protocol):
         engagement_id: EngagementId,
         *,
         prefix: FolderPath | None,
+        depth: int | None,
         limit: int,
         offset: int,
-    ) -> tuple[list[Document], int]: ...
+    ) -> tuple[list[Document], tuple[str, ...], int]:
+        """Return (documents within depth, immediate child folders, document total)."""
+        ...
 
 
 class SessionRepository(Protocol):
@@ -180,6 +196,14 @@ class UploadRepository(Protocol):
     ) -> tuple[Upload, list[UploadItem]] | None: ...
 
     async def get_by_id(self, upload_id: UploadId) -> Upload | None: ...
+
+    async def list(
+        self,
+        engagement_id: EngagementId,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[Upload], int]: ...
 
     async def mark_processing(self, upload_id: UploadId) -> None: ...
 

@@ -40,6 +40,16 @@ class DocumentResponse(BaseModel):
     updated_at: datetime
 
 
+class DocumentListingResponse(BaseModel):
+    model_config = _CFG
+
+    items: tuple[DocumentResponse, ...]
+    folders: tuple[str, ...]
+    total: Annotated[int, Field(ge=0)]
+    limit: Annotated[int, Field(ge=1, le=200)]
+    offset: Annotated[int, Field(ge=0)]
+
+
 class UploadAcceptedResponse(BaseModel):
     model_config = _CFG
 
@@ -55,6 +65,18 @@ class UploadItemResponse(BaseModel):
     document_path: str
     status: UploadItemStatus
     reason: str | None = None
+
+
+class UploadSummaryResponse(BaseModel):
+    model_config = _CFG
+
+    id: UUID
+    engagement_id: EngagementId
+    target_folder: str
+    status: UploadStatus
+    completed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
 
 
 class UploadResponse(BaseModel):

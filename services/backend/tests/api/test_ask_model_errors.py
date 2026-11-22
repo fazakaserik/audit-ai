@@ -10,7 +10,12 @@ from support.ask_api import (
     post_ask,
     seed_engagement,
 )
-from support.fakes import FakeChatModel, FakeEmbedder, InMemoryEngagementRepository, InMemoryVectorIndex
+from support.fakes import (
+    FakeChatModel,
+    FakeEmbedder,
+    InMemoryEngagementRepository,
+    InMemoryVectorIndex,
+)
 
 
 async def test_model_timeout_returns_504() -> None:

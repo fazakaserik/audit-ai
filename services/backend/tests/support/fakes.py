@@ -14,8 +14,15 @@ from backend.application.ports import (
     ChatMessage,
     RetrievalScope,
     ScoredPassage,
+    ThinkingCallbacks,
 )
 from domain.document import Document, DocumentId, DocumentPath, FolderPath
+from domain.document.paths import (
+    child_folder_name,
+    normalize_list_prefix,
+    relative_segments,
+    within_depth,
+)
 from domain.engagement import Engagement, EngagementId
 from domain.errors import ModelTimeoutError, ModelUnavailableError, NotFoundError
 from domain.passage import Passage
@@ -41,11 +48,21 @@ class FakeChatModel:
         response: BaseModel | None = None,
         responses: Sequence[BaseModel] | None = None,
         error: ModelTimeoutError | ModelUnavailableError | None = None,
+        supports_thinking: bool = False,
+        thinking_text: str = "",
+        thinking_seconds: float = 0.0,
     ) -> None:
         self._response = response
         self._responses = list(responses) if responses is not None else None
         self._error = error
+        self._supports_thinking = supports_thinking
+        self._thinking_text = thinking_text
+        self._thinking_seconds = thinking_seconds
         self.calls: list[tuple[tuple[ChatMessage, ...], type[BaseModel]]] = []
+
+    @property
+    def supports_thinking(self) -> bool:
+        return self._supports_thinking
 
     def configure(
         self,
@@ -62,8 +79,14 @@ class FakeChatModel:
         self,
         messages: Sequence[ChatMessage],
         schema: type[TModel],
+        *,
+        thinking: ThinkingCallbacks | None = None,
     ) -> TModel:
         self.calls.append((tuple(messages), schema))
+        if thinking is not None and self._supports_thinking:
+            if self._thinking_text:
+                await thinking.on_delta(self._thinking_text)
+            thinking.on_seconds(self._thinking_seconds)
         if self._error is not None:
             raise self._error
         if self._responses:
@@ -278,23 +301,27 @@ class InMemoryDocumentRepository:
         engagement_id: EngagementId,
         *,
         prefix: FolderPath | None,
+        depth: int | None,
         limit: int,
         offset: int,
-    ) -> tuple[list[Document], int]:
-        matched = [
-            document
-            for (eng_id, path), document in self._items.items()
-            if eng_id == engagement_id
-            and (
-                prefix is None
-                or prefix == ""
-                or path == prefix
-                or path.startswith(prefix.rstrip("/") + "/")
-            )
-        ]
-        matched.sort(key=lambda item: item.path)
-        total = len(matched)
-        return matched[offset : offset + limit], total
+    ) -> tuple[list[Document], tuple[str, ...], int]:
+        base = normalize_list_prefix(prefix)
+        under_prefix: list[Document] = []
+        folders: set[str] = set()
+        for (eng_id, path), document in self._items.items():
+            if eng_id != engagement_id:
+                continue
+            segments = relative_segments(path, base)
+            if segments is None:
+                continue
+            folder = child_folder_name(segments)
+            if folder is not None:
+                folders.add(folder)
+            if within_depth(segments, depth):
+                under_prefix.append(document)
+        under_prefix.sort(key=lambda item: item.path)
+        total = len(under_prefix)
+        return under_prefix[offset : offset + limit], tuple(sorted(folders)), total
 
 
 @dataclass
@@ -320,13 +347,25 @@ class InMemoryUploadRepository:
     async def get_by_id(self, upload_id: UploadId) -> Upload | None:
         return self._uploads.get(upload_id)
 
+    async def list(
+        self,
+        engagement_id: EngagementId,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[Upload], int]:
+        matched = [
+            upload for upload in self._uploads.values() if upload.engagement_id == engagement_id
+        ]
+        matched.sort(key=lambda item: item.created_at, reverse=True)
+        total = len(matched)
+        return matched[offset : offset + limit], total
+
     async def mark_processing(self, upload_id: UploadId) -> None:
         upload = self._uploads.get(upload_id)
         if upload is None or upload.status != UploadStatus.QUEUED:
             return
-        self._uploads[upload_id] = upload.model_copy(
-            update={"status": UploadStatus.PROCESSING}
-        )
+        self._uploads[upload_id] = upload.model_copy(update={"status": UploadStatus.PROCESSING})
 
     async def refresh_status(self, upload_id: UploadId) -> Upload:
         upload = self._uploads.get(upload_id)
@@ -461,9 +500,7 @@ class InMemorySessionRepository:
         offset: int,
     ) -> tuple[list[Session], int]:
         matched = [
-            session
-            for session in self._sessions.values()
-            if session.engagement_id == engagement_id
+            session for session in self._sessions.values() if session.engagement_id == engagement_id
         ]
         matched.sort(key=lambda item: item.created_at, reverse=True)
         total = len(matched)

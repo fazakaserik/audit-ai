@@ -31,6 +31,12 @@ from domain.answer import (
     SuggestedClientQuestion,
 )
 from domain.document import ContentType, Document, DocumentId, DocumentPath, FolderPath
+from domain.document.paths import (
+    child_folder_name,
+    normalize_list_prefix,
+    relative_segments,
+    within_depth,
+)
 from domain.engagement import Engagement, EngagementId
 from domain.errors import ConflictError, NotFoundError
 from domain.passage import PassageId
@@ -296,24 +302,45 @@ class PostgresDocumentRepository:
         engagement_id: EngagementId,
         *,
         prefix: FolderPath | None,
+        depth: int | None,
         limit: int,
         offset: int,
-    ) -> tuple[list[Document], int]:
+    ) -> tuple[list[Document], tuple[str, ...], int]:
+        base = normalize_list_prefix(prefix)
         filters = [DocumentRow.engagement_id == engagement_id]
-        if prefix is not None and prefix != "":
-            filters.append(DocumentRow.path.like(f"{prefix}%"))
+        if base:
+            filters.append(DocumentRow.path.like(f"{base}/%"))
 
-        total_stmt = select(func.count()).select_from(DocumentRow).where(*filters)
-        total = int((await self._session.execute(total_stmt)).scalar_one())
+        path_stmt = select(DocumentRow.path).where(*filters).order_by(DocumentRow.path.asc())
+        paths = list((await self._session.execute(path_stmt)).scalars().all())
+
+        folders: set[str] = set()
+        matching_paths: list[str] = []
+        for path in paths:
+            segments = relative_segments(path, base)
+            if segments is None:
+                continue
+            folder = child_folder_name(segments)
+            if folder is not None:
+                folders.add(folder)
+            if within_depth(segments, depth):
+                matching_paths.append(path)
+
+        total = len(matching_paths)
+        page_paths = matching_paths[offset : offset + limit]
+        if not page_paths:
+            return [], tuple(sorted(folders)), total
+
         stmt = (
             select(DocumentRow)
-            .where(*filters)
+            .where(
+                DocumentRow.engagement_id == engagement_id,
+                DocumentRow.path.in_(page_paths),
+            )
             .order_by(DocumentRow.path.asc())
-            .limit(limit)
-            .offset(offset)
         )
         rows = (await self._session.execute(stmt)).scalars().all()
-        return [_document_from_row(row) for row in rows], total
+        return [_document_from_row(row) for row in rows], tuple(sorted(folders)), total
 
 
 class PostgresSessionRepository:
@@ -469,6 +496,26 @@ class PostgresUploadRepository:
         if row is None:
             return None
         return _upload_from_row(row)
+
+    async def list(
+        self,
+        engagement_id: EngagementId,
+        *,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[Upload], int]:
+        filters = [UploadRow.engagement_id == engagement_id]
+        total_stmt = select(func.count()).select_from(UploadRow).where(*filters)
+        total = int((await self._session.execute(total_stmt)).scalar_one())
+        stmt = (
+            select(UploadRow)
+            .where(*filters)
+            .order_by(UploadRow.created_at.desc())
+            .limit(limit)
+            .offset(offset)
+        )
+        rows = (await self._session.execute(stmt)).scalars().all()
+        return [_upload_from_row(row) for row in rows], total
 
     async def mark_processing(self, upload_id: UploadId) -> None:
         row = await self._session.get(UploadRow, upload_id)

@@ -14,26 +14,36 @@ from rich.status import Status
 from backend.api.contracts.v1.responses import (
     AskResponse,
     CitationResponse,
+    DocumentResponse,
     EngagementResponse,
     SessionSummaryResponse,
+    UploadSummaryResponse,
 )
 from cli.client import AuditApiClient, CliApiError, unwrap_answer, unwrap_insufficient
 from cli.render import (
-    render_assistant_message,
+    render_ask_response,
     render_document_bytes,
     render_error,
+    render_progress_sources,
+    render_progress_stage,
     render_session_detail,
     render_session_summaries,
+    render_speaker,
+    render_thinking_delta,
+    render_thinking_done,
     render_upload_status,
-    render_user_message,
+    stage_label,
 )
 from domain.engagement import EngagementId
+from domain.errors import ErrorCode
 
 HELP_TEXT = """Slash commands:
   /engagement     Switch engagement (clears session)
   /new            Start a new session on the next question
   /sessions       List recent sessions
   /resume [id]    Resume a session (picker if no id)
+  /documents [folder]  Browse documents (picker; optional start folder)
+  /uploads [id]   List uploads or show one upload's details
   /upload <path> <folder>  Upload to the active engagement under <folder>
   /open <n>       Open citation [n] from the last answer
   /help           Show this help
@@ -41,6 +51,7 @@ HELP_TEXT = """Slash commands:
 """
 
 _NEW_SESSION = object()
+_PARENT_DIR = object()
 
 
 class ReplState:
@@ -148,6 +159,122 @@ def _find_citation(state: ReplState, marker: int) -> CitationResponse | None:
     return None
 
 
+def _join_prefix(prefix: str, child: str) -> str:
+    if not prefix:
+        return child
+    return f"{prefix.rstrip('/')}/{child}"
+
+
+def _parent_prefix(prefix: str) -> str:
+    if not prefix or "/" not in prefix:
+        return ""
+    return prefix.rsplit("/", 1)[0]
+
+
+def _document_basename(path: str, prefix: str) -> str:
+    if prefix and path.startswith(prefix.rstrip("/") + "/"):
+        return path[len(prefix.rstrip("/")) + 1 :]
+    return path.rsplit("/", 1)[-1]
+
+
+def _browse_documents(
+    client: AuditApiClient,
+    console: Console,
+    engagement_id: EngagementId,
+    start_folder: str,
+) -> None:
+    current = start_folder.strip().strip("/")
+    while True:
+        try:
+            listing = client.list_documents(
+                engagement_id,
+                prefix=current or None,
+                depth=1,
+                limit=200,
+                offset=0,
+            )
+        except CliApiError as exc:
+            render_error(console, exc)
+            return
+
+        location = current if current else "/"
+        choices: list[questionary.Choice] = []
+        if current:
+            choices.append(questionary.Choice(title="..", value=_PARENT_DIR))
+        for folder in listing.folders:
+            choices.append(questionary.Choice(title=f"[{folder}]", value=("dir", folder)))
+        for doc in listing.items:
+            name = _document_basename(doc.path, current)
+            choices.append(
+                questionary.Choice(
+                    title=f"{name}  ({doc.size_bytes} bytes, {doc.content_type.value})",
+                    value=("doc", doc),
+                )
+            )
+        if not choices:
+            console.print(f"[dim]No folders or documents under {location}.[/dim]")
+            return
+
+        selected = _select_choice(f"Browse {location}:", choices)
+        if selected is None:
+            return
+        if selected is _PARENT_DIR:
+            current = _parent_prefix(current)
+            continue
+        kind, payload = cast(tuple[str, str | DocumentResponse], selected)
+        if kind == "dir":
+            current = _join_prefix(current, cast(str, payload))
+            continue
+        document = cast(DocumentResponse, payload)
+        try:
+            content = client.get_document_content(engagement_id, document.path)
+        except CliApiError as exc:
+            render_error(console, exc)
+            return
+        render_document_bytes(console, document.path, content)
+        return
+
+
+def _upload_label(item: UploadSummaryResponse) -> str:
+    return (
+        f"{item.target_folder}  ({item.id})  [{item.status.value}, {item.created_at.isoformat()}]"
+    )
+
+
+def _show_upload_details(
+    client: AuditApiClient,
+    console: Console,
+    engagement_id: EngagementId,
+    upload_id: UUID,
+) -> None:
+    try:
+        detail = client.get_upload_status(engagement_id, upload_id)
+    except CliApiError as exc:
+        render_error(console, exc)
+    else:
+        render_upload_status(console, detail)
+
+
+def _uploads_picker(
+    client: AuditApiClient,
+    console: Console,
+    engagement_id: EngagementId,
+) -> None:
+    try:
+        page = client.list_uploads(engagement_id, limit=50, offset=0)
+    except CliApiError as exc:
+        render_error(console, exc)
+        return
+    if not page.items:
+        console.print("No uploads yet.")
+        return
+    choices = [questionary.Choice(title=_upload_label(item), value=item.id) for item in page.items]
+    selected = _select_choice("Select upload:", choices)
+    if selected is None:
+        return
+    _show_upload_details(client, console, engagement_id, cast(UUID, selected))
+
+
 def _upload_to_engagement(
     client: AuditApiClient,
     console: Console,
@@ -219,6 +346,26 @@ def _handle_slash(
                     _load_session(client, console, state.engagement_id, state, session_uuid)
             else:
                 console.print("[red]Usage: /resume [session_id][/red]")
+        case "/documents":
+            if state.engagement_id is None:
+                console.print("[red]No engagement selected.[/red]")
+            else:
+                start_folder = remainder.strip().strip("\"'")
+                _browse_documents(client, console, state.engagement_id, start_folder)
+        case "/uploads":
+            if state.engagement_id is None:
+                console.print("[red]No engagement selected.[/red]")
+            elif len(args) == 0:
+                _uploads_picker(client, console, state.engagement_id)
+            elif len(args) == 1:
+                try:
+                    upload_uuid = UUID(args[0])
+                except ValueError:
+                    console.print("[red]Invalid upload id.[/red]")
+                else:
+                    _show_upload_details(client, console, state.engagement_id, upload_uuid)
+            else:
+                console.print("[red]Usage: /uploads [upload_id][/red]")
         case "/upload":
             if state.engagement_id is None:
                 console.print("[red]No engagement selected.[/red]")
@@ -261,21 +408,79 @@ def _ask_question(
     if state.engagement_id is None:
         console.print("[red]No engagement selected.[/red]")
         return
-    render_user_message(console, question)
+    render_speaker(console, "agent")
+    response: AskResponse | None = None
+    thinking_at_line_start = True
+    saw_thinking = False
+    status = Status("Thinking…", console=console)
+    status.start()
     try:
-        with Status("Thinking…", console=console):
-            response = client.ask(
-                state.engagement_id,
-                question=question,
-                session_id=state.session_id,
-            )
+        for event in client.ask_stream(
+            state.engagement_id,
+            question=question,
+            session_id=state.session_id,
+        ):
+            event_type = event.get("type")
+            if event_type == "stage":
+                stage = str(event.get("stage", ""))
+                status.stop()
+                if saw_thinking and not thinking_at_line_start:
+                    console.print()
+                    thinking_at_line_start = True
+                render_progress_stage(console, stage)
+                if not saw_thinking:
+                    status.update(stage_label(stage))
+                    status.start()
+            elif event_type == "sources":
+                sources = event.get("sources")
+                if isinstance(sources, list):
+                    status.stop()
+                    render_progress_sources(console, sources)
+                    if not saw_thinking:
+                        status.start()
+            elif event_type == "thinking_delta":
+                text = event.get("text")
+                if isinstance(text, str) and text:
+                    if not saw_thinking:
+                        status.stop()
+                        console.print()
+                        saw_thinking = True
+                    thinking_at_line_start = render_thinking_delta(
+                        console,
+                        text,
+                        at_line_start=thinking_at_line_start,
+                    )
+            elif event_type == "thinking_done":
+                status.stop()
+                raw = event.get("duration_seconds", 0)
+                duration = float(raw) if isinstance(raw, (int, float, str)) else 0.0
+                render_thinking_done(console, duration)
+                thinking_at_line_start = True
+            elif event_type == "final":
+                status.stop()
+                final = event.get("response")
+                if isinstance(final, AskResponse):
+                    response = final
+                else:
+                    raise CliApiError(
+                        code=ErrorCode.INTERNAL_ERROR,
+                        detail="stream final payload missing",
+                        status=500,
+                        request_id=None,
+                    )
     except CliApiError as exc:
+        status.stop()
         render_error(console, exc)
+        return
+    finally:
+        status.stop()
+    if response is None:
+        console.print("[red]No answer received from stream.[/red]")
         return
     state.session_id = _session_from_response(response)
     state.last_answer = response
     state.last_citations = _collect_citations(response)
-    render_assistant_message(console, response)
+    render_ask_response(console, response)
 
 
 def _session_from_response(response: AskResponse) -> UUID:
@@ -294,6 +499,7 @@ def run_repl() -> None:
             _pick_initial_session(client, console, state.engagement_id, state)
 
             while True:
+                render_speaker(console, "you")
                 try:
                     line = session.prompt("> ").strip()
                 except (EOFError, KeyboardInterrupt):

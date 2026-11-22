@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import AsyncIterator, Sequence
+
 from backend.application.ports import (
     AskResult,
     AskSessionBound,
@@ -12,7 +15,8 @@ from backend.application.ports import (
 from backend.config import Settings
 from backend.rag.graph import run_ask_graph
 from backend.rag.nodes import AskGraphDeps
-from domain.answer import Question
+from backend.rag.progress import CollectingAskProgress
+from domain.answer import Answer, Question
 from domain.common import new_uuid, utc_now
 from domain.engagement import EngagementId
 from domain.errors import NotFoundError
@@ -26,16 +30,13 @@ def _title_from_question(text: str) -> str:
     return stripped[:199].rstrip() + "…"
 
 
-async def ask_question(
+async def _prepare_session(
     bound: AskSessionBound,
     *,
-    chat: ChatModel,
-    embedder: Embedder,
-    settings: Settings,
     engagement_id: EngagementId,
     question: Question,
     session_id: SessionId | None,
-) -> AskResult:
+) -> tuple[Session, Sequence[Turn]]:
     engagement = await bound.engagements.get(engagement_id)
     if engagement is None:
         raise NotFoundError(f"engagement not found: {engagement_id}")
@@ -59,7 +60,55 @@ async def ask_question(
             raise NotFoundError(f"session not found: {session_id}")
 
     prior_turns = await sessions.list_turns(session.id)
+    return session, prior_turns
 
+
+async def _persist_turn(
+    bound: AskSessionBound,
+    *,
+    session: Session,
+    question: Question,
+    answer: Answer,
+    standalone_question: str,
+) -> AskResult:
+    sessions: SessionRepository = bound.sessions
+    now = utc_now()
+    turn = Turn(
+        id=TurnId(new_uuid()),
+        session_id=session.id,
+        ordinal=session.turn_count,
+        question=question,
+        standalone_question=standalone_question,
+        answer=answer,
+        created_at=now,
+    )
+    await sessions.add_turn(turn)
+    title_update = _title_from_question(question.text) if session.turn_count == 0 else None
+    await sessions.bump_turn_count(session.id, title=title_update)
+    return AskResult(
+        answer=answer,
+        session_id=session.id,
+        turn_id=turn.id,
+        standalone_question=standalone_question,
+    )
+
+
+async def ask_question(
+    bound: AskSessionBound,
+    *,
+    chat: ChatModel,
+    embedder: Embedder,
+    settings: Settings,
+    engagement_id: EngagementId,
+    question: Question,
+    session_id: SessionId | None,
+) -> AskResult:
+    session, prior_turns = await _prepare_session(
+        bound,
+        engagement_id=engagement_id,
+        question=question,
+        session_id=session_id,
+    )
     deps = AskGraphDeps(
         chat=chat,
         embedder=embedder,
@@ -73,24 +122,82 @@ async def ask_question(
         prior_turns=prior_turns,
         deps=deps,
     )
-
-    turn = Turn(
-        id=TurnId(new_uuid()),
-        session_id=session.id,
-        ordinal=session.turn_count,
+    return await _persist_turn(
+        bound,
+        session=session,
         question=question,
-        standalone_question=graph_result.standalone_question,
         answer=graph_result.answer,
-        created_at=now,
-    )
-    await sessions.add_turn(turn)
-
-    title_update = _title_from_question(question.text) if session.turn_count == 0 else None
-    await sessions.bump_turn_count(session.id, title=title_update)
-
-    return AskResult(
-        answer=graph_result.answer,
-        session_id=session.id,
-        turn_id=turn.id,
         standalone_question=graph_result.standalone_question,
     )
+
+
+async def ask_question_stream(
+    bound: AskSessionBound,
+    *,
+    chat: ChatModel,
+    embedder: Embedder,
+    settings: Settings,
+    engagement_id: EngagementId,
+    question: Question,
+    session_id: SessionId | None,
+) -> AsyncIterator[dict[str, object]]:
+    """Yield progress event dicts, then a final result dict (or error)."""
+    queue: asyncio.Queue[dict[str, object] | None] = asyncio.Queue()
+
+    async def emit(event: dict[str, object]) -> None:
+        await queue.put(event)
+
+    progress = CollectingAskProgress()
+    progress.bind_emitter(emit)
+
+    async def run() -> None:
+        try:
+            session, prior_turns = await _prepare_session(
+                bound,
+                engagement_id=engagement_id,
+                question=question,
+                session_id=session_id,
+            )
+            deps = AskGraphDeps(
+                chat=chat,
+                embedder=embedder,
+                vector_index=bound.vector_index,
+                settings=settings,
+                progress=progress,
+            )
+            graph_result = await run_ask_graph(
+                engagement_id=engagement_id,
+                question=question,
+                folder_scope=question.folder_scope,
+                prior_turns=prior_turns,
+                deps=deps,
+            )
+            if progress.thinking_seconds > 0 or progress.thinking_chunks:
+                await emit(
+                    {
+                        "type": "thinking_done",
+                        "duration_seconds": round(progress.thinking_seconds, 1),
+                    }
+                )
+            result = await _persist_turn(
+                bound,
+                session=session,
+                question=question,
+                answer=graph_result.answer,
+                standalone_question=graph_result.standalone_question,
+            )
+            await emit({"type": "final", "result": result})
+        except Exception as exc:
+            await emit({"type": "error", "error": exc})
+        finally:
+            await queue.put(None)
+
+    task = asyncio.create_task(run())
+    try:
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            yield item
+    finally:
+        await task

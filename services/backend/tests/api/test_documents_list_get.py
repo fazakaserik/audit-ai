@@ -1,4 +1,4 @@
-"""API tests: list documents with prefix filter and download bytes."""
+"""API tests: list documents with prefix/depth and download bytes."""
 
 from __future__ import annotations
 
@@ -34,6 +34,7 @@ async def _seed_documents(
     payloads = {
         "contracts/contoso.pdf": (b"%PDF-1.4 contoso", ContentType.PDF),
         "contracts/acme.md": (b"# Terms\nPayment in 30 days.", ContentType.MARKDOWN),
+        "contracts/nested/deep.txt": (b"nested", ContentType.TEXT),
         "policies/refund.txt": (b"Refunds within 14 days.", ContentType.TEXT),
     }
     for path, (data, content_type) in payloads.items():
@@ -56,7 +57,7 @@ async def _seed_documents(
         await storage.put(engagement_id, doc_path, data)
 
 
-async def test_list_documents_with_prefix() -> None:
+async def test_list_documents_with_prefix_and_depth() -> None:
     engagement_id = EngagementId("acme-fy2025")
     engagements = InMemoryEngagementRepository()
     documents = InMemoryDocumentRepository()
@@ -88,8 +89,33 @@ async def test_list_documents_with_prefix() -> None:
         assert listed.status_code == 200
         body = listed.json()
         paths = {item["path"] for item in body["items"]}
-        assert paths == {"contracts/acme.md", "contracts/contoso.pdf"}
-        assert body["total"] == 2
+        assert paths == {
+            "contracts/acme.md",
+            "contracts/contoso.pdf",
+            "contracts/nested/deep.txt",
+        }
+        assert body["folders"] == ["nested"]
+        assert body["total"] == 3
+
+        shallow = await client.get(
+            f"/api/v1/engagements/{engagement_id}/documents",
+            params={"prefix": "contracts", "depth": 1},
+        )
+        assert shallow.status_code == 200
+        shallow_body = shallow.json()
+        shallow_paths = {item["path"] for item in shallow_body["items"]}
+        assert shallow_paths == {"contracts/acme.md", "contracts/contoso.pdf"}
+        assert shallow_body["folders"] == ["nested"]
+        assert shallow_body["total"] == 2
+
+        root = await client.get(
+            f"/api/v1/engagements/{engagement_id}/documents",
+            params={"depth": 1},
+        )
+        assert root.status_code == 200
+        root_body = root.json()
+        assert root_body["items"] == []
+        assert set(root_body["folders"]) == {"contracts", "policies"}
 
         missing = await client.get(
             f"/api/v1/engagements/{engagement_id}/documents/contracts/missing.pdf",

@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from tenacity import retry, retry_if_exception, stop_after_attempt
 
 from backend.adapters._retry import MAX_ATTEMPTS, RETRY_WAIT
-from backend.application.ports import ChatMessage
+from backend.application.ports import ChatMessage, ThinkingCallbacks
 from domain.errors import ModelTimeoutError, ModelUnavailableError
 
 TModel = TypeVar("TModel", bound=BaseModel)
@@ -50,11 +50,18 @@ class OpenAIChatModel:
             timeout=timeout_seconds,
         )
 
+    @property
+    def supports_thinking(self) -> bool:
+        return False
+
     async def generate_structured(
         self,
         messages: Sequence[ChatMessage],
         schema: type[TModel],
+        *,
+        thinking: ThinkingCallbacks | None = None,
     ) -> TModel:
+        _ = thinking
         async with self._semaphore:
             try:
                 return await self._generate_structured_once(messages, schema)

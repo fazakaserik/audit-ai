@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import time
 import zipfile
+from collections.abc import Iterator
 from pathlib import Path
 from typing import TypeVar
 from urllib.parse import quote
@@ -20,13 +22,14 @@ from backend.api.contracts.v1.responses import (
     AnsweredResponse,
     AskResponse,
     AskResponseRoot,
-    DocumentResponse,
+    DocumentListingResponse,
     EngagementResponse,
     InsufficientEvidenceResponse,
     SessionDetailResponse,
     SessionSummaryResponse,
     UploadAcceptedResponse,
     UploadResponse,
+    UploadSummaryResponse,
 )
 from domain.common import RequestId
 from domain.engagement import EngagementId
@@ -161,6 +164,11 @@ class AuditApiClient:
         adapter: TypeAdapter[Page[EngagementResponse]] = TypeAdapter(Page[EngagementResponse])
         return self._get_json(response, adapter)
 
+    def get_engagement(self, engagement_id: EngagementId) -> EngagementResponse:
+        response = self._client.get(f"/api/v1/engagements/{engagement_id}")
+        adapter: TypeAdapter[EngagementResponse] = TypeAdapter(EngagementResponse)
+        return self._get_json(response, adapter)
+
     def create_engagement(self, *, engagement_id: EngagementId, name: str) -> EngagementResponse:
         body = CreateEngagementRequest(id=engagement_id, name=name)
         response = self._client.post(
@@ -195,6 +203,73 @@ class AuditApiClient:
         root = AskResponseRoot.model_validate_json(response.content)
         return root.root
 
+    def ask_stream(
+        self,
+        engagement_id: EngagementId,
+        *,
+        question: str,
+        session_id: UUID | None = None,
+        folder_prefix: str | None = None,
+        auditor_role: str | None = None,
+        topic: str | None = None,
+    ) -> Iterator[dict[str, object]]:
+        """Yield SSE progress events; final event is type=final with AskResponse."""
+        body = AskRequest(
+            question=question,
+            session_id=session_id,
+            folder_prefix=folder_prefix,
+            auditor_role=auditor_role,
+            topic=topic,
+        )
+        with self._client.stream(
+            "POST",
+            f"/api/v1/engagements/{engagement_id}/ask/stream",
+            json=body.model_dump(mode="json"),
+        ) as response:
+            if not response.is_success:
+                # Read body for problem details
+                content = response.read()
+                fake = httpx.Response(
+                    status_code=response.status_code,
+                    content=content,
+                    headers=response.headers,
+                    request=response.request,
+                )
+                raise _problem_to_cli_error(fake)
+            event_lines: list[str] = []
+            for line in response.iter_lines():
+                if line == "":
+                    if not event_lines:
+                        continue
+                    data_lines = [
+                        item.removeprefix("data:").strip()
+                        for item in event_lines
+                        if item.startswith("data:")
+                    ]
+                    event_lines = []
+                    if not data_lines:
+                        continue
+                    payload = json.loads("\n".join(data_lines))
+                    if not isinstance(payload, dict):
+                        continue
+                    if payload.get("type") == "error":
+                        raise CliApiError(
+                            code=ErrorCode(str(payload.get("code", "internal_error"))),
+                            detail=str(payload.get("detail", "stream error")),
+                            status=int(payload.get("status", 500)),
+                            request_id=None,
+                        )
+                    if payload.get("type") == "final":
+                        raw_final = payload.get("response")
+                        root = AskResponseRoot.model_validate_json(
+                            json.dumps(raw_final)
+                        )
+                        yield {"type": "final", "response": root.root}
+                    else:
+                        yield payload
+                else:
+                    event_lines.append(line)
+
     def upload_documents(
         self,
         engagement_id: EngagementId,
@@ -222,6 +297,20 @@ class AuditApiClient:
     ) -> UploadAcceptedResponse:
         payload = prepare_upload_payload(path)
         return self.upload_documents(engagement_id, folder=folder, files=payload)
+
+    def list_uploads(
+        self,
+        engagement_id: EngagementId,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Page[UploadSummaryResponse]:
+        response = self._client.get(
+            f"/api/v1/engagements/{engagement_id}/uploads",
+            params={"limit": limit, "offset": offset},
+        )
+        adapter: TypeAdapter[Page[UploadSummaryResponse]] = TypeAdapter(Page[UploadSummaryResponse])
+        return self._get_json(response, adapter)
 
     def get_upload_status(
         self,
@@ -279,17 +368,20 @@ class AuditApiClient:
         engagement_id: EngagementId,
         *,
         prefix: str | None = None,
+        depth: int | None = None,
         limit: int = 50,
         offset: int = 0,
-    ) -> Page[DocumentResponse]:
+    ) -> DocumentListingResponse:
         params: dict[str, str | int] = {"limit": limit, "offset": offset}
         if prefix is not None:
             params["prefix"] = prefix
+        if depth is not None:
+            params["depth"] = depth
         response = self._client.get(
             f"/api/v1/engagements/{engagement_id}/documents",
             params=params,
         )
-        adapter: TypeAdapter[Page[DocumentResponse]] = TypeAdapter(Page[DocumentResponse])
+        adapter: TypeAdapter[DocumentListingResponse] = TypeAdapter(DocumentListingResponse)
         return self._get_json(response, adapter)
 
     def get_document_content(self, engagement_id: EngagementId, document_path: str) -> bytes:
