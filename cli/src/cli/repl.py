@@ -2,22 +2,30 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+from typing import cast
 from uuid import UUID
 
+import questionary
 from prompt_toolkit import PromptSession
 from rich.console import Console
-from rich.markdown import Markdown
 from rich.status import Status
 
-from backend.api.contracts.v1.responses import AskResponse, CitationResponse
+from backend.api.contracts.v1.responses import (
+    AskResponse,
+    CitationResponse,
+    EngagementResponse,
+    SessionSummaryResponse,
+)
 from cli.client import AuditApiClient, CliApiError, unwrap_answer, unwrap_insufficient
 from cli.render import (
-    render_ask_response,
+    render_assistant_message,
     render_document_bytes,
-    render_engagements,
     render_error,
     render_session_detail,
     render_session_summaries,
+    render_upload_status,
+    render_user_message,
 )
 from domain.engagement import EngagementId
 
@@ -25,11 +33,14 @@ HELP_TEXT = """Slash commands:
   /engagement     Switch engagement (clears session)
   /new            Start a new session on the next question
   /sessions       List recent sessions
-  /resume <id>    Load a session and show its turns
+  /resume [id]    Resume a session (picker if no id)
+  /upload <path> <folder>  Upload to the active engagement under <folder>
   /open <n>       Open citation [n] from the last answer
   /help           Show this help
   /quit           Exit
 """
+
+_NEW_SESSION = object()
 
 
 class ReplState:
@@ -50,22 +61,46 @@ def _collect_citations(response: AskResponse) -> tuple[CitationResponse, ...]:
     return ()
 
 
+def _select_choice(message: str, choices: list[questionary.Choice]) -> object | None:
+    """Arrow-key radiolist. Returns None if cancelled (Ctrl+C / Esc)."""
+    return questionary.select(message, choices=choices).ask()
+
+
+def _engagement_label(item: EngagementResponse) -> str:
+    return f"{item.name}  ({item.id})  [{item.document_count} docs]"
+
+
+def _session_label(item: SessionSummaryResponse) -> str:
+    return f"{item.title}  ({item.id})  [{item.turn_count} turns, {item.updated_at.isoformat()}]"
+
+
 def _select_engagement(client: AuditApiClient, console: Console) -> EngagementId:
     page = client.list_engagements(limit=200, offset=0)
     if not page.items:
         console.print("No engagements yet. Create one on the server, then restart /engagement.")
         raise SystemExit(1)
-    render_engagements(console, page.items)
-    while True:
-        choice = console.input("Engagement id (or number 1..n): ").strip()
-        if choice.isdigit():
-            index = int(choice) - 1
-            if 0 <= index < len(page.items):
-                return page.items[index].id
-        for item in page.items:
-            if item.id == choice:
-                return item.id
-        console.print("[red]Invalid choice.[/red]")
+    choices = [
+        questionary.Choice(title=_engagement_label(item), value=item.id) for item in page.items
+    ]
+    selected = _select_choice("Select engagement:", choices)
+    if selected is None:
+        raise SystemExit(0)
+    return cast(EngagementId, selected)
+
+
+def _load_session(
+    client: AuditApiClient,
+    console: Console,
+    engagement_id: EngagementId,
+    state: ReplState,
+    session_uuid: UUID,
+) -> None:
+    detail = client.get_session(engagement_id, session_uuid)
+    state.session_id = detail.id
+    if detail.turns:
+        state.last_answer = detail.turns[-1].answer
+        state.last_citations = _collect_citations(state.last_answer)
+    render_session_detail(console, detail)
 
 
 def _pick_initial_session(
@@ -78,18 +113,32 @@ def _pick_initial_session(
     if not page.items:
         console.print("No prior sessions — the first question will start a new one.")
         return
-    render_session_summaries(console, page.items)
-    choice = console.input("Resume session id (empty for new): ").strip()
-    if not choice:
+
+    choices: list[questionary.Choice] = [
+        questionary.Choice(title="Start new session", value=_NEW_SESSION),
+        *(questionary.Choice(title=_session_label(item), value=item.id) for item in page.items),
+    ]
+    selected = _select_choice("Resume or start new?", choices)
+    if selected is None or selected is _NEW_SESSION:
         return
-    try:
-        session_uuid = UUID(choice)
-    except ValueError:
-        console.print("[red]Invalid session id.[/red]")
+    _load_session(client, console, engagement_id, state, cast(UUID, selected))
+
+
+def _resume_session_picker(
+    client: AuditApiClient,
+    console: Console,
+    engagement_id: EngagementId,
+    state: ReplState,
+) -> None:
+    page = client.list_sessions(engagement_id, limit=50, offset=0)
+    if not page.items:
+        console.print("No sessions to resume.")
         return
-    detail = client.get_session(engagement_id, session_uuid)
-    state.session_id = detail.id
-    render_session_detail(console, detail)
+    choices = [questionary.Choice(title=_session_label(item), value=item.id) for item in page.items]
+    selected = _select_choice("Resume session:", choices)
+    if selected is None:
+        return
+    _load_session(client, console, engagement_id, state, cast(UUID, selected))
 
 
 def _find_citation(state: ReplState, marker: int) -> CitationResponse | None:
@@ -97,6 +146,29 @@ def _find_citation(state: ReplState, marker: int) -> CitationResponse | None:
         if citation.marker == marker:
             return citation
     return None
+
+
+def _upload_to_engagement(
+    client: AuditApiClient,
+    console: Console,
+    engagement_id: EngagementId,
+    raw_path: str,
+    folder: str,
+) -> None:
+    cleaned = raw_path.strip().strip("\"'")
+    path = Path(cleaned).expanduser()
+    try:
+        with Status(f"Uploading {path}…", console=console):
+            accepted = client.upload_path(engagement_id, path, folder=folder)
+        console.print(f"Upload queued: {accepted.upload_id} → folder [cyan]{folder}[/cyan]")
+        with Status("Waiting for upload…", console=console):
+            final = client.wait_upload(engagement_id, accepted.upload_id)
+    except CliApiError as exc:
+        render_error(console, exc)
+    except (FileNotFoundError, ValueError, OSError) as exc:
+        console.print(f"[red]{exc}[/red]")
+    else:
+        render_upload_status(console, final)
 
 
 def _handle_slash(
@@ -110,17 +182,19 @@ def _handle_slash(
     parts = line.split()
     command = parts[0].lower()
     args = parts[1:]
+    remainder = line.split(maxsplit=1)[1] if len(line.split(maxsplit=1)) == 2 else ""
 
     match command:
         case "/quit" | "/exit":
             return False
         case "/help":
-            console.print(Markdown(HELP_TEXT))
+            console.print(HELP_TEXT)
         case "/new":
             state.session_id = None
             console.print("Next question starts a new session.")
         case "/engagement":
-            state.engagement_id = _select_engagement(client, console)
+            selected = _select_engagement(client, console)
+            state.engagement_id = selected
             state.session_id = None
             state.last_answer = None
             state.last_citations = ()
@@ -134,20 +208,27 @@ def _handle_slash(
         case "/resume":
             if state.engagement_id is None:
                 console.print("[red]No engagement selected.[/red]")
-            elif len(args) != 1:
-                console.print("[red]Usage: /resume <session_id>[/red]")
-            else:
+            elif len(args) == 0:
+                _resume_session_picker(client, console, state.engagement_id, state)
+            elif len(args) == 1:
                 try:
                     session_uuid = UUID(args[0])
                 except ValueError:
                     console.print("[red]Invalid session id.[/red]")
                 else:
-                    detail = client.get_session(state.engagement_id, session_uuid)
-                    state.session_id = detail.id
-                    if detail.turns:
-                        state.last_answer = detail.turns[-1].answer
-                        state.last_citations = _collect_citations(state.last_answer)
-                    render_session_detail(console, detail)
+                    _load_session(client, console, state.engagement_id, state, session_uuid)
+            else:
+                console.print("[red]Usage: /resume [session_id][/red]")
+        case "/upload":
+            if state.engagement_id is None:
+                console.print("[red]No engagement selected.[/red]")
+            else:
+                upload_parts = remainder.rsplit(maxsplit=1)
+                if len(upload_parts) != 2 or not upload_parts[0] or not upload_parts[1]:
+                    console.print("[red]Usage: /upload <path> <folder>[/red]")
+                else:
+                    raw_path, folder = upload_parts
+                    _upload_to_engagement(client, console, state.engagement_id, raw_path, folder)
         case "/open":
             if state.engagement_id is None:
                 console.print("[red]No engagement selected.[/red]")
@@ -180,6 +261,7 @@ def _ask_question(
     if state.engagement_id is None:
         console.print("[red]No engagement selected.[/red]")
         return
+    render_user_message(console, question)
     try:
         with Status("Thinking…", console=console):
             response = client.ask(
@@ -193,7 +275,7 @@ def _ask_question(
     state.session_id = _session_from_response(response)
     state.last_answer = response
     state.last_citations = _collect_citations(response)
-    render_ask_response(console, response)
+    render_assistant_message(console, response)
 
 
 def _session_from_response(response: AskResponse) -> UUID:

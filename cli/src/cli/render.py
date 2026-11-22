@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal, assert_never
+
 from rich.console import Console
 from rich.markdown import Markdown
 from rich.panel import Panel
@@ -68,7 +70,26 @@ def render_suggestions(
     for index, item in enumerate(questions, start=1):
         lines.append(f"{index}. {item.question}")
         lines.append(f"   {item.rationale}")
-    console.print(Panel("\n".join(lines), title="Suggested client questions", border_style="yellow"))
+    console.print(
+        Panel("\n".join(lines), title="Suggested client questions", border_style="yellow")
+    )
+
+
+def render_speaker(console: Console, role: Literal["you", "assistant"]) -> None:
+    """Print a blank line then a bold colored speaker label."""
+    console.print()
+    match role:
+        case "you":
+            console.print(Text("You", style="bold cyan"))
+        case "assistant":
+            console.print(Text("Assistant", style="bold green"))
+        case _:
+            assert_never(role)
+
+
+def render_user_message(console: Console, question: str) -> None:
+    render_speaker(console, "you")
+    console.print(question)
 
 
 def render_ask_response(console: Console, response: AskResponse) -> None:
@@ -76,7 +97,6 @@ def render_ask_response(console: Console, response: AskResponse) -> None:
     if answered is not None:
         console.print(Markdown(answered.answer))
         render_citations(console, answered.citations)
-        console.print(Text(f"session_id: {answered.session_id}", style="dim"))
         return
 
     insufficient = unwrap_insufficient(response)
@@ -92,6 +112,11 @@ def render_ask_response(console: Console, response: AskResponse) -> None:
             render_citations(console, insufficient.partial_citations)
         render_suggestions(console, insufficient.suggested_client_questions)
         console.print(Text(f"session_id: {insufficient.session_id}", style="dim"))
+
+
+def render_assistant_message(console: Console, response: AskResponse) -> None:
+    render_speaker(console, "assistant")
+    render_ask_response(console, response)
 
 
 def render_engagements(console: Console, engagements: tuple[EngagementResponse, ...]) -> None:
@@ -138,8 +163,8 @@ def render_session_detail(console: Console, session: SessionDetailResponse) -> N
 
 
 def render_turn(console: Console, turn: TurnResponse) -> None:
-    console.print(Text(f"\n— Turn {turn.ordinal + 1}: {turn.question}", style="bold blue"))
-    render_ask_response(console, turn.answer)
+    render_user_message(console, turn.question)
+    render_assistant_message(console, turn.answer)
 
 
 def render_upload_status(console: Console, upload: UploadResponse) -> None:
