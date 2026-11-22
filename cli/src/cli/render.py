@@ -24,7 +24,6 @@ from backend.api.contracts.v1.responses import (
     UploadSummaryResponse,
 )
 from cli.client import CliApiError, unwrap_answer, unwrap_insufficient
-from domain.answer import InsufficientReason
 
 
 def render_error(console: Console, error: CliApiError) -> None:
@@ -61,28 +60,18 @@ def render_citations(console: Console, citations: tuple[CitationResponse, ...]) 
     console.print(Panel(body, title="Citations", border_style="cyan"))
 
 
-def _reason_label(reason: InsufficientReason) -> str:
-    if reason is InsufficientReason.NO_RELEVANT_PASSAGES:
-        return "No relevant passages were retrieved for this question."
-    if reason is InsufficientReason.MODEL_JUDGED_INSUFFICIENT:
-        return "The model judged the retrieved evidence insufficient."
-    msg = f"unexpected reason: {reason!r}"
-    raise AssertionError(msg)
-
-
-def render_suggestions(
+def render_insufficient(
     console: Console,
+    *,
     questions: tuple[SuggestedClientQuestionResponse, ...],
 ) -> None:
+    console.print("I have insufficient information to answer confidently.")
     if not questions:
         return
-    lines: list[str] = []
-    for index, item in enumerate(questions, start=1):
-        lines.append(f"{index}. {item.question}")
-        lines.append(f"   {item.rationale}")
-    console.print(
-        Panel("\n".join(lines), title="Suggested client questions", border_style="yellow")
-    )
+    console.print()
+    console.print("May I ask you to give me more details about:")
+    for item in questions:
+        console.print(f"- {item.question}")
 
 
 def render_speaker(console: Console, role: Literal["you", "agent"]) -> None:
@@ -173,16 +162,12 @@ def render_ask_response(console: Console, response: AskResponse) -> None:
 
     insufficient = unwrap_insufficient(response)
     if insufficient is not None:
-        console.print(
-            Panel(
-                _reason_label(insufficient.reason),
-                title="Insufficient evidence",
-                border_style="yellow",
-            )
+        render_insufficient(
+            console,
+            questions=insufficient.suggested_client_questions,
         )
         if insufficient.partial_citations:
             render_citations(console, insufficient.partial_citations)
-        render_suggestions(console, insufficient.suggested_client_questions)
         console.print(Text(f"session_id: {insufficient.session_id}", style="dim"))
 
 
