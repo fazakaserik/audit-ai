@@ -9,10 +9,10 @@ from typing import Protocol, TypeVar
 
 from pydantic import BaseModel
 
-from domain.answer import Answer, Question
+from domain.answer import Answer
 from domain.document import Document, DocumentId, DocumentPath, FolderPath
 from domain.engagement import Engagement, EngagementId
-from domain.passage import Passage, PassageId
+from domain.passage import Passage
 from domain.session import Session, SessionId, Turn, TurnId
 from domain.upload import Upload, UploadId, UploadItem, UploadItemId
 
@@ -152,6 +152,14 @@ class SessionRepository(Protocol):
     async def bump_turn_count(self, session_id: SessionId, *, title: str | None = None) -> Session: ...
 
 
+class AskSessionBound(Protocol):
+    """Repos/session/vector ports needed by ask_question (avoids bootstrap import)."""
+
+    engagements: EngagementRepository
+    sessions: SessionRepository
+    vector_index: VectorIndex
+
+
 class JobQueue(Protocol):
     async def enqueue_items(self, items: Sequence[UploadItem]) -> None: ...
 
@@ -170,6 +178,8 @@ class UploadRepository(Protocol):
         engagement_id: EngagementId,
         upload_id: UploadId,
     ) -> tuple[Upload, list[UploadItem]] | None: ...
+
+    async def get_by_id(self, upload_id: UploadId) -> Upload | None: ...
 
     async def mark_processing(self, upload_id: UploadId) -> None: ...
 
