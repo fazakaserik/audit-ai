@@ -63,6 +63,16 @@ async def _prepare_session(
     return session, prior_turns
 
 
+def _thinking_from_progress(
+    progress: CollectingAskProgress | None,
+) -> tuple[str | None, float | None]:
+    if progress is None:
+        return None, None
+    text = "".join(progress.thinking_chunks).strip() or None
+    seconds = round(progress.thinking_seconds, 1) if progress.thinking_seconds > 0 else None
+    return text, seconds
+
+
 async def _persist_turn(
     bound: AskSessionBound,
     *,
@@ -70,9 +80,11 @@ async def _persist_turn(
     question: Question,
     answer: Answer,
     standalone_question: str,
+    progress: CollectingAskProgress | None = None,
 ) -> AskResult:
     sessions: SessionRepository = bound.sessions
     now = utc_now()
+    thinking_text, thinking_seconds = _thinking_from_progress(progress)
     turn = Turn(
         id=TurnId(new_uuid()),
         session_id=session.id,
@@ -81,6 +93,8 @@ async def _persist_turn(
         standalone_question=standalone_question,
         answer=answer,
         created_at=now,
+        thinking_text=thinking_text,
+        thinking_seconds=thinking_seconds,
     )
     await sessions.add_turn(turn)
     title_update = _title_from_question(question.text) if session.turn_count == 0 else None
@@ -109,11 +123,13 @@ async def ask_question(
         question=question,
         session_id=session_id,
     )
+    progress = CollectingAskProgress()
     deps = AskGraphDeps(
         chat=chat,
         embedder=embedder,
         vector_index=bound.vector_index,
         settings=settings,
+        progress=progress,
     )
     graph_result = await run_ask_graph(
         engagement_id=engagement_id,
@@ -128,6 +144,7 @@ async def ask_question(
         question=question,
         answer=graph_result.answer,
         standalone_question=graph_result.standalone_question,
+        progress=progress,
     )
 
 
@@ -185,6 +202,7 @@ async def ask_question_stream(
                 question=question,
                 answer=graph_result.answer,
                 standalone_question=graph_result.standalone_question,
+                progress=progress,
             )
             await emit({"type": "final", "result": result})
         except Exception as exc:

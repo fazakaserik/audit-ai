@@ -164,6 +164,8 @@ def turn_to_response(turn: Turn, *, request_id: RequestId) -> TurnResponse:
         standalone_question=turn.standalone_question,
         answer=answer_response,
         created_at=turn.created_at,
+        thinking_text=turn.thinking_text,
+        thinking_seconds=turn.thinking_seconds,
     )
 
 

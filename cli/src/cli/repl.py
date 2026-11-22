@@ -10,6 +10,7 @@ import questionary
 from prompt_toolkit import PromptSession
 from rich.console import Console
 from rich.status import Status
+from rich.text import Text
 
 from backend.api.contracts.v1.responses import (
     AskResponse,
@@ -82,7 +83,9 @@ def _engagement_label(item: EngagementResponse) -> str:
 
 
 def _session_label(item: SessionSummaryResponse) -> str:
-    return f"{item.title}  ({item.id})  [{item.turn_count} turns, {item.updated_at.isoformat()}]"
+    # Put updated_at first so the newest sessions are easy to spot in the picker.
+    stamp = item.updated_at.strftime("%Y-%m-%d %H:%M")
+    return f"[{stamp}] {item.title}  ({item.turn_count} turns)  {item.id}"
 
 
 def _select_engagement(client: AuditApiClient, console: Console) -> EngagementId:
@@ -444,6 +447,7 @@ def _ask_question(
                     if not saw_thinking:
                         status.stop()
                         console.print()
+                        console.print(Text("\tThought process", style="dim bold"))
                         saw_thinking = True
                     thinking_at_line_start = render_thinking_delta(
                         console,

@@ -762,6 +762,14 @@ components:
         created_at:
           type: string
           format: date-time
+        thinking_text:
+          type: string
+          nullable: true
+          description: Native model thinking transcript for this turn (if any)
+        thinking_seconds:
+          type: number
+          nullable: true
+          description: Wall-clock seconds spent in thinking-capable chat calls
 
     SessionDetailResponse:
       allOf:

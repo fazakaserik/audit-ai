@@ -102,20 +102,29 @@ async def test_post_ask_stream_progress_and_final() -> None:
             f"/api/v1/engagements/{engagement_id}/ask/stream",
             json={"question": "What are the meal limits?"},
         )
+        assert response.status_code == 200
+        assert "text/event-stream" in response.headers["content-type"]
+        events = _parse_sse(response.text)
+        types = [str(event.get("type")) for event in events]
+        assert "stage" in types
+        assert "sources" in types
+        assert "thinking_delta" in types
+        assert types.count("thinking_done") == 1
+        assert types[-1] == "final"
+        thinking_done = next(event for event in events if event.get("type") == "thinking_done")
+        assert thinking_done.get("duration_seconds") == round(1.26, 1)
+        final = events[-1]["response"]
+        assert isinstance(final, dict)
+        assert final["status"] == "answered"
+        sources = next(event for event in events if event.get("type") == "sources")
+        assert sources["sources"][0]["path"] == "policies/expense-policy.md"
 
-    assert response.status_code == 200
-    assert "text/event-stream" in response.headers["content-type"]
-    events = _parse_sse(response.text)
-    types = [str(event.get("type")) for event in events]
-    assert "stage" in types
-    assert "sources" in types
-    assert "thinking_delta" in types
-    assert types.count("thinking_done") == 1
-    assert types[-1] == "final"
-    thinking_done = next(event for event in events if event.get("type") == "thinking_done")
-    assert thinking_done.get("duration_seconds") == round(1.26, 1)
-    final = events[-1]["response"]
-    assert isinstance(final, dict)
-    assert final["status"] == "answered"
-    sources = next(event for event in events if event.get("type") == "sources")
-    assert sources["sources"][0]["path"] == "policies/expense-policy.md"
+        session_id = final["session_id"]
+        detail = await client.get(
+            f"/api/v1/engagements/{engagement_id}/sessions/{session_id}",
+        )
+        assert detail.status_code == 200
+        turns = detail.json()["turns"]
+        assert len(turns) == 1
+        assert turns[0]["thinking_text"] == "Checking policy passages…"
+        assert turns[0]["thinking_seconds"] == round(1.26, 1)

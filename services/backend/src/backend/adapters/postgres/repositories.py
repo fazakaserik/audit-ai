@@ -184,6 +184,8 @@ def _turn_from_row(row: SessionTurnRow) -> Turn:
         standalone_question=row.standalone_question,
         answer=_answer_from_dict(row.answer),
         created_at=_aware(row.created_at),
+        thinking_text=row.thinking_text,
+        thinking_seconds=row.thinking_seconds,
     )
 
 
@@ -402,6 +404,8 @@ class PostgresSessionRepository:
             question=turn.question.model_dump(mode="json"),
             standalone_question=turn.standalone_question,
             answer=_answer_to_dict(turn.answer),
+            thinking_text=turn.thinking_text,
+            thinking_seconds=turn.thinking_seconds,
             created_at=turn.created_at,
         )
         self._session.add(row)

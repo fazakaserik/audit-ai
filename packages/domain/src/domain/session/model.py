@@ -37,3 +37,5 @@ class Turn(BaseModel):
     standalone_question: Annotated[str, Field(min_length=1)]
     answer: Answer
     created_at: datetime
+    thinking_text: str | None = None
+    thinking_seconds: float | None = None

@@ -139,9 +139,9 @@ def render_thinking_delta(console: Console, text: str, *, at_line_start: bool) -
     """Print dim thinking text with a leading tab on each line. Returns next at_line_start."""
     if not text:
         return at_line_start
-    indented = text.replace("\n", "\n")
+    indented = text.replace("\n", "\n\t")
     if at_line_start:
-        indented = indented
+        indented = "\t" + indented
     console.print(Text(indented, style="dim"), end="")
     return text.endswith("\n")
 
@@ -149,6 +149,24 @@ def render_thinking_delta(console: Console, text: str, *, at_line_start: bool) -
 def render_thinking_done(console: Console, duration_seconds: float) -> None:
     console.print()
     console.print(Text(f"\tThought for {duration_seconds:.1f} seconds", style="dim"))
+
+
+def render_persisted_thinking(
+    console: Console,
+    *,
+    thinking_text: str | None,
+    thinking_seconds: float | None,
+) -> None:
+    """Replay stored thinking as a stable dim block (not streamed end='')."""
+    if not thinking_text and not thinking_seconds:
+        return
+    console.print(Text("\tThought process", style="dim bold"))
+    if thinking_text:
+        lines = thinking_text.splitlines() or [thinking_text]
+        block = "\n".join(f"\t{line}" for line in lines)
+        console.print(Text(block, style="dim"))
+    if thinking_seconds is not None and thinking_seconds > 0:
+        console.print(Text(f"\tThought for {thinking_seconds:.1f} seconds", style="dim"))
 
 
 def render_ask_response(console: Console, response: AskResponse) -> None:
@@ -173,8 +191,19 @@ def render_ask_response(console: Console, response: AskResponse) -> None:
         console.print(Text(f"session_id: {insufficient.session_id}", style="dim"))
 
 
-def render_agent_message(console: Console, response: AskResponse) -> None:
+def render_agent_message(
+    console: Console,
+    response: AskResponse,
+    *,
+    thinking_text: str | None = None,
+    thinking_seconds: float | None = None,
+) -> None:
     render_speaker(console, "agent")
+    render_persisted_thinking(
+        console,
+        thinking_text=thinking_text,
+        thinking_seconds=thinking_seconds,
+    )
     render_ask_response(console, response)
 
 
@@ -287,13 +316,29 @@ def render_session_detail(console: Console, session: SessionDetailResponse) -> N
     console.print(
         Text(f"Session {session.id} — {session.title} ({session.turn_count} turns)", style="bold")
     )
+    if session.turns and not any(
+        turn.thinking_text or (turn.thinking_seconds is not None and turn.thinking_seconds > 0)
+        for turn in session.turns
+    ):
+        console.print(
+            Text(
+                "No saved thought process in this session "
+                "(only asks made after thinking-persist store it — ask again to capture).",
+                style="dim italic",
+            )
+        )
     for turn in session.turns:
         render_turn(console, turn)
 
 
 def render_turn(console: Console, turn: TurnResponse) -> None:
     render_user_message(console, turn.question)
-    render_agent_message(console, turn.answer)
+    render_agent_message(
+        console,
+        turn.answer,
+        thinking_text=turn.thinking_text,
+        thinking_seconds=turn.thinking_seconds,
+    )
 
 
 def render_upload_status(console: Console, upload: UploadResponse) -> None:

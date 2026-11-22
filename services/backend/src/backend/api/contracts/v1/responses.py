@@ -168,6 +168,8 @@ class TurnResponse(BaseModel):
     standalone_question: str
     answer: AskResponse
     created_at: datetime
+    thinking_text: str | None = None
+    thinking_seconds: float | None = None
 
 
 class SessionDetailResponse(SessionSummaryResponse):
