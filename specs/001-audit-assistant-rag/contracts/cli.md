@@ -1,6 +1,6 @@
 # CLI Contract: `audit-ai`
 
-Package: `cli/` (import name `cli`). Speaks only HTTP using `domain.contracts.v1` models. Base URL from `AUDIT_API_BASE_URL` (default `http://localhost:8000`).
+Package: `cli/` (import name `cli`). Speaks only HTTP using `backend.api.contracts.v1` models. Base URL from `AUDIT_API_BASE_URL` (default `http://localhost:8000`).
 
 ## Entry points
 

@@ -1,0 +1,84 @@
+[project]
+name = "audit-ai"
+version = "0.1.0"
+description = "Document-grounded auditor assistant (RAG)"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = []
+
+[tool.uv.workspace]
+members = [
+  "packages/domain",
+  "services/backend",
+  "cli",
+]
+
+[dependency-groups]
+dev = [
+  "basedpyright>=1.28.0",
+  "import-linter>=2.1",
+  "pytest>=8.3",
+  "pytest-asyncio>=0.25",
+  "ruff>=0.9",
+  "testcontainers[postgres]>=4.9",
+  "httpx>=0.28",
+]
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+src = [
+  "packages/domain/src",
+  "services/backend/src",
+  "cli/src",
+  "tests",
+  "scripts",
+]
+
+[tool.ruff.lint]
+select = [
+  "E",
+  "F",
+  "I",
+  "UP",
+  "B",
+  "SIM",
+  "ASYNC",
+  "RUF",
+  "TCH",
+]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["domain", "backend", "cli"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = [
+  "unit: offline unit tests (default)",
+  "db: Postgres+pgvector via testcontainers",
+  "integration: real Ollama/OpenAI (opt-in)",
+]
+testpaths = ["tests"]
+addopts = "-m \"not db and not integration\""
+
+[tool.basedpyright]
+include = [
+  "packages/domain/src",
+  "services/backend/src",
+  "cli/src",
+  "tests",
+  "scripts",
+]
+exclude = [
+  "**/__pycache__",
+  ".venv",
+]
+pythonVersion = "3.13"
+typeCheckingMode = "strict"
+venvPath = "."
+venv = ".venv"
+reportMissingImports = true
+reportAny = true
+reportExplicitAny = true

@@ -1,0 +1,17 @@
+{
+  "include": [
+    "packages/domain/src",
+    "services/backend/src",
+    "cli/src",
+    "tests",
+    "scripts"
+  ],
+  "exclude": ["**/__pycache__", ".venv"],
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.13",
+  "typeCheckingMode": "strict",
+  "reportMissingImports": true,
+  "reportAny": "error",
+  "reportExplicitAny": "error"
+}

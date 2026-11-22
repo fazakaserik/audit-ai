@@ -20,29 +20,29 @@ Build a backend-only, document-grounded auditor assistant as a uv monorepo. Clie
 
 **Target Platform**: Linux containers via Docker Compose (dev/demo); Windows/macOS hosts for CLI and optional host-side Ollama
 
-**Project Type**: uv workspace monorepo — library packages + HTTP API service + worker service + terminal CLI
+**Project Type**: uv workspace monorepo — `domain` + single `backend` service (API + logic + worker) + terminal CLI
 
 **Performance Goals**: Cloud mode: 90% of sample-engagement questions answered under 10 seconds (SC-007). Upload acceptance under 1 second for uploads within limits. Seed-to-first-answer under 15 minutes for a reviewer (SC-001).
 
 **Constraints**: Offline default test suite (no network, no paid keys, no Docker). Answers MUST NOT use model general knowledge. Engagement isolation enforced in data access. No auth/users. No OCR. No streaming. Secret-free config samples. basedpyright strict + import-linter + ruff must pass (`just check`).
 
-**Scale/Scope**: Demo / interview prototype: 1–few engagements, hundreds of documents, tens of thousands of passages. Designed so API and worker scale independently; multi-instance ready (stateless API, shared Postgres, SKIP LOCKED jobs).
+**Scale/Scope**: Demo / interview prototype: 1–few engagements, hundreds of documents, tens of thousands of passages. Single backend service; optional second worker container from the same image; shared Postgres with SKIP LOCKED jobs.
 
 ## Constitution Check
 
 _GATE: Must pass before Phase 0 research. Re-check after Phase 1 design._
 
-| Principle                                    | Status | How the plan complies                                                                                                                                |
-| -------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| I. Strict Type Safety                        | PASS   | basedpyright strict in `just check`; frozen pydantic domain models; distinct id NewTypes; `assert_never` on unions; `Any` only inside adapters       |
-| II. Enforced Layering                        | PASS   | five workspace members with import-linter contracts; ports in `core.application`; vendors only in adapters; CLI depends only on `domain` |
-| III. Tested Behaviour, Offline by Default    | PASS   | required paths listed in research; fakes behind the same ports; `db` and `integration` markers opt-in                                                |
-| IV. Consistent Errors and Safe Observability | PASS   | RFC 9457 Problem Details + stable `ErrorCode` enum; single mapper in `api`; structlog JSON; no document content/secrets in logs                |
-| V. Simplicity Over Breadth                   | PASS   | scope matches spec P1→P3; auth/OCR/frontend/streaming stay as next steps; ports have ≥2 implementations (real + fake, or openai + ollama)            |
-| Product & Security                           | PASS   | grounded answers with citation post-filter; engagement filters in SQL; zip path traversal rejected; OpenAI and Ollama modes by config                |
-| Workflow & Quality Gates                     | PASS   | `just check` = ruff + basedpyright + import-linter + offline tests; Alembic-only schema changes                                                      |
+| Principle                                    | Status | How the plan complies                                                                                                                          |
+| -------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| I. Strict Type Safety                        | PASS   | basedpyright strict in `just check`; frozen pydantic domain models; distinct id NewTypes; `assert_never` on unions; `Any` only inside adapters |
+| II. Enforced Layering                        | PASS   | three workspace members; ports in `backend.application`; vendors only in adapters; CLI uses `backend.api.contracts` over HTTP                  |
+| III. Tested Behaviour, Offline by Default    | PASS   | required paths listed in research; fakes behind the same ports; `db` and `integration` markers opt-in                                          |
+| IV. Consistent Errors and Safe Observability | PASS   | RFC 9457 Problem Details + stable `ErrorCode` enum; single mapper in `backend.api`; structlog JSON; no document content/secrets in logs        |
+| V. Simplicity Over Breadth                   | PASS   | single backend (not split api/core/worker packages); scope matches spec P1→P3; auth/OCR/frontend/streaming stay as next steps                  |
+| Product & Security                           | PASS   | grounded answers with citation post-filter; engagement filters in SQL; zip path traversal rejected; OpenAI and Ollama modes by config          |
+| Workflow & Quality Gates                     | PASS   | `just check` = ruff + basedpyright + import-linter + offline tests; Alembic-only schema changes under `services/backend`                       |
 
-No unjustified violations. Justified complexity (worker process, hybrid search, interactive CLI) is recorded in [research.md](./research.md), not as constitution breaches.
+No unjustified violations. Justified complexity (optional worker process, hybrid search, interactive CLI) is recorded in [research.md](./research.md), not as constitution breaches.
 
 ## Project Structure
 
@@ -65,119 +65,30 @@ specs/001-audit-assistant-rag/
 ```text
 audit-ai/
 ├── packages/
-│   ├── domain/                          # domain
-│   │   ├── pyproject.toml
-│   │   └── src/domain/
-│   │       ├── __init__.py
-│   │       ├── ids.py                   # NewTypes, EngagementId, DocumentPath, ...
-│   │       ├── enums.py                 # ErrorCode, UploadStatus, AnswerStatus, ...
-│   │       ├── models.py                # entities + Answer union
-│   │       ├── errors.py                # DomainError hierarchy
-│   │       ├── problem.py               # ProblemDetails model
-│   │       └── contracts/
-│   │           └── v1/
-│   │               ├── requests.py
-│   │               ├── responses.py
-│   │               ├── mapping.py
-│   │               └── page.py
-│   └── core/                            # core
+│   └── domain/                          # domain (feature packages)
 │       ├── pyproject.toml
-│       └── src/core/
-│           ├── __init__.py
-│           ├── config.py                # pydantic-settings (flat env names)
-│           ├── bootstrap.py             # composition root → frozen Container
-│           ├── application/
-│           │   ├── ports.py             # Protocols
-│           │   ├── create_engagement.py
-│           │   ├── upload_documents.py
-│           │   ├── get_upload.py
-│           │   ├── list_documents.py
-│           │   ├── get_document.py
-│           │   ├── ask_question.py
-│           │   ├── list_sessions.py
-│           │   └── get_session.py
-│           ├── rag/
-│           │   ├── state.py
-│           │   ├── graph.py
-│           │   ├── nodes.py
-│           │   ├── prompts.py
-│           │   └── citations.py         # marker post-filter / renumber
-│           ├── ingestion/
-│           │   ├── archive.py           # zip validation + safe extract listing
-│           │   ├── parsers.py           # md / txt / pdf
-│           │   ├── chunking.py
-│           │   └── process_item.py      # per-file pipeline used by worker
-│           └── adapters/
-│               ├── openai_chat.py
-│               ├── openai_embed.py
-│               ├── ollama_chat.py
-│               ├── ollama_embed.py
-│               ├── postgres/
-│               │   ├── engine.py
-│               │   ├── models.py        # SQLAlchemy Mapped[...] tables
-│               │   ├── repositories.py
-│               │   ├── vector_index.py  # hybrid search + RRF
-│               │   └── job_queue.py
-│               └── local_fs.py
+│       └── src/domain/
+│           ├── common.py / errors.py / problem.py / providers.py
+│           ├── engagement/ document/ upload/ passage/ answer/ session/
 ├── services/
-│   ├── api/                             # api
-│   │   ├── pyproject.toml
-│   │   ├── Dockerfile
-│   │   └── src/api/
-│   │       ├── main.py
-│   │       ├── dependencies.py
-│   │       ├── middleware.py
-│   │       ├── problem_handlers.py
-│   │       └── routers/
-│   │           ├── health.py
-│   │           ├── engagements.py
-│   │           ├── documents.py
-│   │           ├── uploads.py
-│   │           ├── ask.py
-│   │           └── sessions.py
-│   └── worker/                          # worker
+│   └── backend/                         # single backend service
 │       ├── pyproject.toml
 │       ├── Dockerfile
-│       └── src/worker/
-│           └── main.py                  # claim loop + graceful shutdown
-├── cli/                                 # cli (command: audit-ai)
-│   ├── pyproject.toml
-│   └── src/cli/
-│       ├── __init__.py
-│       ├── main.py                      # Typer app
-│       ├── client.py                    # httpx client using contracts/v1
-│       ├── render.py                    # Rich rendering
-│       └── repl.py                      # prompt_toolkit interactive session
-├── packages/core/migrations/            # Alembic (owned by core)
-│   ├── env.py
-│   └── versions/
-├── scripts/
-│   └── seed_samples.py
-├── docs/
-│   └── samples/
-│       ├── ai-generated/
-│       └── real/
-├── deployment/
-│   ├── docker-compose/
-│   │   ├── docker-compose.yml
-│   │   └── .env.example
-│   └── cloud/
-│       └── README.md
-├── tests/                               # workspace-root tests (or per-package; see note)
-│   ├── unit/
-│   ├── api/
-│   ├── db/
-│   ├── integration/
-│   └── support/                         # shared fakes implementing ports
-├── justfile
-├── pyproject.toml                       # uv workspace root
-├── uv.lock
-├── importlinter.ini
-├── pyrightconfig.json
-└── README.md
+│       ├── alembic.ini
+│       ├── migrations/
+│       └── src/backend/
+│           ├── config.py / bootstrap.py / logging.py
+│           ├── application/             # ports + use cases
+│           ├── adapters/                # postgres, openai, ollama, local_fs
+│           ├── rag/ ingestion/          # ask graph + ingest pipeline
+│           ├── api/                     # FastAPI + contracts/v1
+│           └── worker/main.py           # claim loop (same image)
+├── cli/                                 # audit-ai (HTTP client)
+├── scripts/ docs/samples/ deployment/ tests/
+├── justfile / pyproject.toml / uv.lock / importlinter.ini / README.md
 ```
 
-**Structure Decision**: Five-member uv workspace as decided in [research.md](./research.md). Tests live at the repo root so one `pytest` invocation covers all packages; packages remain importable as installed workspace members. Alembic migrations live under `packages/core` because schema ownership belongs with the Postgres adapters.
+**Structure Decision**: Three-member uv workspace (`domain`, `backend`, `cli`) as decided in [research.md](./research.md). Tests live at the repo root. Alembic migrations are owned by `services/backend`.
 
 ## Complexity Tracking
 

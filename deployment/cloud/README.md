@@ -8,8 +8,8 @@ This document describes how the Audit Assistant would run in Azure. The applicat
 
 | Concern                           | Local (docker compose)                   | Azure target                                                                   | Change in the service                   |
 | --------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------- |
-| API runtime                       | `api` container                          | Azure Container Apps (autoscaled, stateless replicas)                          | None                                    |
-| Ingestion worker runtime          | `worker` container                       | Container Apps Jobs, event-driven (KEDA scaling on queue length)               | None                                    |
+| API runtime                       | `backend` container                      | Azure Container Apps (autoscaled, stateless replicas)                          | None                                    |
+| Ingestion worker runtime          | `worker` (same backend image)            | Container Apps Jobs, event-driven (KEDA scaling on queue length)               | None                                    |
 | Metadata (engagements, documents) | PostgreSQL container                     | Azure Database for PostgreSQL Flexible Server                                  | Configuration only                      |
 | Passage search (vector + keyword) | pgvector in the same PostgreSQL          | Azure AI Search (hybrid search, semantic ranker)                               | New `VectorIndex` adapter               |
 | Document files                    | Local volume                             | Azure Blob Storage (one container per environment, engagement prefix per blob) | New `DocumentStorage` adapter           |

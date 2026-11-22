@@ -10,14 +10,13 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 
 ## Monorepo layout
 
-- **Decision**: One uv workspace at the repository root with five members (`cli/` is described under "Terminal client"):
-  - `packages/domain` (import name `domain`): the shared models, and the only place they are defined. It contains value objects (`EngagementId`, `DocumentPath`, ids), entities, the `Answer` union, error codes and the Problem Details model, and the versioned API contracts (`contracts/v1`: every request and response model). Its only dependency is pydantic, and every other member imports models from here.
-  - `packages/core` (import name `core`): application ports and use cases, the RAG graph, ingestion (archive validation, parsing, chunking), and the adapters (Postgres repositories, pgvector index, job queue, OpenAI and Ollama, local file storage), plus settings and the composition root. It has no dependency on the web framework.
-  - `services/api` (import name `api`): the HTTP layer only (app factory, versioned routers, Problem Details handlers, middleware). Own Dockerfile.
-  - `services/worker` (import name `worker`): the job-claiming loop, graceful shutdown and the worker health signal. Own Dockerfile.
-- **Rationale**: Two deployables that scale independently, each with a minimal image and dependency set, sharing one typed core. One `uv.lock` keeps versions consistent across the workspace.
-- **Import rules (enforced with import-linter)**: `domain` imports nothing from the project. In `core`, `application` imports only `domain`, and `adapters` implement `application` ports. `api` and `worker` depend on `core` and `domain` and never on each other. `cli` depends only on `domain` and never on `core`, which keeps it an HTTP-only client.
-- **Internal models vs contracts**: inside `domain`, the contract models in `contracts/v1` are separate classes from the internal entities, with explicit mapping functions. Internal changes then do not silently change the public API, and a future `v2` can sit next to `v1`.
+- **Decision**: One uv workspace at the repository root with three members:
+  - `packages/domain` (import name `domain`): feature-oriented domain models only (`domain.engagement`, `domain.document`, `domain.upload`, `domain.passage`, `domain.answer`, `domain.session`), plus shared root modules (`errors`, `problem`, `common`, `providers`). No HTTP contracts here. Only dependency: pydantic.
+  - `services/backend` (import name `backend`): HTTP API (`backend.api`, including `backend.api.contracts.v1`), application ports/use cases, RAG, ingestion, adapters, composition root, Alembic migrations, and the worker entrypoint (`backend.worker`). One Dockerfile; compose may run a second container of the same image with `audit-worker`.
+  - `cli/` (import name `cli`): interactive terminal client; HTTP only; imports `domain` and `backend.api.contracts`.
+- **Rationale**: Auditor tooling does not need independently scaled API/worker packages. A single backend is simpler to run and demo while still allowing an optional second worker process from the same image. One `uv.lock` keeps versions consistent.
+- **Import rules (enforced with import-linter)**: `domain` imports nothing from the project. `backend.application` imports only `domain`; vendors stay in `backend.adapters`. `cli` may import `domain` and `backend.api.contracts`, never application/adapters/worker/bootstrap.
+- **Internal models vs contracts**: domain entities live in feature packages under `domain`. HTTP DTOs and mappers live in `backend.api.contracts.v1`.
 
 ## Domain model (draft for data-model.md)
 

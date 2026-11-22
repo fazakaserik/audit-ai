@@ -20,7 +20,7 @@ description: "Task list for Audit Assistant implementation"
 
 ## Path Conventions
 
-Workspace layout from [plan.md](./plan.md): `packages/domain`, `packages/core`, `services/api`, `services/worker`, `cli/`, `tests/`, `deployment/docker-compose/`, `docs/samples/`, `scripts/`.
+Workspace layout from [plan.md](./plan.md): `packages/domain`, `services/backend`, `cli/`, `tests/`, `deployment/docker-compose/`, `docs/samples/`, `scripts/`.
 
 ---
 
@@ -28,18 +28,18 @@ Workspace layout from [plan.md](./plan.md): `packages/domain`, `packages/core`, 
 
 **Purpose**: uv workspace, tooling, empty package skeletons
 
-- [ ] T001 Create uv workspace root `pyproject.toml` (Python 3.13, workspace members) and directory tree per plan.md (`packages/domain`, `packages/core`, `services/api`, `services/worker`, `cli/`, `tests/`, `scripts/`, `docs/samples/ai-generated`, `docs/samples/real`)
-- [ ] T002 [P] Initialize `packages/domain/pyproject.toml` package `domain` (pydantic only) with `src/domain/__init__.py`
-- [ ] T003 [P] Initialize `packages/core/pyproject.toml` package `core` with `src/core/__init__.py` and dependency on `domain`
-- [ ] T004 [P] Initialize `services/api/pyproject.toml` package `api` with `src/api/__init__.py` and dependencies on `core`, `domain`, FastAPI
-- [ ] T005 [P] Initialize `services/worker/pyproject.toml` package `worker` with `src/worker/__init__.py` and dependency on `core`
-- [ ] T006 [P] Initialize `cli/pyproject.toml` package `cli` (console script `audit-ai`) with dependency on `domain` only (plus httpx/typer/rich/prompt_toolkit); MUST NOT depend on `core`
-- [ ] T007 [P] Add `pyrightconfig.json` (basedpyright strict, workspace extraPaths) and `ruff` config in root `pyproject.toml`
-- [ ] T008 [P] Add `importlinter.ini` contracts: domain→nothing; application→domain only; vendors only in `core.adapters`; api/worker↛each other; cli→domain only
-- [ ] T009 [P] Add root `justfile` recipes: `check`, `test`, `test-db`, `test-integration`, `migrate`, `up`, `seed` wrapping `uv run` / `docker compose`
-- [ ] T010 [P] Add secret-free `deployment/docker-compose/.env.example` with flat env names from research.md (`LLM_PROVIDER`, `DATABASE_URL`, …)
-- [ ] T011 [P] Add `.gitignore` entries for `.venv`, `__pycache__`, `.env`, `uv.lock` exception (commit lock), storage volumes, pytest cache
-- [ ] T012 Generate and commit `uv.lock` via `uv sync` for all workspace members
+- [x] T001 Create uv workspace root `pyproject.toml` (Python 3.13, workspace members) and directory tree per plan.md (`packages/domain`, `services/backend`, `cli/`, `tests/`, `scripts/`, `docs/samples/ai-generated`, `docs/samples/real`)
+- [x] T002 [P] Initialize `packages/domain/pyproject.toml` package `domain` (pydantic only) with `src/domain/__init__.py`
+- [x] T003 [P] Initialize `services/backend/pyproject.toml` package `backend` (legacy task text; now `backend`) with `src/core/__init__.py` and dependency on `domain`
+- [x] T004 [P] Initialize `services/api/pyproject.toml` package `api` with `src/api/__init__.py` and dependencies on `core`, `domain`, FastAPI
+- [x] T005 [P] Initialize `services/worker/pyproject.toml` package `worker` with `src/worker/__init__.py` and dependency on `core`
+- [x] T006 [P] Initialize `cli/pyproject.toml` package `cli` (console script `audit-ai`) with dependency on `domain` only (plus httpx/typer/rich/prompt_toolkit); MUST NOT import backend application/adapters (HTTP + contracts only)
+- [x] T007 [P] Add `pyrightconfig.json` (basedpyright strict, workspace extraPaths) and `ruff` config in root `pyproject.toml`
+- [x] T008 [P] Add `importlinter.ini` contracts: domain→nothing; application→domain only; vendors only in `core.adapters`; api/worker↛each other; cli→domain only
+- [x] T009 [P] Add root `justfile` recipes: `check`, `test`, `test-db`, `test-integration`, `migrate`, `up`, `seed` wrapping `uv run` / `docker compose`
+- [x] T010 [P] Add secret-free `deployment/docker-compose/.env.example` with flat env names from research.md (`LLM_PROVIDER`, `DATABASE_URL`, …)
+- [x] T011 [P] Add `.gitignore` entries for `.venv`, `__pycache__`, `.env`, `uv.lock` exception (commit lock), storage volumes, pytest cache
+- [x] T012 Generate and commit `uv.lock` via `uv sync` for all workspace members
 
 **Checkpoint**: `uv sync` succeeds; empty packages importable
 
@@ -59,25 +59,25 @@ Workspace layout from [plan.md](./plan.md): `packages/domain`, `packages/core`, 
 - [ ] T018 [P] Implement `contracts/v1/page.py` generic `Page[T]` (`items`, `total`, `limit`, `offset`) in `packages/domain/src/domain/contracts/v1/page.py`
 - [ ] T019 [P] Implement request DTOs in `packages/domain/src/domain/contracts/v1/requests.py` (`CreateEngagementRequest`, `AskRequest`) matching contracts/openapi.yaml
 - [ ] T020 Implement response DTOs + mappers in `packages/domain/src/domain/contracts/v1/responses.py` and `mapping.py` (Engagement, Document, AskResponse union, Health, ProblemDetails)
-- [ ] T021 Implement `Settings` in `packages/core/src/core/config.py` (pydantic-settings, flat env names, `SecretStr`, startup validation e.g. openai without key fails)
-- [ ] T022 [P] Configure structlog JSON logging helper in `packages/core/src/core/logging.py` (bind `request_id`; never log document/passage/prompt content)
-- [ ] T023 Define application ports in `packages/core/src/core/application/ports.py`: `ChatModel`, `Embedder`, `VectorIndex`, `DocumentStorage`, `EngagementRepository`, `DocumentRepository`, `SessionRepository`, `JobQueue` (Protocols only)
+- [ ] T021 Implement `Settings` in `services/backend/src/backend/config.py` (pydantic-settings, flat env names, `SecretStr`, startup validation e.g. openai without key fails)
+- [ ] T022 [P] Configure structlog JSON logging helper in `services/backend/src/backend/logging.py` (bind `request_id`; never log document/passage/prompt content)
+- [ ] T023 Define application ports in `services/backend/src/backend/application/ports.py`: `ChatModel`, `Embedder`, `VectorIndex`, `DocumentStorage`, `EngagementRepository`, `DocumentRepository`, `SessionRepository`, `JobQueue` (Protocols only)
 - [ ] T024 [P] Implement in-memory fakes for all ports in `tests/support/fakes.py` for offline unit/api tests
-- [ ] T025 Implement SQLAlchemy async engine + session factory in `packages/core/src/core/adapters/postgres/engine.py`
-- [ ] T026 Implement SQLAlchemy `Mapped` tables in `packages/core/src/core/adapters/postgres/models.py` for `engagements`, `documents`, `passages` (incl. adapter-only `embedding`, `embedding_model`, `search_vector`) per data-model.md SQL sketch
-- [ ] T027 Initialize Alembic under `packages/core/` (`alembic.ini`, `migrations/env.py`) and create initial migration for T026 tables + pgvector extension + partial HNSW placeholders + GIN on `search_vector`
-- [ ] T028 Implement `EngagementRepository` + `DocumentRepository` Postgres adapters in `packages/core/src/core/adapters/postgres/repositories.py` with mandatory `engagement_id` filters
-- [ ] T029 [P] Implement `local_fs` `DocumentStorage` in `packages/core/src/core/adapters/local_fs.py`
-- [ ] T030 Implement hybrid `VectorIndex` (vector + FTS + RRF; threshold on cosine similarity before fusion) in `packages/core/src/core/adapters/postgres/vector_index.py`
-- [ ] T031 [P] Implement OpenAI `ChatModel` + `Embedder` adapters with tenacity retries in `packages/core/src/core/adapters/openai_chat.py` and `openai_embed.py`
-- [ ] T032 [P] Implement Ollama `ChatModel` + `Embedder` adapters with tenacity retries in `packages/core/src/core/adapters/ollama_chat.py` and `ollama_embed.py`
-- [ ] T033 Implement composition root `Container` in `packages/core/src/core/bootstrap.py` wiring Settings → adapters by `LLM_PROVIDER` / `EMBEDDING_PROVIDER`
-- [ ] T034 Implement sync `IngestDirectory` use case in `packages/core/src/core/application/ingest_directory.py` (parse→chunk→embed→atomic passage swap) for sample loading before async upload exists
-- [ ] T035 [P] Implement Markdown/text/PDF parsers in `packages/core/src/core/ingestion/parsers.py`
-- [ ] T036 [P] Implement structure-aware chunker in `packages/core/src/core/ingestion/chunking.py` (~500 tokens, ~15% overlap; keep heading_path/page)
-- [ ] T037 Implement FastAPI app factory in `services/api/src/api/main.py` with request-id middleware (`services/api/src/api/middleware.py`) and single Problem Details exception mapper (`services/api/src/api/problem_handlers.py`)
-- [ ] T038 [P] Implement `GET /health/live` and `GET /health/ready` in `services/api/src/api/routers/health.py`
-- [ ] T039 Implement `CreateEngagement` use case + `POST/GET /api/v1/engagements` routers in `packages/core/src/core/application/create_engagement.py` and `services/api/src/api/routers/engagements.py` citing [data-model.md](./data-model.md) `Engagement.id`, `Engagement.name`
+- [ ] T025 Implement SQLAlchemy async engine + session factory in `services/backend/src/backend/adapters/postgres/engine.py`
+- [ ] T026 Implement SQLAlchemy `Mapped` tables in `services/backend/src/backend/adapters/postgres/models.py` for `engagements`, `documents`, `passages` (incl. adapter-only `embedding`, `embedding_model`, `search_vector`) per data-model.md SQL sketch
+- [ ] T027 Initialize Alembic under `services/backend/` (`alembic.ini`, `migrations/env.py`) and create initial migration for T026 tables + pgvector extension + partial HNSW placeholders + GIN on `search_vector`
+- [ ] T028 Implement `EngagementRepository` + `DocumentRepository` Postgres adapters in `services/backend/src/backend/adapters/postgres/repositories.py` with mandatory `engagement_id` filters
+- [ ] T029 [P] Implement `local_fs` `DocumentStorage` in `services/backend/src/backend/adapters/local_fs.py`
+- [ ] T030 Implement hybrid `VectorIndex` (vector + FTS + RRF; threshold on cosine similarity before fusion) in `services/backend/src/backend/adapters/postgres/vector_index.py`
+- [ ] T031 [P] Implement OpenAI `ChatModel` + `Embedder` adapters with tenacity retries in `services/backend/src/backend/adapters/openai_chat.py` and `openai_embed.py`
+- [ ] T032 [P] Implement Ollama `ChatModel` + `Embedder` adapters with tenacity retries in `services/backend/src/backend/adapters/ollama_chat.py` and `ollama_embed.py`
+- [ ] T033 Implement composition root `Container` in `services/backend/src/backend/bootstrap.py` wiring Settings → adapters by `LLM_PROVIDER` / `EMBEDDING_PROVIDER`
+- [ ] T034 Implement sync `IngestDirectory` use case in `services/backend/src/backend/application/ingest_directory.py` (parse→chunk→embed→atomic passage swap) for sample loading before async upload exists
+- [ ] T035 [P] Implement Markdown/text/PDF parsers in `services/backend/src/backend/ingestion/parsers.py`
+- [ ] T036 [P] Implement structure-aware chunker in `services/backend/src/backend/ingestion/chunking.py` (~500 tokens, ~15% overlap; keep heading_path/page)
+- [ ] T037 Implement FastAPI app factory in `services/backend/src/backend/api/main.py` with request-id middleware (`services/backend/src/backend/api/middleware.py`) and single Problem Details exception mapper (`services/backend/src/backend/api/problem_handlers.py`)
+- [ ] T038 [P] Implement `GET /health/live` and `GET /health/ready` in `services/backend/src/backend/api/routers/health.py`
+- [ ] T039 Implement `CreateEngagement` use case + `POST/GET /api/v1/engagements` routers in `services/backend/src/backend/application/create_engagement.py` and `services/backend/src/backend/api/routers/engagements.py` citing [data-model.md](./data-model.md) `Engagement.id`, `Engagement.name`
 - [ ] T040 Add `deployment/docker-compose/docker-compose.yml` services: `postgres` (pgvector image), `api`, `worker` (stub entrypoint ok), volumes; Dockerfiles for api/worker
 - [ ] T041 [P] Add pytest config in root `pyproject.toml` (markers `unit`, `db`, `integration`; asyncio mode; default = offline)
 - [ ] T042 [P] Unit tests for ids/paths/Answer union validation in `tests/unit/test_domain_models.py`
@@ -104,12 +104,12 @@ Workspace layout from [plan.md](./plan.md): `packages/domain`, `packages/core`, 
 
 ### Implementation for User Story 1
 
-- [ ] T050 [P] [US1] Implement citation post-filter/renumber in `packages/core/src/core/rag/citations.py` citing [data-model.md](./data-model.md) `Citation.marker`, `Citation.score`, `Citation.snippet`
-- [ ] T051 [P] [US1] Implement RAG prompts in `packages/core/src/core/rag/prompts.py` (forbid general knowledge; require `[n]` markers)
-- [ ] T052 [US1] Implement LangGraph state + nodes (`retrieve`, `grade_evidence`, `generate_answer`, `finalize`) in `packages/core/src/core/rag/state.py`, `nodes.py`, `graph.py` (no condense yet)
-- [ ] T053 [US1] Implement `AskQuestion` use case in `packages/core/src/core/application/ask_question.py` (creates Session/Turn minimally: persist question+answer; return `session_id`/`turn_id`) citing [data-model.md](./data-model.md) `Answered.text`, `Answered.citations`
-- [ ] T054 [US1] Add Alembic migration for `sessions` + `session_turns` tables if not in T027; extend Postgres session repository in `packages/core/src/core/adapters/postgres/repositories.py` citing [data-model.md](./data-model.md) `Session.title`, `Session.turn_count`, `Turn.question`, `Turn.standalone_question`, `Turn.answer`
-- [ ] T055 [US1] Implement `POST /api/v1/engagements/{engagement_id}/ask` in `services/api/src/api/routers/ask.py` per contracts/openapi.yaml
+- [ ] T050 [P] [US1] Implement citation post-filter/renumber in `services/backend/src/backend/rag/citations.py` citing [data-model.md](./data-model.md) `Citation.marker`, `Citation.score`, `Citation.snippet`
+- [ ] T051 [P] [US1] Implement RAG prompts in `services/backend/src/backend/rag/prompts.py` (forbid general knowledge; require `[n]` markers)
+- [ ] T052 [US1] Implement LangGraph state + nodes (`retrieve`, `grade_evidence`, `generate_answer`, `finalize`) in `services/backend/src/backend/rag/state.py`, `nodes.py`, `graph.py` (no condense yet)
+- [ ] T053 [US1] Implement `AskQuestion` use case in `services/backend/src/backend/application/ask_question.py` (creates Session/Turn minimally: persist question+answer; return `session_id`/`turn_id`) citing [data-model.md](./data-model.md) `Answered.text`, `Answered.citations`
+- [ ] T054 [US1] Add Alembic migration for `sessions` + `session_turns` tables if not in T027; extend Postgres session repository in `services/backend/src/backend/adapters/postgres/repositories.py` citing [data-model.md](./data-model.md) `Session.title`, `Session.turn_count`, `Turn.question`, `Turn.standalone_question`, `Turn.answer`
+- [ ] T055 [US1] Implement `POST /api/v1/engagements/{engagement_id}/ask` in `services/backend/src/backend/api/routers/ask.py` per contracts/openapi.yaml
 - [ ] T056 [US1] Create minimal AI sample docs under `docs/samples/ai-generated/northwind-fy2025/` (finance/contracts/policies/…) sufficient for ≥6 answerable questions
 - [ ] T057 [US1] Add `scripts/seed_samples.py` calling sync `IngestDirectory` (temporary until US3 HTTP seed) to load northwind sample
 
@@ -132,7 +132,7 @@ Workspace layout from [plan.md](./plan.md): `packages/domain`, `packages/core`, 
 
 ### Implementation for User Story 2
 
-- [ ] T062 [US2] Implement `suggest_client_questions` node + wiring from grade/generate branches in `packages/core/src/core/rag/nodes.py` citing [data-model.md](./data-model.md) `InsufficientEvidence.reason`, `InsufficientEvidence.suggested_client_questions`, `InsufficientEvidence.partial_citations`
+- [ ] T062 [US2] Implement `suggest_client_questions` node + wiring from grade/generate branches in `services/backend/src/backend/rag/nodes.py` citing [data-model.md](./data-model.md) `InsufficientEvidence.reason`, `InsufficientEvidence.suggested_client_questions`, `InsufficientEvidence.partial_citations`
 - [ ] T063 [US2] Ensure `AskResponse` mapping emits `InsufficientEvidenceResponse` only (no answer field) in `packages/domain/src/domain/contracts/v1/mapping.py`
 - [ ] T064 [US2] Document ≥3 insufficient-evidence example questions next to sample data in `docs/samples/ai-generated/northwind-fy2025/README.md`
 
@@ -155,15 +155,15 @@ Workspace layout from [plan.md](./plan.md): `packages/domain`, `packages/core`, 
 
 ### Implementation for User Story 3
 
-- [ ] T069 [P] [US3] Implement safe archive listing/extract in `packages/core/src/core/ingestion/archive.py`
+- [ ] T069 [P] [US3] Implement safe archive listing/extract in `services/backend/src/backend/ingestion/archive.py`
 - [ ] T070 [US3] Extend domain models for Upload/UploadItem in `packages/domain/src/domain/models.py` citing [data-model.md](./data-model.md) `Upload.status`, `Upload.target_folder`, `UploadItem.status`, `UploadItem.document_path`, `UploadItem.reason`, `UploadItem.attempts`
-- [ ] T071 [US3] Alembic migration + SQLAlchemy models for `uploads`/`upload_items` (adapter fields `locked_until`, `next_attempt_at`, `raw_storage_key`) in `packages/core/migrations/` and `adapters/postgres/models.py`
-- [ ] T072 [US3] Implement `JobQueue` Postgres adapter (`FOR UPDATE SKIP LOCKED`, lease, retries) in `packages/core/src/core/adapters/postgres/job_queue.py`
-- [ ] T073 [US3] Implement `UploadDocuments` use case (validate→store files→enqueue items→202) in `packages/core/src/core/application/upload_documents.py`
-- [ ] T074 [US3] Implement `GetUpload` use case + contracts mapping in `packages/core/src/core/application/get_upload.py` and domain contracts
-- [ ] T075 [US3] Implement `POST .../documents` and `GET .../uploads/{upload_id}` in `services/api/src/api/routers/uploads.py` / `documents.py` per openapi.yaml
-- [ ] T076 [US3] Implement per-item processing pipeline in `packages/core/src/core/ingestion/process_item.py` (parse/chunk/embed/swap; skipped/not_searchable/failed reasons) citing [data-model.md](./data-model.md) `Document.content_type`, `Document.size_bytes`, `Document.sha256`, `Document.searchable`
-- [ ] T077 [US3] Implement worker claim loop + graceful shutdown in `services/worker/src/worker/main.py`
+- [ ] T071 [US3] Alembic migration + SQLAlchemy models for `uploads`/`upload_items` (adapter fields `locked_until`, `next_attempt_at`, `raw_storage_key`) in `services/backend/migrations/` and `adapters/postgres/models.py`
+- [ ] T072 [US3] Implement `JobQueue` Postgres adapter (`FOR UPDATE SKIP LOCKED`, lease, retries) in `services/backend/src/backend/adapters/postgres/job_queue.py`
+- [ ] T073 [US3] Implement `UploadDocuments` use case (validate→store files→enqueue items→202) in `services/backend/src/backend/application/upload_documents.py`
+- [ ] T074 [US3] Implement `GetUpload` use case + contracts mapping in `services/backend/src/backend/application/get_upload.py` and backend.api.contracts
+- [ ] T075 [US3] Implement `POST .../documents` and `GET .../uploads/{upload_id}` in `services/backend/src/backend/api/routers/uploads.py` / `documents.py` per openapi.yaml
+- [ ] T076 [US3] Implement per-item processing pipeline in `services/backend/src/backend/ingestion/process_item.py` (parse/chunk/embed/swap; skipped/not_searchable/failed reasons) citing [data-model.md](./data-model.md) `Document.content_type`, `Document.size_bytes`, `Document.sha256`, `Document.searchable`
+- [ ] T077 [US3] Implement worker claim loop + graceful shutdown in `services/backend/src/backend/worker/main.py`
 - [ ] T078 [US3] Switch `scripts/seed_samples.py` to call HTTP upload via CLI/`httpx` with `--wait` (remove sync-only seed path from happy path)
 
 **Checkpoint**: Uploads work end-to-end; seed uses real async path
@@ -182,8 +182,8 @@ Workspace layout from [plan.md](./plan.md): `packages/domain`, `packages/core`, 
 
 ### Implementation for User Story 4
 
-- [ ] T080 [US4] Implement `ListDocuments` + `GetDocument` use cases in `packages/core/src/core/application/list_documents.py` and `get_document.py` citing [data-model.md](./data-model.md) `Document.path`, `Document.content_type`, `Document.size_bytes`
-- [ ] T081 [US4] Implement `GET .../documents` and `GET .../documents/{document_path}` in `services/api/src/api/routers/documents.py` returning metadata JSON / raw octets per openapi.yaml
+- [ ] T080 [US4] Implement `ListDocuments` + `GetDocument` use cases in `services/backend/src/backend/application/list_documents.py` and `get_document.py` citing [data-model.md](./data-model.md) `Document.path`, `Document.content_type`, `Document.size_bytes`
+- [ ] T081 [US4] Implement `GET .../documents` and `GET .../documents/{document_path}` in `services/backend/src/backend/api/routers/documents.py` returning metadata JSON / raw octets per openapi.yaml
 
 **Checkpoint**: Citations are verifiable by opening the source file via API
 
@@ -202,9 +202,9 @@ Workspace layout from [plan.md](./plan.md): `packages/domain`, `packages/core`, 
 
 ### Implementation for User Story 6
 
-- [ ] T084 [US6] Add `condense_question` graph node in `packages/core/src/core/rag/nodes.py` using `SESSION_CONTEXT_TURNS` (default 5)
-- [ ] T085 [US6] Implement `ListSessions` + `GetSession` use cases in `packages/core/src/core/application/list_sessions.py` and `get_session.py`
-- [ ] T086 [US6] Implement `GET .../sessions` and `GET .../sessions/{session_id}` in `services/api/src/api/routers/sessions.py` per openapi.yaml
+- [ ] T084 [US6] Add `condense_question` graph node in `services/backend/src/backend/rag/nodes.py` using `SESSION_CONTEXT_TURNS` (default 5)
+- [ ] T085 [US6] Implement `ListSessions` + `GetSession` use cases in `services/backend/src/backend/application/list_sessions.py` and `get_session.py`
+- [ ] T086 [US6] Implement `GET .../sessions` and `GET .../sessions/{session_id}` in `services/backend/src/backend/api/routers/sessions.py` per openapi.yaml
 - [ ] T087 [US6] Ensure ask always returns `session_id`/`turn_id` and title derived from first question citing [data-model.md](./data-model.md) `Session.title`
 
 **Checkpoint**: Conversational follow-ups work without weakening grounding
@@ -225,7 +225,7 @@ Workspace layout from [plan.md](./plan.md): `packages/domain`, `packages/core`, 
 ### Implementation for User Story 5
 
 - [ ] T090 [US5] Add compose `local` profile with `ollama` + one-shot pull service; document host `OLLAMA_BASE_URL` in `deployment/docker-compose/docker-compose.yml` and README
-- [ ] T091 [US5] Flesh readiness checks (Postgres + model ping) in `services/api/src/api/routers/health.py`
+- [ ] T091 [US5] Flesh readiness checks (Postgres + model ping) in `services/backend/src/backend/api/routers/health.py`
 - [ ] T092 [US5] Finalize `just seed` / `scripts/seed_samples.py` against running stack; align with quickstart.md
 - [ ] T093 [US5] Write root `README.md` sections: problem, architecture, OpenAI mode, Ollama mode (RAM/limits), concurrency/scaling, limitations/next steps (assignment §5–7)
 
@@ -245,7 +245,7 @@ Workspace layout from [plan.md](./plan.md): `packages/domain`, `packages/core`, 
 
 ### Implementation for User Story 7
 
-- [ ] T095 [P] [US7] Implement typed HTTP client in `cli/src/cli/client.py` using `domain.contracts.v1`
+- [ ] T095 [P] [US7] Implement typed HTTP client in `cli/src/cli/client.py` using `backend.api.contracts.v1`
 - [ ] T096 [P] [US7] Implement Rich renderers (answer, citations footnotes, suggestions, errors) in `cli/src/cli/render.py`
 - [ ] T097 [US7] Implement Typer subcommands (`engagements`, `upload`, `uploads status`, `sessions`) in `cli/src/cli/main.py` per contracts/cli.md
 - [ ] T098 [US7] Implement prompt_toolkit REPL + slash commands in `cli/src/cli/repl.py` (auto-carry `session_id`)

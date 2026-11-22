@@ -1,9 +1,8 @@
 <!--
 Sync Impact Report
-- Version change: 1.0.0 -> 1.1.0
-- Modified principles: none renamed
-- Added principles:
-  - VI. Virtual Environment Isolation
+- Version change: 1.1.1 -> 1.2.0
+- Modified principles: II. Enforced Layering (single `backend` service; drop separate core/api/worker packages)
+- Added principles: none
 - Added sections: none
 - Removed sections: none
 - Follow-up TODOs: none
@@ -17,7 +16,7 @@ Sync Impact Report
 
 - All Python code MUST pass basedpyright in `strict` mode with zero errors and zero warnings.
 - Explicit `Any` (annotations, `cast(Any, ...)`, untyped `**kwargs: Any`) MUST NOT appear outside
-  `core.adapters`. Inside adapters, `Any` MUST be confined to the boundary with a vendor
+  `backend.adapters`. Inside adapters, `Any` MUST be confined to the boundary with a vendor
   SDK and converted to project types before leaving the adapter.
 - Suppression comments (`# pyright: ignore[...]`, `# type: ignore`) MUST name the specific rule
   and carry a reason on the same line. Blanket suppressions and file-level disables are forbidden.
@@ -31,27 +30,33 @@ Sync Impact Report
   be modelled as discriminated unions where the variants carry different data.
 
 Rationale: type safety is an explicit quality goal of this project. A type checker that
-blocks the build is the cheapest reviewer, and it keeps refactors safe across five packages.
+blocks the build is the cheapest reviewer, and it keeps refactors safe across packages.
 
 ### II. Enforced Layering
 
+- Workspace packages: `domain`, `backend`, `cli`.
 - Dependency rules MUST be declared as import-linter contracts and MUST pass in CI:
   - `domain` imports nothing from the project; its only third-party dependency is pydantic.
-  - `core.application` imports only `domain` (and the standard library).
+  - `backend.application` imports only `domain` (and the standard library).
   - Vendor SDKs (`openai`, `ollama`, `sqlalchemy`, `pgvector`, `asyncpg`, `pypdf`, `tenacity`)
-    are imported only in `core.adapters`.
-  - `api` and `worker` MAY import `core` and `domain` and MUST NOT
-    import each other.
-  - `cli` imports only `domain` and communicates with the system over HTTP.
-- All models shared between packages MUST be defined once, in `domain`. Public API
-  contracts (`contracts/v1`) MUST be separate classes from internal entities, with explicit
-  mapping functions.
+    are imported only in `backend.adapters`.
+  - HTTP surface, use cases, adapters, RAG/ingestion, and the worker entrypoint live in the
+    single `backend` package (`services/backend`). Alembic migrations are owned by `backend`.
+  - `cli` MAY import `domain` and `backend.api.contracts` and MUST NOT import
+    `backend.application`, `backend.adapters`, `backend.rag`, `backend.ingestion`,
+    `backend.worker`, or `backend.bootstrap`. It communicates with the running system over HTTP.
+- Domain entities live in feature packages under `domain` (e.g. `domain.engagement`). Shared
+  primitives live at the domain root (`errors`, `problem`, `common`, `providers`). Public HTTP
+  contracts live in `backend.api.contracts`, with explicit mapping from domain entities at the
+  API edge.
 - External services MUST be reached through ports (`Protocol` classes in
-  `core.application`) and wired in a single composition root. Switching providers MUST
+  `backend.application`) and wired in a single composition root. Switching providers MUST
   require configuration changes only.
+- Compose MAY run a second container of the same backend image for the worker command; that is
+  an operational choice, not a separate package.
 
-Rationale: the assignment grades separation of concerns and replaceable integrations.
-Machine-checked contracts make the architecture provable instead of claimed.
+Rationale: for this product scale, one backend service is simpler to run and reason about while
+still keeping domain models and a typed HTTP client boundary for the CLI.
 
 ### III. Tested Behaviour, Offline by Default
 
@@ -76,7 +81,7 @@ Fakes that honour the ports keep the tests honest about the real integration poi
   `request_id`, and field-level `errors[]` for validation failures. Error codes MUST NOT be
   renamed or reused once released.
 - Domain and application code MUST raise typed exceptions; mapping to HTTP status codes and
-  Problem Details MUST happen in exactly one place in `api`.
+  Problem Details MUST happen in exactly one place in `backend.api`.
 - Logs MUST be structured JSON (structlog) carrying `request_id`, and `upload_id`/`job_id` for
   background work.
 - Logs, error responses and traces MUST NOT contain document content, passage text, prompts,
@@ -145,8 +150,8 @@ dependency set. Global installs pollute the host and break reproducibility.
 - Every `just` recipe MUST be a thin wrapper around `uv run ...` or `docker compose ...`, and the
   README MUST document the underlying commands. Recipes that need Python MUST assume `.venv`
   exists (created by `uv sync`) and MUST NOT fall back to global Python.
-- Database schema changes MUST go through Alembic migrations; schemas MUST NOT be created at
-  application startup.
+- Database schema changes MUST go through Alembic migrations owned by `services/backend`;
+  schemas MUST NOT be created at application startup.
 - Code MUST match the surrounding style. Comments explain constraints the code cannot express,
   never what the next line does.
 - Each feature follows the Spec Kit flow (specify, plan, tasks, implement). The plan MUST pass
@@ -164,4 +169,4 @@ dependency set. Global installs pollute the host and break reproducibility.
   every change, and a final review against the principles before submission.
 - Runtime development guidance lives in the root `README.md` and the feature's `research.md`.
 
-**Version**: 1.1.0 | **Ratified**: 2026-11-22 | **Last Amended**: 2026-11-22
+**Version**: 1.2.0 | **Ratified**: 2026-11-22 | **Last Amended**: 2026-11-22

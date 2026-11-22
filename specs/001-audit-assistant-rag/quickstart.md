@@ -9,7 +9,7 @@ cp deployment/docker-compose/.env.example deployment/docker-compose/.env
 # Edit: set LLM_PROVIDER=openai and OPENAI_API_KEY=...
 #    or LLM_PROVIDER=ollama and OLLAMA_BASE_URL=http://host.docker.internal:11434
 
-just up          # api + worker + postgres (and ollama if profile local)
+just up          # backend + worker + postgres (and ollama if profile local)
 just migrate
 ```
 
@@ -17,7 +17,7 @@ Underlying commands (also in README):
 
 ```bash
 docker compose -f deployment/docker-compose/docker-compose.yml up -d
-uv run alembic -c packages/core/alembic.ini upgrade head
+uv run alembic -c services/backend/alembic.ini upgrade head
 ```
 
 Check:
