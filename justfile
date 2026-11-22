@@ -33,14 +33,19 @@ test-db:
 test-integration:
     uv run python -m pytest -m integration
 
-migrate:
-    uv run alembic -c services/backend/alembic.ini upgrade head
+# Generate a new Alembic revision from model changes (DB auto-upgrades on API startup).
+# Usage: just migration "add foo column"
+migration message:
+    uv run alembic -c services/backend/alembic.ini revision --autogenerate -m "{{message}}"
 
-up:
+compose-up:
     docker compose -f {{compose_file}} up -d
 
-down:
+compose-down:
     docker compose -f {{compose_file}} down
+
+compose-clean:
+    docker compose -f {{compose_file}} down -v --remove-orphans
 
 seed:
     uv run python scripts/seed_samples.py
