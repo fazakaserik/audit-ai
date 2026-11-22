@@ -1,16 +1,177 @@
-"""Typer CLI entry (stub until US7)."""
+"""Typer CLI entry for audit-ai."""
 
 from __future__ import annotations
 
-import typer
+from pathlib import Path
+from uuid import UUID
 
-app = typer.Typer(name="audit-ai", help="Audit Assistant terminal client", no_args_is_help=True)
+import typer
+from rich.console import Console
+from rich.status import Status
+
+from cli.client import AuditApiClient, CliApiError
+from cli.render import (
+    render_engagements,
+    render_error,
+    render_session_detail,
+    render_session_summaries,
+    render_upload_status,
+)
+from cli.repl import run_repl
+from domain.engagement import EngagementId
+
+console = Console()
+
+app = typer.Typer(
+    name="audit-ai",
+    help="Audit Assistant terminal client",
+    no_args_is_help=False,
+)
+
+engagements_app = typer.Typer(help="Manage engagements")
+uploads_app = typer.Typer(help="Upload job status")
+sessions_app = typer.Typer(help="Chat sessions")
+
+app.add_typer(engagements_app, name="engagements")
+app.add_typer(uploads_app, name="uploads")
+app.add_typer(sessions_app, name="sessions")
+
+
+def _client() -> AuditApiClient:
+    return AuditApiClient.from_env()
+
+
+def _exit_api_error(exc: CliApiError) -> None:
+    render_error(console, exc)
+    raise typer.Exit(code=1) from exc
+
+
+@app.callback(invoke_without_command=True)
+def main(ctx: typer.Context) -> None:
+    """Interactive terminal client for the Audit Assistant API."""
+    if ctx.invoked_subcommand is None:
+        run_repl()
+        raise typer.Exit()
 
 
 @app.command("version")
 def version() -> None:
     """Print CLI version."""
-    typer.echo("audit-ai 0.1.0")
+    from cli import __version__
+
+    typer.echo(f"audit-ai {__version__}")
+
+
+@engagements_app.command("list")
+def engagements_list(
+    limit: int = typer.Option(50, min=1, max=200),
+    offset: int = typer.Option(0, min=0),
+) -> None:
+    """List engagements."""
+    with _client() as client:
+        try:
+            page = client.list_engagements(limit=limit, offset=offset)
+        except CliApiError as exc:
+            _exit_api_error(exc)
+        else:
+            render_engagements(console, page.items)
+
+
+@engagements_app.command("create")
+def engagements_create(
+    id: str = typer.Option(..., "--id", help="Engagement slug"),
+    name: str = typer.Option(..., "--name", help="Display name"),
+) -> None:
+    """Create an engagement."""
+    engagement_id: EngagementId = id
+    with _client() as client:
+        try:
+            created = client.create_engagement(engagement_id=engagement_id, name=name)
+        except CliApiError as exc:
+            _exit_api_error(exc)
+        else:
+            console.print(f"Created engagement {created.id} ({created.name})")
+
+
+@app.command("upload")
+def upload(
+    path: Path = typer.Argument(..., help="File, directory, or .zip"),
+    engagement: str = typer.Option(..., "--engagement", help="Engagement id"),
+    folder: str = typer.Option(..., "--folder", help="Target folder prefix"),
+    wait: bool = typer.Option(False, "--wait", help="Poll until upload completes or fails"),
+) -> None:
+    """Upload files to an engagement folder."""
+    engagement_id: EngagementId = engagement
+    with _client() as client:
+        try:
+            accepted = client.upload_path(engagement_id, path, folder=folder)
+        except CliApiError as exc:
+            _exit_api_error(exc)
+        except (FileNotFoundError, ValueError) as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1) from exc
+        else:
+            console.print(f"Upload queued: {accepted.upload_id}")
+            if not wait:
+                return
+            try:
+                with Status("Waiting for upload…", console=console):
+                    final = client.wait_upload(engagement_id, accepted.upload_id)
+            except CliApiError as exc:
+                _exit_api_error(exc)
+            else:
+                render_upload_status(console, final)
+                if final.status.value == "failed":
+                    raise typer.Exit(code=1)
+
+
+@uploads_app.command("status")
+def uploads_status(
+    engagement: str = typer.Option(..., "--engagement"),
+    upload: UUID = typer.Option(..., "--upload"),
+) -> None:
+    """Show upload processing status."""
+    engagement_id: EngagementId = engagement
+    with _client() as client:
+        try:
+            result = client.get_upload_status(engagement_id, upload)
+        except CliApiError as exc:
+            _exit_api_error(exc)
+        else:
+            render_upload_status(console, result)
+
+
+@sessions_app.command("list")
+def sessions_list(
+    engagement: str = typer.Option(..., "--engagement"),
+    limit: int = typer.Option(50, min=1, max=200),
+    offset: int = typer.Option(0, min=0),
+) -> None:
+    """List sessions for an engagement."""
+    engagement_id: EngagementId = engagement
+    with _client() as client:
+        try:
+            page = client.list_sessions(engagement_id, limit=limit, offset=offset)
+        except CliApiError as exc:
+            _exit_api_error(exc)
+        else:
+            render_session_summaries(console, page.items)
+
+
+@sessions_app.command("show")
+def sessions_show(
+    engagement: str = typer.Option(..., "--engagement"),
+    session: UUID = typer.Option(..., "--session"),
+) -> None:
+    """Show a session and its turns."""
+    engagement_id: EngagementId = engagement
+    with _client() as client:
+        try:
+            detail = client.get_session(engagement_id, session)
+        except CliApiError as exc:
+            _exit_api_error(exc)
+        else:
+            render_session_detail(console, detail)
 
 
 if __name__ == "__main__":
