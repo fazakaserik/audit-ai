@@ -84,11 +84,14 @@ audit-ai/
 │           ├── api/                     # FastAPI + contracts/v1
 │           └── worker/main.py           # claim loop (same image)
 ├── cli/                                 # audit-ai (HTTP client)
-├── scripts/ docs/samples/ deployment/ tests/
+├── packages/domain/tests/               # domain unit tests
+├── services/backend/tests/{unit,api,db,integration,support}/
+├── cli/tests/
+├── scripts/ docs/samples/ deployment/
 ├── justfile / pyproject.toml / uv.lock / importlinter.ini / README.md
 ```
 
-**Structure Decision**: Three-member uv workspace (`domain`, `backend`, `cli`) as decided in [research.md](./research.md). Tests live at the repo root. Alembic migrations are owned by `services/backend`.
+**Structure Decision**: Three-member uv workspace (`domain`, `backend`, `cli`) as decided in [research.md](./research.md). Tests are colocated next to each package (`*/tests`). Alembic migrations are owned by `services/backend`.
 
 ## Complexity Tracking
 

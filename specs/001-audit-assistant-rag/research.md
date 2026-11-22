@@ -75,7 +75,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 
 ## Testing strategy
 
-- **Decision**: pytest in three groups:
+- **Decision**: pytest suites colocated next to packages (`packages/domain/tests`, `services/backend/tests`, `cli/tests`), in three groups:
   - `unit` (default, no I/O): domain, ingestion and graph tests with in-memory fakes, and API tests through an in-process httpx client with a fake container.
   - `db`: repository, hybrid search and job-claiming tests against a real Postgres with pgvector, started by testcontainers. Needs Docker but no paid services.
   - `integration`: end-to-end tests against real Ollama or OpenAI. Opt-in only.
@@ -86,6 +86,11 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 - **Decision**: Structure-aware chunking. Split on Markdown headings and PDF page boundaries first, then into token windows of about 500 tokens with about 15% overlap. Each passage keeps its heading path and page number as citation metadata.
 - **Rationale**: Passages that follow document structure cite cleanly ("contracts/contoso.pdf, page 3, section 4.2 Payment terms") and do not merge unrelated sections.
 - **Next step**: Chunk size, overlap and the splitting rules are configuration parameters. They should be tested with different values on a labelled question set and tuned, which is out of scope for this version.
+
+## Ask orchestration
+
+- **Decision**: Ask flow is implemented as explicit node functions (`retrieve` → `grade_evidence` → `generate_answer` → `finalize` / `suggest_client_questions`) composed by `backend.rag.graph.run_ask_graph`. A LangGraph `StateGraph` wrapper remains the intended packaging when the runtime can load `ormsgpack`; node contracts stay identical either way.
+- **Rationale**: Same graph topology and testability without hard-failing API imports on hosts that block native wheels.
 
 ## Grounding and citations
 
