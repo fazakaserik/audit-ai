@@ -40,24 +40,8 @@ class PostgresJobQueue:
         self._session = session
 
     async def enqueue_items(self, items: Sequence[UploadItem]) -> None:
-        now = datetime.now(UTC)
-        for item in items:
-            self._session.add(
-                UploadItemRow(
-                    id=item.id,
-                    upload_id=item.upload_id,
-                    document_path=item.document_path,
-                    status=item.status.value,
-                    reason=item.reason,
-                    attempts=item.attempts,
-                    locked_until=None,
-                    locked_by=None,
-                    next_attempt_at=None,
-                    raw_storage_key=item.document_path,
-                    created_at=item.created_at,
-                    updated_at=item.updated_at if item.updated_at else now,
-                )
-            )
+        # Items are persisted by UploadRepository.create; rows are already queued.
+        _ = items
         await self._session.flush()
 
     async def claim_next(self, worker_id: str) -> UploadItem | None:
