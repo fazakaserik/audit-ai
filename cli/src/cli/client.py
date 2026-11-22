@@ -1,0 +1,313 @@
+"""Typed HTTP client for the Audit Assistant API."""
+
+from __future__ import annotations
+
+import io
+import os
+import time
+import zipfile
+from pathlib import Path
+from typing import TypeVar
+from urllib.parse import quote
+from uuid import UUID
+
+import httpx
+from pydantic import TypeAdapter, ValidationError
+
+from backend.api.contracts.v1.page import Page
+from backend.api.contracts.v1.requests import AskRequest, CreateEngagementRequest
+from backend.api.contracts.v1.responses import (
+    AnsweredResponse,
+    AskResponse,
+    AskResponseRoot,
+    DocumentResponse,
+    EngagementResponse,
+    InsufficientEvidenceResponse,
+    SessionDetailResponse,
+    SessionSummaryResponse,
+    UploadAcceptedResponse,
+    UploadResponse,
+)
+from domain.common import RequestId
+from domain.engagement import EngagementId
+from domain.errors import ErrorCode
+from domain.problem import ProblemDetails
+from domain.upload import UploadStatus
+
+T = TypeVar("T")
+
+DEFAULT_BASE_URL = "http://localhost:8000"
+DEFAULT_TIMEOUT_SECONDS = 120.0
+UPLOAD_POLL_INTERVAL_SECONDS = 2.0
+
+
+class CliApiError(Exception):
+    """API failure mapped from RFC 9457 Problem Details."""
+
+    def __init__(
+        self,
+        *,
+        code: ErrorCode,
+        detail: str,
+        status: int,
+        request_id: RequestId | None = None,
+    ) -> None:
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+        self.status = status
+        self.request_id = request_id
+
+
+def _problem_to_cli_error(response: httpx.Response) -> CliApiError:
+    if response.content:
+        try:
+            problem = ProblemDetails.model_validate_json(response.content)
+            return CliApiError(
+                code=problem.code,
+                detail=problem.detail,
+                status=problem.status,
+                request_id=problem.request_id,
+            )
+        except ValidationError:
+            pass
+    return CliApiError(
+        code=ErrorCode.INTERNAL_ERROR,
+        detail=response.text or f"HTTP {response.status_code}",
+        status=response.status_code,
+        request_id=None,
+    )
+
+
+def _zip_directory(directory: Path) -> tuple[str, bytes]:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for file_path in sorted(directory.rglob("*")):
+            if file_path.is_file():
+                arcname = file_path.relative_to(directory).as_posix()
+                archive.write(file_path, arcname)
+    name = f"{directory.name}.zip" if directory.name else "upload.zip"
+    return name, buffer.getvalue()
+
+
+def prepare_upload_payload(path: Path) -> list[tuple[str, bytes]]:
+    """Return (filename, bytes) tuples for multipart upload."""
+    if not path.exists():
+        msg = f"path not found: {path}"
+        raise FileNotFoundError(msg)
+    if path.is_file():
+        return [(path.name, path.read_bytes())]
+    if path.is_dir():
+        filename, data = _zip_directory(path)
+        return [(filename, data)]
+    msg = f"not a file or directory: {path}"
+    raise ValueError(msg)
+
+
+class AuditApiClient:
+    """Synchronous httpx client using v1 contract models."""
+
+    def __init__(
+        self,
+        base_url: str = DEFAULT_BASE_URL,
+        timeout: float = DEFAULT_TIMEOUT_SECONDS,
+        *,
+        http_client: httpx.Client | None = None,
+    ) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._owns_client = http_client is None
+        self._client = (
+            http_client
+            if http_client is not None
+            else httpx.Client(base_url=self._base_url, timeout=timeout)
+        )
+
+    @classmethod
+    def from_env(cls) -> AuditApiClient:
+        base = os.environ.get("AUDIT_API_BASE_URL", DEFAULT_BASE_URL)
+        raw_timeout = os.environ.get("AUDIT_API_TIMEOUT_SECONDS", str(int(DEFAULT_TIMEOUT_SECONDS)))
+        timeout = float(raw_timeout)
+        return cls(base_url=base, timeout=timeout)
+
+    def close(self) -> None:
+        if self._owns_client:
+            self._client.close()
+
+    def __enter__(self) -> AuditApiClient:
+        return self
+
+    def __exit__(self, *args: object) -> None:
+        self.close()
+
+    def _raise_for_response(self, response: httpx.Response) -> None:
+        if response.is_success:
+            return
+        raise _problem_to_cli_error(response)
+
+    def _get_json(self, response: httpx.Response, adapter: TypeAdapter[T]) -> T:
+        self._raise_for_response(response)
+        return adapter.validate_json(response.content)
+
+    def list_engagements(
+        self,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Page[EngagementResponse]:
+        response = self._client.get(
+            "/api/v1/engagements",
+            params={"limit": limit, "offset": offset},
+        )
+        adapter: TypeAdapter[Page[EngagementResponse]] = TypeAdapter(Page[EngagementResponse])
+        return self._get_json(response, adapter)
+
+    def create_engagement(self, *, engagement_id: EngagementId, name: str) -> EngagementResponse:
+        body = CreateEngagementRequest(id=engagement_id, name=name)
+        response = self._client.post(
+            "/api/v1/engagements",
+            json=body.model_dump(mode="json"),
+        )
+        adapter: TypeAdapter[EngagementResponse] = TypeAdapter(EngagementResponse)
+        return self._get_json(response, adapter)
+
+    def ask(
+        self,
+        engagement_id: EngagementId,
+        *,
+        question: str,
+        session_id: UUID | None = None,
+        folder_prefix: str | None = None,
+        auditor_role: str | None = None,
+        topic: str | None = None,
+    ) -> AskResponse:
+        body = AskRequest(
+            question=question,
+            session_id=session_id,
+            folder_prefix=folder_prefix,
+            auditor_role=auditor_role,
+            topic=topic,
+        )
+        response = self._client.post(
+            f"/api/v1/engagements/{engagement_id}/ask",
+            json=body.model_dump(mode="json"),
+        )
+        self._raise_for_response(response)
+        root = AskResponseRoot.model_validate_json(response.content)
+        return root.root
+
+    def upload_documents(
+        self,
+        engagement_id: EngagementId,
+        *,
+        folder: str,
+        files: list[tuple[str, bytes]],
+    ) -> UploadAcceptedResponse:
+        multipart: list[tuple[str, tuple[str, bytes, str]]] = [
+            ("files", (name, data, "application/octet-stream")) for name, data in files
+        ]
+        response = self._client.post(
+            f"/api/v1/engagements/{engagement_id}/documents",
+            data={"folder": folder},
+            files=multipart,
+        )
+        adapter: TypeAdapter[UploadAcceptedResponse] = TypeAdapter(UploadAcceptedResponse)
+        return self._get_json(response, adapter)
+
+    def upload_path(
+        self,
+        engagement_id: EngagementId,
+        path: Path,
+        *,
+        folder: str,
+    ) -> UploadAcceptedResponse:
+        payload = prepare_upload_payload(path)
+        return self.upload_documents(engagement_id, folder=folder, files=payload)
+
+    def get_upload_status(
+        self,
+        engagement_id: EngagementId,
+        upload_id: UUID,
+    ) -> UploadResponse:
+        response = self._client.get(
+            f"/api/v1/engagements/{engagement_id}/uploads/{upload_id}",
+        )
+        adapter: TypeAdapter[UploadResponse] = TypeAdapter(UploadResponse)
+        return self._get_json(response, adapter)
+
+    def wait_upload(
+        self,
+        engagement_id: EngagementId,
+        upload_id: UUID,
+        *,
+        poll_interval: float = UPLOAD_POLL_INTERVAL_SECONDS,
+    ) -> UploadResponse:
+        while True:
+            status = self.get_upload_status(engagement_id, upload_id)
+            if status.status in (UploadStatus.COMPLETED, UploadStatus.FAILED):
+                return status
+            time.sleep(poll_interval)
+
+    def list_sessions(
+        self,
+        engagement_id: EngagementId,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Page[SessionSummaryResponse]:
+        response = self._client.get(
+            f"/api/v1/engagements/{engagement_id}/sessions",
+            params={"limit": limit, "offset": offset},
+        )
+        adapter: TypeAdapter[Page[SessionSummaryResponse]] = TypeAdapter(
+            Page[SessionSummaryResponse]
+        )
+        return self._get_json(response, adapter)
+
+    def get_session(
+        self,
+        engagement_id: EngagementId,
+        session_id: UUID,
+    ) -> SessionDetailResponse:
+        response = self._client.get(
+            f"/api/v1/engagements/{engagement_id}/sessions/{session_id}",
+        )
+        adapter: TypeAdapter[SessionDetailResponse] = TypeAdapter(SessionDetailResponse)
+        return self._get_json(response, adapter)
+
+    def list_documents(
+        self,
+        engagement_id: EngagementId,
+        *,
+        prefix: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> Page[DocumentResponse]:
+        params: dict[str, str | int] = {"limit": limit, "offset": offset}
+        if prefix is not None:
+            params["prefix"] = prefix
+        response = self._client.get(
+            f"/api/v1/engagements/{engagement_id}/documents",
+            params=params,
+        )
+        adapter: TypeAdapter[Page[DocumentResponse]] = TypeAdapter(Page[DocumentResponse])
+        return self._get_json(response, adapter)
+
+    def get_document_content(self, engagement_id: EngagementId, document_path: str) -> bytes:
+        encoded = quote(document_path, safe="")
+        response = self._client.get(
+            f"/api/v1/engagements/{engagement_id}/documents/{encoded}",
+        )
+        self._raise_for_response(response)
+        return response.content
+
+
+def unwrap_answer(response: AskResponse) -> AnsweredResponse | None:
+    if isinstance(response, AnsweredResponse):
+        return response
+    return None
+
+
+def unwrap_insufficient(response: AskResponse) -> InsufficientEvidenceResponse | None:
+    if isinstance(response, InsufficientEvidenceResponse):
+        return response
+    return None
