@@ -1,6 +1,10 @@
 set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 
-compose_file := "deployment/docker-compose/docker-compose.yml"
+compose_dir := "deployment/docker-compose"
+compose_file := compose_dir / "compose.yaml"
+compose_dev_file := compose_dir / "compose.dev.yaml"
+compose := "docker compose -f " + compose_file
+compose_dev := compose + " -f " + compose_dev_file
 
 default:
     @just --list
@@ -39,13 +43,22 @@ migration message:
     uv run alembic -c services/backend/alembic.ini revision --autogenerate -m "{{message}}"
 
 compose-up:
-    docker compose -f {{compose_file}} up -d
+    {{compose}} up -d
 
 compose-down:
-    docker compose -f {{compose_file}} down
+    {{compose}} down
 
 compose-clean:
-    docker compose -f {{compose_file}} down -v --remove-orphans
+    {{compose}} down -v --remove-orphans
+
+compose-dev-up:
+    {{compose_dev}} up -d
+
+compose-dev-down:
+    {{compose_dev}} down
+
+compose-dev-clean:
+    {{compose_dev}} down -v --remove-orphans
 
 seed:
     uv run python scripts/seed_samples.py
