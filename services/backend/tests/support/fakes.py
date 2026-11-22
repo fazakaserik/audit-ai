@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from backend.application.ports import (
     ChatMessage,
     EmbedResult,
+    IncompleteStructuredOutputError,
     RetrievalScope,
     ScoredPassage,
     StructuredResult,
@@ -49,7 +50,9 @@ class FakeChatModel:
         *,
         response: BaseModel | None = None,
         responses: Sequence[BaseModel] | None = None,
-        error: ModelTimeoutError | ModelUnavailableError | None = None,
+        error: (
+            ModelTimeoutError | ModelUnavailableError | IncompleteStructuredOutputError | None
+        ) = None,
         supports_thinking: bool = False,
         thinking_text: str = "",
         thinking_seconds: float = 0.0,
@@ -73,7 +76,9 @@ class FakeChatModel:
         *,
         response: BaseModel | None = None,
         responses: Sequence[BaseModel] | None = None,
-        error: ModelTimeoutError | ModelUnavailableError | None = None,
+        error: (
+            ModelTimeoutError | ModelUnavailableError | IncompleteStructuredOutputError | None
+        ) = None,
     ) -> None:
         self._response = response
         self._responses = list(responses) if responses is not None else None

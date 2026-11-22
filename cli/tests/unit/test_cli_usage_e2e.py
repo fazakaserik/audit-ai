@@ -66,7 +66,7 @@ async def test_cli_toolbar_updates_from_ask_response() -> None:
     )
     chat = FakeChatModel(
         response=AnswerGenerationResult(
-            sufficient=True,
+            can_answer=True,
             answer_text="Payment is due within thirty days [1].",
             markers_used=(1,),
         ),

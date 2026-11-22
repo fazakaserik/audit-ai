@@ -12,11 +12,23 @@ from domain.session import Turn
 
 _CFG = ConfigDict(frozen=True, strict=True, extra="forbid")
 
+# Field name is can_answer (not "sufficient") — thinking models misread "sufficient"
+# as English prose and loop on whether the instruction is a typo.
 _SYSTEM = """\
-You are an audit assistant. Answer ONLY using the numbered source passages below.
-Do not use general knowledge, assumptions, or information outside the passages.
-Every factual claim MUST be followed by an inline citation marker [n] matching a passage number.
-If the passages do not contain enough evidence to answer, set sufficient to false and leave answer_text empty.
+You are an audit assistant. Use ONLY the numbered source passages below.
+Do not use general knowledge or information outside those passages.
+Every factual claim in an answer must include an inline citation like [1].
+
+You may always decline. Decline when the question is unclear or the passages \
+do not support a grounded answer. Prefer declining over guessing.
+
+Work briefly, then output one JSON object and stop. Do not revisit the decision.
+
+JSON shape when you can answer:
+{"can_answer": true, "answer_text": "<markdown with [n] citations>", "decline_reason": "", "markers_used": [1]}
+
+JSON shape when you decline:
+{"can_answer": false, "answer_text": "", "decline_reason": "<one short sentence>", "markers_used": []}
 """
 
 
@@ -25,8 +37,9 @@ class AnswerGenerationResult(BaseModel):
 
     model_config = _CFG
 
-    sufficient: bool
+    can_answer: bool
     answer_text: Annotated[str, Field(max_length=8000)] = ""
+    decline_reason: Annotated[str, Field(max_length=500)] = ""
     markers_used: tuple[int, ...] = ()
 
 

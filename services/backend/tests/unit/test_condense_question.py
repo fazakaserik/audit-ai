@@ -121,7 +121,7 @@ async def test_follow_up_retrieval_uses_condensed_query_not_prior_answer() -> No
                 standalone_question=passage_text,
             ),
             AnswerGenerationResult(
-                sufficient=True,
+                can_answer=True,
                 answer_text="Thirty days [1].",
                 markers_used=(1,),
             ),

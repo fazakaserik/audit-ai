@@ -39,6 +39,10 @@ class StructuredResult[TModel: BaseModel]:
     usage: LlmUsage
 
 
+class IncompleteStructuredOutputError(Exception):
+    """Chat finished without usable structured JSON (e.g. thinking loop / empty body)."""
+
+
 @dataclass(frozen=True, slots=True)
 class EmbedResult:
     vectors: list[list[float]]

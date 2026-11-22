@@ -65,7 +65,7 @@ async def test_post_ask_answered_with_citations() -> None:
 
     chat = FakeChatModel(
         response=AnswerGenerationResult(
-            sufficient=True,
+            can_answer=True,
             answer_text="Payment is due within thirty days [1].",
             markers_used=(1,),
         ),

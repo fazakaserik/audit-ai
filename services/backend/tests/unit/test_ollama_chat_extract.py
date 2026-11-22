@@ -10,24 +10,24 @@ from domain.errors import ModelUnavailableError
 
 def test_extract_prefers_content() -> None:
     text = _extract_json_text(
-        content='{"sufficient": true, "answer_text": "ok", "markers_used": [1]}',
-        thinking='{"sufficient": false}',
+        content='{"can_answer": true, "answer_text": "ok", "markers_used": [1]}',
+        thinking='{"can_answer": false}',
     )
-    assert '"sufficient": true' in text
+    assert '"can_answer": true' in text
 
 
 def test_extract_falls_back_to_thinking_json() -> None:
     text = _extract_json_text(
         content="",
-        thinking='{"sufficient": false, "answer_text": "", "markers_used": []}',
+        thinking='{"can_answer": false, "answer_text": "", "markers_used": []}',
     )
-    assert '"sufficient": false' in text
+    assert '"can_answer": false' in text
 
 
 def test_extract_json_embedded_in_thinking_prose() -> None:
     thinking = (
         "Reasoning steps...\n"
-        'Final: {"sufficient": true, "answer_text": "Meal limit is 75 USD [1]", '
+        'Final: {"can_answer": true, "answer_text": "Meal limit is 75 USD [1]", '
         '"markers_used": [1]}\n'
         "done"
     )

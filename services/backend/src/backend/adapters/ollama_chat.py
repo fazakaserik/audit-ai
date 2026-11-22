@@ -15,7 +15,12 @@ from pydantic import BaseModel, ValidationError
 from tenacity import retry, retry_if_exception, stop_after_attempt
 
 from backend.adapters._retry import MAX_ATTEMPTS, RETRY_WAIT
-from backend.application.ports import ChatMessage, StructuredResult, ThinkingCallbacks
+from backend.application.ports import (
+    ChatMessage,
+    IncompleteStructuredOutputError,
+    StructuredResult,
+    ThinkingCallbacks,
+)
 from domain.errors import ModelTimeoutError, ModelUnavailableError
 from domain.session import LlmUsage
 
@@ -28,6 +33,9 @@ def _usage_from_ollama(response: object) -> LlmUsage:
 TModel = TypeVar("TModel", bound=BaseModel)
 
 _JSON_OBJECT_RE = re.compile(r"\{[\s\S]*\}")
+# Thinking models can loop forever on "decline" decisions; bound wall-clock + size.
+_THINKING_BUDGET_SECONDS = 45.0
+_THINKING_BUDGET_CHARS = 12_000
 
 
 def _is_transient(exc: BaseException) -> bool:
@@ -135,7 +143,9 @@ class OllamaChatModel:
             started = time.perf_counter()
             content_parts: list[str] = []
             thinking_parts: list[str] = []
+            thinking_chars = 0
             usage = LlmUsage()
+            budget_exhausted = False
             stream = await self._client.chat(
                 model=self._model,
                 messages=cast(Any, vendor_messages),
@@ -151,15 +161,30 @@ class OllamaChatModel:
                 delta_thinking = getattr(message, "thinking", None)
                 if isinstance(delta_thinking, str) and delta_thinking:
                     thinking_parts.append(delta_thinking)
+                    thinking_chars += len(delta_thinking)
                     await thinking.on_delta(delta_thinking)
                 delta_content = message.content
                 if isinstance(delta_content, str) and delta_content:
                     content_parts.append(delta_content)
+                elapsed = time.perf_counter() - started
+                if (
+                    thinking_chars >= _THINKING_BUDGET_CHARS
+                    or elapsed >= _THINKING_BUDGET_SECONDS
+                ) and not content_parts:
+                    budget_exhausted = True
+                    break
             thinking.on_seconds(time.perf_counter() - started)
-            payload = _extract_json_text(
-                content="".join(content_parts) or None,
-                thinking="".join(thinking_parts) or None,
-            )
+            if budget_exhausted and not content_parts:
+                raise IncompleteStructuredOutputError(
+                    "Ollama thinking exceeded budget without structured output"
+                )
+            try:
+                payload = _extract_json_text(
+                    content="".join(content_parts) or None,
+                    thinking="".join(thinking_parts) or None,
+                )
+            except ModelUnavailableError as exc:
+                raise IncompleteStructuredOutputError(str(exc)) from exc
             return StructuredResult(value=schema.model_validate_json(payload), usage=usage)
 
         response = await self._client.chat(

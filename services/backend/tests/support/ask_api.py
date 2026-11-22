@@ -74,7 +74,7 @@ async def index_passage(
 def answered_chat(text: str = "Payment is due within thirty days [1].") -> FakeChatModel:
     return FakeChatModel(
         response=AnswerGenerationResult(
-            sufficient=True,
+            can_answer=True,
             answer_text=text,
             markers_used=(1,),
         )

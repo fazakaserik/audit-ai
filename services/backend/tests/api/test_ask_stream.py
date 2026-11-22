@@ -77,7 +77,7 @@ async def test_post_ask_stream_progress_and_final() -> None:
 
     chat = FakeChatModel(
         response=AnswerGenerationResult(
-            sufficient=True,
+            can_answer=True,
             answer_text="Meal limit is 75 USD per day [1].",
             markers_used=(1,),
         ),

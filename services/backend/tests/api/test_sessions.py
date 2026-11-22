@@ -31,7 +31,7 @@ async def test_ask_creates_session_and_follow_up_continues() -> None:
     chat = FakeChatModel(
         responses=[
             AnswerGenerationResult(
-                sufficient=True,
+                can_answer=True,
                 answer_text="Thirty days [1].",
                 markers_used=(1,),
             ),
@@ -39,7 +39,7 @@ async def test_ask_creates_session_and_follow_up_continues() -> None:
                 standalone_question="What penalties apply for late Contoso payment?",
             ),
             AnswerGenerationResult(
-                sufficient=True,
+                can_answer=True,
                 answer_text="Penalties are not described in the excerpt [1].",
                 markers_used=(1,),
             ),

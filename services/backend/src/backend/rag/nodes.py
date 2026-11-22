@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, assert_never
 
-from backend.application.ports import ChatModel, Embedder, RetrievalScope, VectorIndex
+from backend.application.ports import (
+    ChatModel,
+    Embedder,
+    IncompleteStructuredOutputError,
+    RetrievalScope,
+    VectorIndex,
+)
 from backend.config import Settings
 from backend.rag.citations import filter_and_build_citations
 from backend.rag.progress import AskProgress, SourceHit
@@ -58,31 +64,45 @@ def default_client_suggestions(
     prompt = _truncate(question_text.strip(), 200)
     role_bit = f" for the {auditor_role} reviewer" if auditor_role else ""
     topic_bit = f" regarding {topic}" if topic else ""
-    if reason == InsufficientReason.NO_RELEVANT_PASSAGES:
-        return (
-            SuggestedClientQuestion(
-                question=(
-                    f"Can you provide documents{role_bit} that answer: {prompt}{topic_bit}?"
+    match reason:
+        case InsufficientReason.NO_RELEVANT_PASSAGES:
+            return (
+                SuggestedClientQuestion(
+                    question=(
+                        f"Can you provide documents{role_bit} that answer: {prompt}{topic_bit}?"
+                    ),
+                    rationale="No indexed passages met the relevance threshold for this question.",
                 ),
-                rationale="No indexed passages met the relevance threshold for this question.",
-            ),
-            SuggestedClientQuestion(
-                question=(
-                    "Are there additional files in a different folder that cover "
-                    f"this{topic_bit or ' topic'}?"
+                SuggestedClientQuestion(
+                    question=(
+                        "Are there additional files in a different folder that cover "
+                        f"this{topic_bit or ' topic'}?"
+                    ),
+                    rationale="The current folder scope may not include the relevant records.",
                 ),
-                rationale="The current folder scope may not include the relevant records.",
-            ),
-        )
-    return (
-        SuggestedClientQuestion(
-            question=(
-                f"Can you provide clearer or additional documentation{role_bit} "
-                f"about: {prompt}{topic_bit}?"
-            ),
-            rationale="Retrieved passages were not sufficient to ground a cited answer.",
-        ),
-    )
+            )
+        case InsufficientReason.MODEL_JUDGED_INSUFFICIENT:
+            return (
+                SuggestedClientQuestion(
+                    question=(
+                        "Can you restate the question with a concrete audit topic"
+                        f"{topic_bit}{role_bit}?"
+                    ),
+                    rationale=(
+                        "The assistant declined because the question was unclear "
+                        "or the retrieved evidence was not enough to ground an answer."
+                    ),
+                ),
+                SuggestedClientQuestion(
+                    question=(
+                        f"Can you provide clearer or additional documentation{role_bit} "
+                        f"about: {prompt}{topic_bit}?"
+                    ),
+                    rationale="Additional source material may make a grounded answer possible.",
+                ),
+            )
+        case _ as unreachable:
+            assert_never(unreachable)
 
 
 def _query_text(state: AskState) -> str:
@@ -162,6 +182,15 @@ async def grade_evidence(state: AskState, deps: AskGraphDeps) -> AskState:
     return {}
 
 
+def _declined_generation(*, reason: str) -> AnswerGenerationResult:
+    return AnswerGenerationResult(
+        can_answer=False,
+        answer_text="",
+        decline_reason=reason,
+        markers_used=(),
+    )
+
+
 async def generate_answer(state: AskState, deps: AskGraphDeps) -> AskState:
     if deps.progress is not None:
         await deps.progress.stage("generate")
@@ -173,16 +202,25 @@ async def generate_answer(state: AskState, deps: AskGraphDeps) -> AskState:
         auditor_role=question.auditor_role,
         topic=question.topic,
     )
-    generation = await deps.chat.generate_structured(
-        messages,
-        AnswerGenerationResult,
-        thinking=_thinking(deps),
-    )
+    try:
+        generation = await deps.chat.generate_structured(
+            messages,
+            AnswerGenerationResult,
+            thinking=_thinking(deps),
+        )
+        result = generation.value
+        usage = generation.usage
+    except IncompleteStructuredOutputError:
+        # Thinking loops / empty structured bodies → decline, not a hard API failure.
+        result = _declined_generation(
+            reason="The model could not produce a grounded answer for this question.",
+        )
+        usage = LlmUsage()
     update: AskState = {
-        "generation": generation.value,
-        "usage": _merge_usage(state, generation.usage),
+        "generation": result,
+        "usage": _merge_usage(state, usage),
     }
-    if not generation.value.sufficient or not generation.value.answer_text.strip():
+    if not result.can_answer or not result.answer_text.strip():
         update["insufficient_reason"] = InsufficientReason.MODEL_JUDGED_INSUFFICIENT
     return update
 
