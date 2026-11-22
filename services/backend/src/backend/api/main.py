@@ -27,10 +27,10 @@ def create_app(
     run_worker: bool | None = None,
 ) -> FastAPI:
     configure_logging(json_logs=True)
+    cfg = settings if settings is not None else Settings()
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-        cfg = settings if settings is not None else Settings()
         owned = container is None
         if owned:
             # Alembic's env uses asyncio.run; run off the request loop.
@@ -62,7 +62,17 @@ def create_app(
             if owned:
                 await active.engine.dispose()
 
-    app = FastAPI(title="Audit Assistant API", version="1.0.0", lifespan=lifespan)
+    docs_url = "/docs" if cfg.enable_api_docs else None
+    redoc_url = "/redoc" if cfg.enable_api_docs else None
+    openapi_url = "/openapi.json" if cfg.enable_api_docs else None
+    app = FastAPI(
+        title="Audit Assistant API",
+        version="1.0.0",
+        lifespan=lifespan,
+        docs_url=docs_url,
+        redoc_url=redoc_url,
+        openapi_url=openapi_url,
+    )
     if container is not None:
         # Available before lifespan for ASGITransport tests that skip lifespan.
         app.state.container = container

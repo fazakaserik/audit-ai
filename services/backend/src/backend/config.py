@@ -44,6 +44,8 @@ class Settings(BaseSettings):
     api_port: int = Field(default=8000, ge=1, le=65535)
     # Single-process default: run the upload claim loop inside the API.
     run_worker_in_api: bool = True
+    # Swagger UI / ReDoc / OpenAPI JSON — enable only in local/dev deployments.
+    enable_api_docs: bool = False
 
     @model_validator(mode="after")
     def require_openai_key_when_needed(self) -> Settings:

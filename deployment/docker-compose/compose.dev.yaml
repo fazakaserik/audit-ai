@@ -8,6 +8,10 @@ services:
     ports:
       - "5432:5432"
 
+  backend:
+    environment:
+      ENABLE_API_DOCS: "true"
+
   ollama:
     ports:
       - "11434:11434"
