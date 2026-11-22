@@ -29,9 +29,11 @@ target-version = "py313"
 line-length = 100
 src = [
   "packages/domain/src",
+  "packages/domain/tests",
   "services/backend/src",
+  "services/backend/tests",
   "cli/src",
-  "tests",
+  "cli/tests",
   "scripts",
 ]
 
@@ -47,7 +49,7 @@ select = [
   "RUF",
   "TCH",
 ]
-ignore = ["E501"]
+ignore = ["E501", "TCH"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["domain", "backend", "cli"]
@@ -60,15 +62,27 @@ markers = [
   "db: Postgres+pgvector via testcontainers",
   "integration: real Ollama/OpenAI (opt-in)",
 ]
-testpaths = ["tests"]
+testpaths = [
+  "packages/domain/tests",
+  "services/backend/tests",
+  "cli/tests",
+]
+pythonpath = [
+  "packages/domain/src",
+  "services/backend/src",
+  "services/backend/tests",
+  "cli/src",
+]
 addopts = "-m \"not db and not integration\""
 
 [tool.basedpyright]
 include = [
   "packages/domain/src",
+  "packages/domain/tests",
   "services/backend/src",
+  "services/backend/tests",
   "cli/src",
-  "tests",
+  "cli/tests",
   "scripts",
 ]
 exclude = [

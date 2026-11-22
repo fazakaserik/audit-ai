@@ -1,9 +1,11 @@
 {
   "include": [
     "packages/domain/src",
+    "packages/domain/tests",
     "services/backend/src",
+    "services/backend/tests",
     "cli/src",
-    "tests",
+    "cli/tests",
     "scripts"
   ],
   "exclude": ["**/__pycache__", ".venv"],
@@ -13,5 +15,11 @@
   "typeCheckingMode": "strict",
   "reportMissingImports": true,
   "reportAny": "error",
-  "reportExplicitAny": "error"
+  "reportExplicitAny": "error",
+  "extraPaths": [
+    "packages/domain/src",
+    "services/backend/src",
+    "services/backend/tests",
+    "cli/src"
+  ]
 }
