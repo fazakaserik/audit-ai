@@ -9,7 +9,8 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from domain.common import RequestId
-from domain.errors import DomainError, ErrorCode, ValidationError as DomainValidationError
+from domain.errors import DomainError, ErrorCode
+from domain.errors import ValidationError as DomainValidationError
 from domain.problem import FieldError, ProblemDetails
 
 _STATUS: dict[ErrorCode, int] = {

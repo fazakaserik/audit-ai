@@ -7,7 +7,11 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Response, status
 from sqlalchemy import text
 
-from backend.api.contracts.v1.responses import DependencyCheck, HealthLiveResponse, HealthReadyResponse
+from backend.api.contracts.v1.responses import (
+    DependencyCheck,
+    HealthLiveResponse,
+    HealthReadyResponse,
+)
 from backend.api.dependencies import get_container
 from backend.bootstrap import Container
 
@@ -25,12 +29,22 @@ async def ready(
     response: Response,
 ) -> HealthReadyResponse:
     checks: dict[str, DependencyCheck] = {}
+
     try:
         async with container.session_factory() as session:
             await session.execute(text("SELECT 1"))
         checks["postgres"] = DependencyCheck(ok=True)
     except Exception as exc:
         checks["postgres"] = DependencyCheck(ok=False, detail=type(exc).__name__)
+
+    try:
+        vectors = await container.embedder.embed(["health-check"])
+        if not vectors or not vectors[0]:
+            checks["embeddings"] = DependencyCheck(ok=False, detail="empty_embedding")
+        else:
+            checks["embeddings"] = DependencyCheck(ok=True)
+    except Exception as exc:
+        checks["embeddings"] = DependencyCheck(ok=False, detail=type(exc).__name__)
 
     ready_ok = all(c.ok for c in checks.values())
     if not ready_ok:
