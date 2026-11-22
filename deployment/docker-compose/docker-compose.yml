@@ -1,3 +1,5 @@
+name: auditor-ai
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -24,30 +26,19 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://audit:audit@postgres:5432/audit
       DOCUMENT_STORAGE_PATH: /data/storage
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      RUN_WORKER_IN_API: "true"
     ports:
       - "8000:8000"
     volumes:
       - document_storage:/data/storage
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres:
         condition: service_healthy
 
-  worker:
-    build:
-      context: ../..
-      dockerfile: services/backend/Dockerfile
-    command: ["uv", "run", "--package", "backend", "audit-worker"]
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://audit:audit@postgres:5432/audit
-      DOCUMENT_STORAGE_PATH: /data/storage
-    volumes:
-      - document_storage:/data/storage
-    depends_on:
-      postgres:
-        condition: service_healthy
-
+  # Optional in-compose Ollama. Prefer host Ollama for GPU day-to-day.
   ollama:
     profiles: ["local"]
     image: ollama/ollama:latest
@@ -55,6 +46,27 @@ services:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  ollama-pull:
+    profiles: ["local"]
+    image: ollama/ollama:latest
+    depends_on:
+      - ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama pull qwen3.5:4b
+        ollama pull nomic-embed-text
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    restart: "no"
 
 volumes:
   postgres_data:
