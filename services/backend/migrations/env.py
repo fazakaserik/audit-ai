@@ -11,10 +11,16 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from backend.adapters.postgres.models import Base
+from backend.config import Settings
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# Programmatic callers (API startup) may pass the URL via attributes;
+# otherwise prefer DATABASE_URL / Settings over the static alembic.ini default.
+_url = config.attributes.get("database_url") or Settings().database_url
+config.set_main_option("sqlalchemy.url", _url)
 
 target_metadata = Base.metadata
 
