@@ -18,9 +18,20 @@ from backend.adapters.postgres.repositories import (
     PostgresDocumentRepository,
     PostgresEngagementRepository,
     PostgresSessionRepository,
+    PostgresUploadRepository,
 )
 from backend.adapters.postgres.vector_index import PostgresVectorIndex
-from backend.application.ports import ChatModel, DocumentStorage, Embedder
+from backend.application.ports import (
+    ChatModel,
+    DocumentRepository,
+    DocumentStorage,
+    Embedder,
+    EngagementRepository,
+    JobQueue,
+    SessionRepository,
+    UploadRepository,
+    VectorIndex,
+)
 from backend.config import Settings
 from domain.providers import LlmProvider
 
@@ -29,11 +40,12 @@ from domain.providers import LlmProvider
 class SessionBound:
     """Per-request repositories bound to one AsyncSession."""
 
-    engagements: PostgresEngagementRepository
-    documents: PostgresDocumentRepository
-    sessions: PostgresSessionRepository
-    vector_index: PostgresVectorIndex
-    jobs: PostgresJobQueue
+    engagements: EngagementRepository
+    documents: DocumentRepository
+    sessions: SessionRepository
+    uploads: UploadRepository
+    vector_index: VectorIndex
+    jobs: JobQueue
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +62,7 @@ class Container:
             engagements=PostgresEngagementRepository(session),
             documents=PostgresDocumentRepository(session),
             sessions=PostgresSessionRepository(session),
+            uploads=PostgresUploadRepository(session),
             vector_index=PostgresVectorIndex(session),
             jobs=PostgresJobQueue(session),
         )

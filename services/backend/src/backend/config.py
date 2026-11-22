@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     )
 
     llm_provider: LlmProvider = LlmProvider.OLLAMA
-    llm_model: str = "qwen2.5:7b"
+    llm_model: str = "qwen3.5:4b"
     embedding_provider: LlmProvider = LlmProvider.OLLAMA
     embedding_model: str = "nomic-embed-text"
 
@@ -30,10 +30,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://audit:audit@localhost:5432/audit"
     document_storage_path: Path = Path("./data/storage")
 
-    model_timeout_seconds: float = Field(default=60.0, gt=0)
+    model_timeout_seconds: float = Field(default=120.0, gt=0)
     retrieval_top_k: int = Field(default=8, ge=1, le=50)
     relevance_threshold: float = Field(default=0.30, ge=0.0, le=1.0)
-    max_concurrent_model_calls: int = Field(default=4, ge=1, le=64)
+    max_concurrent_model_calls: int = Field(default=2, ge=1, le=64)
     session_context_turns: int = Field(default=5, ge=0, le=20)
 
     upload_max_bytes: int = Field(default=50 * 1024 * 1024, ge=1)
@@ -42,6 +42,8 @@ class Settings(BaseSettings):
 
     api_host: str = "0.0.0.0"
     api_port: int = Field(default=8000, ge=1, le=65535)
+    # Single-process default: run the upload claim loop inside the API.
+    run_worker_in_api: bool = True
 
     @model_validator(mode="after")
     def require_openai_key_when_needed(self) -> Settings:
