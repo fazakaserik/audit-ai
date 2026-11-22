@@ -14,7 +14,11 @@ from backend.adapters.postgres.models import Base
 from backend.config import Settings
 
 config = context.config
-if config.config_file_name is not None:
+# Skip when the API/worker already configured structlog — Alembic's fileConfig
+# would otherwise reset the root logger to WARN and silence app INFO logs.
+if config.config_file_name is not None and not config.attributes.get(
+    "skip_logging_config", False
+):
     fileConfig(config.config_file_name)
 
 # Programmatic callers (API startup) may pass the URL via attributes;

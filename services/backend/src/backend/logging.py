@@ -1,4 +1,4 @@
-"""Structured JSON logging via structlog."""
+"""Structured logging via structlog."""
 
 from __future__ import annotations
 
@@ -7,8 +7,16 @@ from uuid import UUID
 
 import structlog
 
+_LEVEL_BY_NAME: dict[str, int] = {
+    "CRITICAL": logging.CRITICAL,
+    "ERROR": logging.ERROR,
+    "WARNING": logging.WARNING,
+    "INFO": logging.INFO,
+    "DEBUG": logging.DEBUG,
+}
 
-def configure_logging(*, json_logs: bool = True) -> None:
+
+def configure_logging(*, json_logs: bool = True, level: str = "INFO") -> None:
     shared_processors: list[structlog.types.Processor] = [
         structlog.contextvars.merge_contextvars,
         structlog.stdlib.add_log_level,
@@ -42,7 +50,7 @@ def configure_logging(*, json_logs: bool = True) -> None:
     root = logging.getLogger()
     root.handlers.clear()
     root.addHandler(handler)
-    root.setLevel(logging.INFO)
+    root.setLevel(_LEVEL_BY_NAME.get(level.upper(), logging.INFO))
 
 
 def get_logger(name: str) -> structlog.stdlib.BoundLogger:

@@ -26,8 +26,8 @@ def create_app(
     container: Container | None = None,
     run_worker: bool | None = None,
 ) -> FastAPI:
-    configure_logging(json_logs=True)
     cfg = settings if settings is not None else Settings()
+    configure_logging(json_logs=cfg.log_json, level=cfg.log_level)
 
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -36,6 +36,8 @@ def create_app(
             # Alembic's env uses asyncio.run; run off the request loop.
             log.info("database_migrate_start")
             await asyncio.to_thread(upgrade_head, cfg.database_url)
+            # Belt-and-suspenders if a migration path still touches logging.
+            configure_logging(json_logs=cfg.log_json, level=cfg.log_level)
             log.info("database_migrate_complete")
         active = container if container is not None else build_container(cfg)
         app.state.container = active
@@ -48,6 +50,7 @@ def create_app(
         stop = asyncio.Event()
         worker_task: asyncio.Task[None] | None = None
         if worker_enabled:
+            log.info("worker_enabled", run_in_api=True)
             worker_task = asyncio.create_task(
                 run_worker_loop(active, stop=stop),
                 name="upload-worker",

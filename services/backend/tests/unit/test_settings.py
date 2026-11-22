@@ -19,3 +19,5 @@ def test_ollama_qwen_defaults() -> None:
     assert settings.llm_provider == LlmProvider.OLLAMA
     assert settings.llm_model == "qwen3.5:4b"
     assert settings.embedding_model == "nomic-embed-text"
+    assert settings.log_level == "INFO"
+    assert settings.log_json is True

@@ -3,15 +3,52 @@
 from __future__ import annotations
 
 import sys
+import time
 from pathlib import Path
+from uuid import UUID
 
-from cli.client import AuditApiClient, CliApiError
+from backend.api.contracts.v1.responses import UploadResponse
+from cli.client import UPLOAD_POLL_INTERVAL_SECONDS, AuditApiClient, CliApiError
+from domain.engagement import EngagementId
 from domain.errors import ErrorCode
+from domain.upload import UploadItemStatus, UploadStatus
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLE_DIR = ROOT / "docs" / "samples" / "ai-generated" / "northwind-fy2025"
 ENGAGEMENT_ID = "northwind-fy2025"
 ENGAGEMENT_NAME = "Northwind FY2025"
+
+_TERMINAL_ITEM = frozenset(
+    {
+        UploadItemStatus.INDEXED,
+        UploadItemStatus.SKIPPED,
+        UploadItemStatus.NOT_SEARCHABLE,
+        UploadItemStatus.FAILED,
+    }
+)
+
+
+def _wait_with_progress(
+    client: AuditApiClient,
+    engagement_id: EngagementId,
+    upload_id: UUID,
+) -> UploadResponse:
+    last_summary = ""
+    while True:
+        status = client.get_upload_status(engagement_id, upload_id)
+        done = sum(1 for item in status.items if item.status in _TERMINAL_ITEM)
+        active = next(
+            (item for item in status.items if item.status not in _TERMINAL_ITEM),
+            None,
+        )
+        active_bit = f", working on {active.document_path}" if active is not None else ""
+        summary = f"{status.status.value}: {done}/{len(status.items)} items done{active_bit}"
+        if summary != last_summary:
+            print(f"  … {summary}")
+            last_summary = summary
+        if status.status in (UploadStatus.COMPLETED, UploadStatus.FAILED):
+            return status
+        time.sleep(UPLOAD_POLL_INTERVAL_SECONDS)
 
 
 def main() -> None:
@@ -39,7 +76,7 @@ def main() -> None:
                 folder=folder.name,
             )
             print(f"queued {folder.name} → {accepted.upload_id}")
-            final = client.wait_upload(ENGAGEMENT_ID, accepted.upload_id)
+            final = _wait_with_progress(client, ENGAGEMENT_ID, accepted.upload_id)
             print(f"upload {accepted.upload_id} → {final.status}")
             if final.status.value == "failed":
                 raise SystemExit(f"upload failed: {accepted.upload_id}")

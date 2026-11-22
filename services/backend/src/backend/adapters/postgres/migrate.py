@@ -19,4 +19,6 @@ def upgrade_head(database_url: str) -> None:
     cfg.set_main_option("sqlalchemy.url", database_url)
     # Prefer this over Settings() when env.py runs inside command.upgrade.
     cfg.attributes["database_url"] = database_url
+    # Keep the app's structlog config; do not let Alembic reset root to WARN.
+    cfg.attributes["skip_logging_config"] = True
     command.upgrade(cfg, "head")

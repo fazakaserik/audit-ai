@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     # Swagger UI / ReDoc / OpenAPI JSON — enable only in local/dev deployments.
     enable_api_docs: bool = False
 
+    log_level: str = "INFO"
+    # JSON for production scrapers; false for human-readable docker/dev tails.
+    log_json: bool = True
+
     @model_validator(mode="after")
     def require_openai_key_when_needed(self) -> Settings:
         needs_openai = (

@@ -64,8 +64,18 @@ async def run_worker_loop(
                         status=outcome.status.value,
                         reason=outcome.reason,
                     )
+                    # Refresh after complete so terminal item status is visible.
+                    upload_status = await bound.uploads.refresh_status(item.upload_id)
+                    log.info(
+                        "job_completed",
+                        item_id=str(item.id),
+                        path=item.document_path,
+                        status=outcome.status.value,
+                        reason=outcome.reason,
+                        upload_status=upload_status.status.value,
+                    )
                 except Exception as exc:
-                    log.exception("job_failed", item_id=str(item.id))
+                    log.exception("job_failed", item_id=str(item.id), path=item.document_path)
                     await bound.jobs.fail_for_retry(item.id, reason=str(exc))
                     await bound.uploads.refresh_status(item.upload_id)
                 await session.commit()
@@ -94,8 +104,8 @@ async def _run_standalone(settings: Settings) -> None:
 
 
 def run() -> None:
-    configure_logging(json_logs=True)
     settings = Settings()
+    configure_logging(json_logs=settings.log_json, level=settings.log_level)
     asyncio.run(_run_standalone(settings))
 
 

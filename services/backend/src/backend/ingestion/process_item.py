@@ -17,12 +17,15 @@ from backend.application.ports import (
 )
 from backend.ingestion.chunking import chunk_document
 from backend.ingestion.parsers import detect_content_type, parse_bytes
+from backend.logging import get_logger
 from domain.common import new_uuid, utc_now
 from domain.document import ContentType, Document, DocumentId, DocumentPath
 from domain.engagement import EngagementId
 from domain.errors import NotFoundError, UnsafeUploadError, ValidationError
 from domain.passage import Passage, PassageId
 from domain.upload import UploadItem, UploadItemStatus
+
+log = get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,16 +44,20 @@ async def process_upload_item(
     embedder: Embedder,
     uploads: UploadRepository,
 ) -> ProcessItemOutcome:
+    path = item.document_path
+    log.info("ingest_start", path=path, engagement_id=engagement_id)
     try:
-        data = await storage.get(engagement_id, item.document_path)
+        data = await storage.get(engagement_id, path)
     except NotFoundError:
+        log.warning("ingest_missing_file", path=path)
         return ProcessItemOutcome(
             status=UploadItemStatus.FAILED,
             reason="stored file missing",
         )
 
-    content_type = detect_content_type(item.document_path)
+    content_type = detect_content_type(path)
     if content_type is None:
+        log.info("ingest_skipped", path=path, reason="unsupported file extension")
         return ProcessItemOutcome(
             status=UploadItemStatus.SKIPPED,
             reason="unsupported file extension",
@@ -58,20 +65,28 @@ async def process_upload_item(
 
     sha = hashlib.sha256(data).hexdigest()
     now = utc_now()
-    prior = await documents.get_by_path(engagement_id, item.document_path)
+    prior = await documents.get_by_path(engagement_id, path)
     version = 1 if prior is None else prior.version + 1
     document_id = prior.id if prior is not None else DocumentId(new_uuid())
+    log.info(
+        "ingest_loaded",
+        path=path,
+        size_bytes=len(data),
+        content_type=content_type.value,
+        version=version,
+    )
 
     try:
-        parsed = parse_bytes(data, path=item.document_path)
+        parsed = parse_bytes(data, path=path)
         chunks = chunk_document(parsed)
     except (UnsafeUploadError, ValidationError) as exc:
         detail = exc.message
+        log.warning("ingest_not_searchable", path=path, reason=detail)
         await _upsert_not_searchable(
             documents=documents,
             engagement_id=engagement_id,
             document_id=document_id,
-            document_path=item.document_path,
+            document_path=path,
             content_type=content_type,
             size_bytes=len(data),
             sha256=sha,
@@ -83,11 +98,12 @@ async def process_upload_item(
         return ProcessItemOutcome(status=UploadItemStatus.NOT_SEARCHABLE, reason=detail)
     except PdfReadError as exc:
         reason = f"pdf parse failed: {exc}"
+        log.warning("ingest_not_searchable", path=path, reason=reason)
         await _upsert_not_searchable(
             documents=documents,
             engagement_id=engagement_id,
             document_id=document_id,
-            document_path=item.document_path,
+            document_path=path,
             content_type=content_type,
             size_bytes=len(data),
             sha256=sha,
@@ -102,15 +118,17 @@ async def process_upload_item(
         )
 
     if not chunks:
+        log.info("ingest_skipped", path=path, reason="no indexable text")
         return ProcessItemOutcome(
             status=UploadItemStatus.SKIPPED,
             reason="no indexable text",
         )
 
+    log.info("ingest_chunked", path=path, chunk_count=len(chunks))
     document = Document(
         id=document_id,
         engagement_id=engagement_id,
-        path=item.document_path,
+        path=path,
         content_type=content_type,
         size_bytes=len(data),
         sha256=sha,
@@ -135,17 +153,25 @@ async def process_upload_item(
         )
         for chunk in chunks
     ]
+    log.info(
+        "ingest_embed_start",
+        path=path,
+        passage_count=len(passages),
+        model=embedder.model_name,
+    )
     embeddings = await embedder.embed([p.text for p in passages])
+    log.info("ingest_embed_done", path=path, vector_count=len(embeddings))
     await vector_index.upsert_passages(
         engagement_id=engagement_id,
         document_id=document_id,
-        document_path=item.document_path,
+        document_path=path,
         document_version=version,
         passages=passages,
         embeddings=embeddings,
         embedding_model=embedder.model_name,
     )
     await uploads.refresh_status(item.upload_id)
+    log.info("ingest_indexed", path=path, passage_count=len(passages), version=version)
     return ProcessItemOutcome(status=UploadItemStatus.INDEXED, reason=None)
 
 

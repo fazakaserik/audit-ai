@@ -11,6 +11,8 @@ services:
   backend:
     environment:
       ENABLE_API_DOCS: "true"
+      LOG_LEVEL: "INFO"
+      LOG_JSON: "false"
 
   ollama:
     ports:
