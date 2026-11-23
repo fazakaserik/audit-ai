@@ -7,7 +7,6 @@ members = [
     "audit-ai",
     "backend",
     "cli",
-    "domain",
 ]
 
 [[package]]
@@ -144,12 +143,12 @@ source = { editable = "services/backend" }
 dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
-    { name = "domain" },
     { name = "fastapi" },
     { name = "langgraph" },
     { name = "ollama" },
     { name = "openai" },
     { name = "pgvector" },
+    { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pypdf" },
     { name = "python-multipart" },
@@ -164,12 +163,12 @@ dependencies = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.14" },
     { name = "asyncpg", specifier = ">=0.30" },
-    { name = "domain", editable = "packages/domain" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "langgraph", specifier = ">=0.2" },
     { name = "ollama", specifier = ">=0.4" },
     { name = "openai", specifier = ">=1.60" },
     { name = "pgvector", specifier = ">=0.3" },
+    { name = "pydantic", specifier = ">=2.10" },
     { name = "pydantic-settings", specifier = ">=2.7" },
     { name = "pypdf", specifier = ">=5.1" },
     { name = "python-multipart", specifier = ">=0.0.20" },
@@ -322,7 +321,6 @@ version = "0.1.0"
 source = { editable = "cli" }
 dependencies = [
     { name = "backend" },
-    { name = "domain" },
     { name = "httpx" },
     { name = "prompt-toolkit" },
     { name = "questionary" },
@@ -333,7 +331,6 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "backend", editable = "services/backend" },
-    { name = "domain", editable = "packages/domain" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "prompt-toolkit", specifier = ">=3.0" },
     { name = "questionary", specifier = ">=2.0" },
@@ -381,17 +378,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/88/7f/731ff914b0255d3d0
 wheels = [
     { url = "https://files.pythonhosted.org/packages/75/23/529140fe1aab80fc6992f93a706deec709140a6397439139a054e1515c45/docker-7.2.0-py3-none-any.whl", hash = "sha256:a3f45fdeb9165e2d25d9a1d02ddf3bc70fb572cf5ebbf9b58558c22caf29b71f", size = 148775, upload-time = "2026-07-09T14:53:45.224Z" },
 ]
-
-[[package]]
-name = "domain"
-version = "0.1.0"
-source = { editable = "packages/domain" }
-dependencies = [
-    { name = "pydantic" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.10" }]
 
 [[package]]
 name = "fastapi"

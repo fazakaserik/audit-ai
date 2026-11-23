@@ -84,7 +84,12 @@ def upgrade() -> None:
     op.create_table(
         "turn_citations",
         sa.Column("id", sa.Uuid(), primary_key=True, nullable=False),
-        sa.Column("turn_id", sa.Uuid(), sa.ForeignKey("session_turns.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "turn_id",
+            sa.Uuid(),
+            sa.ForeignKey("session_turns.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("kind", sa.String(length=16), nullable=False),
         sa.Column("marker", sa.Integer(), nullable=False),
         sa.Column("chunk_id", sa.Uuid(), nullable=False),
@@ -106,7 +111,12 @@ def upgrade() -> None:
     op.create_table(
         "turn_suggested_questions",
         sa.Column("id", sa.Uuid(), primary_key=True, nullable=False),
-        sa.Column("turn_id", sa.Uuid(), sa.ForeignKey("session_turns.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "turn_id",
+            sa.Uuid(),
+            sa.ForeignKey("session_turns.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("ordinal", sa.Integer(), nullable=False),
         sa.Column("question", sa.Text(), nullable=False),
         sa.Column("rationale", sa.Text(), nullable=False),

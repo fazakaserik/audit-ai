@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from domain.engagement import EngagementId
-from domain.errors import ModelTimeoutError, ModelUnavailableError
+from backend.domain.engagement import EngagementId
+from backend.domain.errors import ModelTimeoutError, ModelUnavailableError
 from support.ask_api import (
     build_ask_app,
     index_chunk,

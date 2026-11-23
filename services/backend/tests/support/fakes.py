@@ -23,18 +23,21 @@ from backend.application.ports import (
     ToolSpec,
     ToolTurnResult,
 )
-from domain.document import Document, DocumentId, DocumentPath, FolderPath
-from domain.document.paths import (
+from backend.domain.chunk import Chunk
+from backend.domain.document import (
+    Document,
+    DocumentId,
+    DocumentPath,
+    FolderPath,
     child_folder_name,
     normalize_list_prefix,
     relative_segments,
     within_depth,
 )
-from domain.engagement import Engagement, EngagementId
-from domain.errors import ModelTimeoutError, ModelUnavailableError, NotFoundError
-from domain.chunk import Chunk
-from domain.session import LlmUsage, Session, SessionId, Turn
-from domain.upload import (
+from backend.domain.engagement import Engagement, EngagementId
+from backend.domain.errors import ModelTimeoutError, ModelUnavailableError, NotFoundError
+from backend.domain.session import LlmUsage, Session, SessionId, Turn
+from backend.domain.upload import (
     Upload,
     UploadId,
     UploadItem,

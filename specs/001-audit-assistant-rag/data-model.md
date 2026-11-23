@@ -1,6 +1,6 @@
 # Data Model: Audit Assistant
 
-Source of truth for domain types in `packages/domain` (feature packages such as `domain.engagement`, `domain.upload`) and the Postgres schema owned by `backend.adapters.postgres`. HTTP DTOs live in `backend.api.contracts.v1`, not in domain.
+Source of truth for domain types in `backend.domain` (one module per model, e.g. `backend.domain.engagement`, `backend.domain.upload`) and the Postgres schema owned by `backend.infrastructure.postgres`. HTTP DTOs live in `backend.application.api.contracts.v1`, not in domain.
 
 ## Conventions
 
@@ -194,4 +194,4 @@ turn_suggested_questions(id PK, turn_id FK, ordinal, question, rationale,
 
 ## Mapping to API contracts
 
-Internal entities ↔ `backend.api.contracts.v1` response models via explicit functions in `backend/api/contracts/v1/mapping.py`. Contract models never subclass entity models.
+Internal entities ↔ `backend.application.api.contracts.v1` response models via explicit functions in `backend/api/contracts/v1/mapping.py`. Contract models never subclass entity models.

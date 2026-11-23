@@ -7,9 +7,9 @@ import uuid
 import httpx
 import pytest
 
+from backend.domain.common import RequestId
+from backend.domain.errors import ErrorCode
 from cli.client import AuditApiClient, CliApiError, _problem_to_cli_error
-from domain.common import RequestId
-from domain.errors import ErrorCode
 
 
 def test_problem_details_mapping_from_response() -> None:

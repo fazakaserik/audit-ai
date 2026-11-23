@@ -4,9 +4,13 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from backend.api.contracts.v1.responses import AnsweredResponse, CitationResponse, LlmUsageResponse
+from backend.application.api.contracts.v1.responses import (
+    AnsweredResponse,
+    CitationResponse,
+    LlmUsageResponse,
+)
+from backend.domain.common import RequestId
 from cli.repl import ReplState, _format_token_count, _token_toolbar
-from domain.common import RequestId
 
 
 def test_format_token_count_empty_and_thousands() -> None:

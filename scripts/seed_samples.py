@@ -7,11 +7,11 @@ import time
 from pathlib import Path
 from uuid import UUID
 
-from backend.api.contracts.v1.responses import UploadResponse
+from backend.application.api.contracts.v1.responses import UploadResponse
+from backend.domain.engagement import EngagementId
+from backend.domain.errors import ErrorCode
+from backend.domain.upload import UploadItemStatus, UploadStatus
 from cli.client import UPLOAD_POLL_INTERVAL_SECONDS, AuditApiClient, CliApiError
-from domain.engagement import EngagementId
-from domain.errors import ErrorCode
-from domain.upload import UploadItemStatus, UploadStatus
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLE_DIR = ROOT / "docs" / "samples" / "ai-generated" / "northwind-fy2025"

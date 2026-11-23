@@ -1,7 +1,7 @@
 <!--
 Sync Impact Report
-- Version change: 1.1.1 -> 1.2.0
-- Modified principles: II. Enforced Layering (single `backend` service; drop separate core/api/worker packages)
+- Version change: 1.2.0 -> 1.3.0
+- Modified principles: I (Any confined to infrastructure), II. Enforced Layering (domain inside backend; adapters renamed infrastructure; application owns api/rag/worker)
 - Added principles: none
 - Added sections: none
 - Removed sections: none
@@ -16,8 +16,8 @@ Sync Impact Report
 
 - All Python code MUST pass basedpyright in `strict` mode with zero errors and zero warnings.
 - Explicit `Any` (annotations, `cast(Any, ...)`, untyped `**kwargs: Any`) MUST NOT appear outside
-  `backend.adapters`. Inside adapters, `Any` MUST be confined to the boundary with a vendor
-  SDK and converted to project types before leaving the adapter.
+  `backend.infrastructure`. Inside infrastructure, `Any` MUST be confined to the boundary with a
+  vendor SDK and converted to project types before leaving the adapter.
 - Suppression comments (`# pyright: ignore[...]`, `# type: ignore`) MUST name the specific rule
   and carry a reason on the same line. Blanket suppressions and file-level disables are forbidden.
 - Domain models MUST be pydantic models configured with `frozen=True`, `strict=True` and
@@ -34,23 +34,32 @@ blocks the build is the cheapest reviewer, and it keeps refactors safe across pa
 
 ### II. Enforced Layering
 
-- Workspace packages: `domain`, `backend`, `cli`.
+- Workspace packages: `backend`, `cli`.
+- Backend layers (under `services/backend/src/backend`):
+  - `backend.domain` — frozen pydantic entities and domain errors
+  - `backend.application` — ports, DTOs, use cases, RAG, HTTP API, worker entrypoints
+  - `backend.infrastructure` — vendor adapters (Postgres, LLM providers, FS, parsing)
+  - Composition root at package root: `bootstrap.py`, `config.py`, `logging.py`
 - Dependency rules MUST be declared as import-linter contracts and MUST pass in CI:
-  - `domain` imports nothing from the project; its only third-party dependency is pydantic.
-  - `backend.application` imports only `domain` (and the standard library).
+  - `backend.domain` imports nothing from the rest of the project; its only third-party
+    dependency is pydantic.
+  - Application use cases, ports, DTOs, RAG, and ingestion orchestration MUST NOT import
+    `backend.infrastructure` or `backend.bootstrap` (HTTP/worker entrypoints may wire via
+    bootstrap).
   - Vendor SDKs (`openai`, `ollama`, `sqlalchemy`, `pgvector`, `asyncpg`, `pypdf`, `tenacity`)
-    are imported only in `backend.adapters`.
-  - HTTP surface, use cases, adapters, RAG/ingestion, and the worker entrypoint live in the
+    are imported only in `backend.infrastructure`.
+  - HTTP surface, use cases, infrastructure, RAG/ingestion, and the worker entrypoint live in the
     single `backend` package (`services/backend`). Alembic migrations are owned by `backend`.
-  - `cli` MAY import `domain` and `backend.api.contracts` and MUST NOT import
-    `backend.application`, `backend.adapters`, `backend.rag`, `backend.ingestion`,
-    `backend.worker`, or `backend.bootstrap`. It communicates with the running system over HTTP.
-- Domain entities live in feature packages under `domain` (e.g. `domain.engagement`). Shared
-  primitives live at the domain root (`errors`, `problem`, `common`, `providers`). Public HTTP
-  contracts live in `backend.api.contracts`, with explicit mapping from domain entities at the
-  API edge.
+  - `cli` MAY import `backend.domain` and `backend.application.api.contracts` and MUST NOT import
+    use cases, ports, RAG, ingestion, worker, infrastructure, bootstrap, config, or logging.
+    It communicates with the running system over HTTP.
+- Domain entities live as one module per model under `backend.domain` (e.g. `backend.domain.engagement`).
+  Related types for a model stay in that file; folders are used only when models are tightly coupled.
+  Shared primitives live at the domain root (`errors`, `problem`, `common`, `providers`). Public
+  HTTP contracts live in `backend.application.api.contracts`, with explicit mapping from domain
+  entities at the API edge.
 - External services MUST be reached through ports (`Protocol` classes in
-  `backend.application`) and wired in a single composition root. Switching providers MUST
+  `backend.application.ports`) and wired in a single composition root. Switching providers MUST
   require configuration changes only.
 - Compose MAY run a second container of the same backend image for the worker command; that is
   an operational choice, not a separate package.
@@ -77,11 +86,11 @@ Fakes that honour the ports keep the tests honest about the real integration poi
 ### IV. Consistent Errors and Safe Observability
 
 - Every error response MUST be RFC 9457 Problem Details (`application/problem+json`) with a
-  stable machine-readable `code` from a single enumerated list in `domain`, the
+  stable machine-readable `code` from a single enumerated list in `backend.domain`, the
   `request_id`, and field-level `errors[]` for validation failures. Error codes MUST NOT be
   renamed or reused once released.
 - Domain and application code MUST raise typed exceptions; mapping to HTTP status codes and
-  Problem Details MUST happen in exactly one place in `backend.api`.
+  Problem Details MUST happen in exactly one place in `backend.application.api`.
 - Logs MUST be structured JSON (structlog) carrying `request_id`, and `upload_id`/`job_id` for
   background work.
 - Logs, error responses and traces MUST NOT contain document content, chunk text, prompts,
@@ -169,4 +178,4 @@ dependency set. Global installs pollute the host and break reproducibility.
   every change, and a final review against the principles before submission.
 - Runtime development guidance lives in the root `README.md` and the feature's `research.md`.
 
-**Version**: 1.2.0 | **Ratified**: 2026-11-22 | **Last Amended**: 2026-11-22
+**Version**: 1.3.0 | **Ratified**: 2026-11-22 | **Last Amended**: 2026-11-23

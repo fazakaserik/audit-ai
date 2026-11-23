@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import httpx
 
-from backend.api.main import create_app
+from backend.application.api.main import create_app
 from backend.config import Settings
 from support.test_container import build_test_container
 

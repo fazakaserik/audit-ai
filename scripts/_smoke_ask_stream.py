@@ -5,7 +5,8 @@ from __future__ import annotations
 from rich.console import Console
 from rich.status import Status
 
-from backend.api.contracts.v1.responses import AskResponse
+from backend.application.api.contracts.v1.responses import AskResponse
+from backend.domain.engagement import EngagementId
 from cli.client import AuditApiClient, unwrap_answer
 from cli.render import (
     render_ask_response,
@@ -16,7 +17,6 @@ from cli.render import (
     render_thinking_done,
     stage_label,
 )
-from domain.engagement import EngagementId
 
 
 def main() -> None:

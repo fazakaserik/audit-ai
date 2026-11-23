@@ -9,6 +9,7 @@ import typer
 from rich.console import Console
 from rich.status import Status
 
+from backend.domain.engagement import EngagementId
 from cli import __version__
 from cli.client import AuditApiClient, CliApiError
 from cli.render import (
@@ -23,7 +24,6 @@ from cli.render import (
     render_upload_summaries,
 )
 from cli.repl import run_repl
-from domain.engagement import EngagementId
 
 console = Console()
 

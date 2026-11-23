@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from backend.application.ports import EngagementRepository, SessionRepository
-from domain.engagement import EngagementId
-from domain.errors import NotFoundError
-from domain.session import Session
+from backend.domain.engagement import EngagementId
+from backend.domain.errors import NotFoundError
+from backend.domain.session import Session
 
 
 @dataclass(frozen=True, slots=True)

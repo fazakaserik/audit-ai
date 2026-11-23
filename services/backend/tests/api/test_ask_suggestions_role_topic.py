@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from domain.engagement import EngagementId
+from backend.domain.engagement import EngagementId
 from support.ask_api import build_ask_app, post_ask, seed_engagement
 from support.fakes import InMemoryEngagementRepository
 

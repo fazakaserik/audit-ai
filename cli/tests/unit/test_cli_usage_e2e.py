@@ -7,15 +7,15 @@ import uuid
 import httpx
 import pytest
 
-from backend.api.contracts.v1.responses import AskResponseRoot
-from backend.api.dependencies import get_bound
-from backend.api.main import create_app
-from backend.rag.prompts import AnswerGenerationResult
+from backend.application.api.contracts.v1.responses import AskResponseRoot
+from backend.application.api.dependencies import get_bound
+from backend.application.api.main import create_app
+from backend.application.rag.prompts import AnswerGenerationResult
+from backend.domain.chunk import Chunk, ChunkId
+from backend.domain.common import utc_now
+from backend.domain.document import DocumentId
+from backend.domain.engagement import Engagement, EngagementId
 from cli.repl import ReplState, _token_toolbar
-from domain.common import utc_now
-from domain.document import DocumentId
-from domain.engagement import Engagement, EngagementId
-from domain.chunk import Chunk, ChunkId
 from support.fakes import (
     FakeChatModel,
     FakeEmbedder,

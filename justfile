@@ -26,7 +26,8 @@ typecheck:
     uv run basedpyright
 
 imports:
-    uv run lint-imports
+    # Prefer the console script; fall back when the host blocks the .exe (AppLocker).
+    uv run python -c "from importlinter.cli import lint_imports; raise SystemExit(lint_imports(config_filename='importlinter.ini'))"
 
 test:
     uv run python -m pytest

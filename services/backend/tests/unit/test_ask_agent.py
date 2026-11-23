@@ -7,14 +7,14 @@ import uuid
 from datetime import UTC, datetime
 
 from backend.application.ports import ToolCall, ToolTurnResult
+from backend.application.rag.agent import AskAgentDeps, run_ask_agent
+from backend.application.rag.prompts import AnswerGenerationResult
 from backend.config import Settings
-from backend.rag.agent import AskAgentDeps, run_ask_agent
-from backend.rag.prompts import AnswerGenerationResult
-from domain.answer import AnswerStatus, InsufficientReason, Question
-from domain.chunk import Chunk, ChunkId
-from domain.document import ContentType, Document, DocumentId, DocumentPath
-from domain.engagement import EngagementId
-from domain.session import LlmUsage
+from backend.domain.answer import AnswerStatus, InsufficientReason, Question
+from backend.domain.chunk import Chunk, ChunkId
+from backend.domain.document import ContentType, Document, DocumentId, DocumentPath
+from backend.domain.engagement import EngagementId
+from backend.domain.session import LlmUsage
 from support.fakes import (
     FakeChatModel,
     FakeEmbedder,
@@ -237,8 +237,8 @@ async def test_agent_max_rounds_stops_tool_loop() -> None:
 async def test_agent_list_then_read_then_search() -> None:
     engagement_id = EngagementId("northwind-fy2025")
     engagements = InMemoryEngagementRepository()
-    from domain.common import utc_now
-    from domain.engagement import Engagement
+    from backend.domain.common import utc_now
+    from backend.domain.engagement import Engagement
 
     now = utc_now()
     await engagements.create(Engagement(id=engagement_id, name="N", created_at=now, updated_at=now))

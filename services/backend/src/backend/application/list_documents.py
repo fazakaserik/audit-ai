@@ -5,9 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from backend.application.ports import DocumentRepository, EngagementRepository
-from domain.document import Document, FolderPath
-from domain.engagement import EngagementId
-from domain.errors import NotFoundError
+from backend.domain.document import Document, FolderPath
+from backend.domain.engagement import EngagementId
+from backend.domain.errors import NotFoundError
 
 
 @dataclass(frozen=True, slots=True)

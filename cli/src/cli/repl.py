@@ -15,7 +15,7 @@ from rich.console import Console
 from rich.status import Status
 from rich.text import Text
 
-from backend.api.contracts.v1.responses import (
+from backend.application.api.contracts.v1.responses import (
     AskResponse,
     CitationResponse,
     DocumentResponse,
@@ -24,6 +24,8 @@ from backend.api.contracts.v1.responses import (
     SessionSummaryResponse,
     UploadSummaryResponse,
 )
+from backend.domain.engagement import EngagementId
+from backend.domain.errors import ErrorCode
 from cli.client import AuditApiClient, CliApiError, unwrap_answer, unwrap_insufficient
 from cli.render import (
     ToolProgressView,
@@ -39,8 +41,6 @@ from cli.render import (
     render_upload_status,
     stage_label,
 )
-from domain.engagement import EngagementId
-from domain.errors import ErrorCode
 
 HELP_TEXT = """Slash commands:
   /engagement     Switch engagement (clears session)

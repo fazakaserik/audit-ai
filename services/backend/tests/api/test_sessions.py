@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import httpx
 
-from backend.rag.prompts import AnswerGenerationResult
-from domain.engagement import EngagementId
+from backend.application.rag.prompts import AnswerGenerationResult
+from backend.domain.engagement import EngagementId
 from support.ask_api import build_ask_app, index_chunk, post_ask, seed_engagement
 from support.fakes import (
     FakeChatModel,

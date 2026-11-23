@@ -7,22 +7,11 @@ from typing import assert_never
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from backend.adapters.local_fs import LocalDocumentStorage
-from backend.adapters.ollama_chat import OllamaChatModel
-from backend.adapters.ollama_embed import OllamaEmbedder
-from backend.adapters.openai_chat import OpenAIChatModel
-from backend.adapters.openai_embed import OpenAIEmbedder
-from backend.adapters.postgres.engine import create_engine, create_session_factory
-from backend.adapters.postgres.job_queue import PostgresJobQueue
-from backend.adapters.postgres.repositories import (
-    PostgresDocumentRepository,
-    PostgresEngagementRepository,
-    PostgresSessionRepository,
-    PostgresUploadRepository,
-)
-from backend.adapters.postgres.vector_index import PostgresVectorIndex
 from backend.application.ports import (
+    ArchiveExtractor,
     ChatModel,
+    DocumentChunker,
+    DocumentParser,
     DocumentRepository,
     DocumentStorage,
     Embedder,
@@ -33,7 +22,26 @@ from backend.application.ports import (
     VectorIndex,
 )
 from backend.config import Settings
-from domain.providers import LlmProvider
+from backend.domain.providers import LlmProvider
+from backend.infrastructure.local_fs import LocalDocumentStorage
+from backend.infrastructure.ollama_chat import OllamaChatModel
+from backend.infrastructure.ollama_embed import OllamaEmbedder
+from backend.infrastructure.openai_chat import OpenAIChatModel
+from backend.infrastructure.openai_embed import OpenAIEmbedder
+from backend.infrastructure.parsing import (
+    build_archive_extractor,
+    build_document_chunker,
+    build_document_parser,
+)
+from backend.infrastructure.postgres.engine import create_engine, create_session_factory
+from backend.infrastructure.postgres.job_queue import PostgresJobQueue
+from backend.infrastructure.postgres.repositories import (
+    PostgresDocumentRepository,
+    PostgresEngagementRepository,
+    PostgresSessionRepository,
+    PostgresUploadRepository,
+)
+from backend.infrastructure.postgres.vector_index import PostgresVectorIndex
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +64,9 @@ class Container:
     chat_model: ChatModel
     embedder: Embedder
     document_storage: DocumentStorage
+    document_parser: DocumentParser
+    document_chunker: DocumentChunker
+    archive_extractor: ArchiveExtractor
 
     def bind(self, session: AsyncSession) -> SessionBound:
         return SessionBound(
@@ -121,4 +132,7 @@ def build_container(settings: Settings) -> Container:
         chat_model=_build_chat(settings),
         embedder=_build_embedder(settings),
         document_storage=LocalDocumentStorage(settings.document_storage_path),
+        document_parser=build_document_parser(),
+        document_chunker=build_document_chunker(),
+        archive_extractor=build_archive_extractor(),
     )

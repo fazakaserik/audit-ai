@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from backend.application.ports import EngagementRepository
-from domain.common import utc_now
-from domain.engagement import Engagement, EngagementId
+from backend.domain.common import utc_now
+from backend.domain.engagement import Engagement, EngagementId
 
 
 async def create_engagement(

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from backend.application.rag.agent import AskAgentDeps, run_ask_agent
+from backend.application.rag.prompts import AnswerGenerationResult
 from backend.config import Settings
-from backend.rag.agent import AskAgentDeps, run_ask_agent
-from backend.rag.prompts import AnswerGenerationResult
-from domain.answer import AnswerStatus, InsufficientReason, Question
-from domain.engagement import EngagementId
+from backend.domain.answer import AnswerStatus, InsufficientReason, Question
+from backend.domain.engagement import EngagementId
 from support.fakes import (
     FakeChatModel,
     FakeEmbedder,

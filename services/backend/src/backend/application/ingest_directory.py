@@ -7,19 +7,19 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from backend.application.ports import (
+    DocumentChunker,
+    DocumentParser,
     DocumentRepository,
     DocumentStorage,
     Embedder,
     EngagementRepository,
     VectorIndex,
 )
-from backend.ingestion.chunking import chunk_document
-from backend.ingestion.parsers import detect_content_type, parse_bytes
-from domain.common import new_uuid, utc_now
-from domain.document import Document, DocumentId, DocumentPath
-from domain.engagement import Engagement, EngagementId
-from domain.errors import ValidationError
-from domain.chunk import Chunk, ChunkId
+from backend.domain.chunk import Chunk, ChunkId
+from backend.domain.common import new_uuid, utc_now
+from backend.domain.document import Document, DocumentId, DocumentPath
+from backend.domain.engagement import Engagement, EngagementId
+from backend.domain.errors import ValidationError
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,11 +37,13 @@ async def ingest_directory(
     storage: DocumentStorage,
     vector_index: VectorIndex,
     embedder: Embedder,
+    document_parser: DocumentParser,
+    document_chunker: DocumentChunker,
     engagement_id: EngagementId,
     engagement_name: str,
     source_dir: Path,
 ) -> IngestDirectoryResult:
-    if not source_dir.is_dir():
+    if not source_dir.is_dir():  # noqa: ASYNC240 — sync sample loader
         raise ValidationError(f"source directory not found: {source_dir}")
 
     existing = await engagements.get(engagement_id)
@@ -60,20 +62,20 @@ async def ingest_directory(
     docs_indexed = 0
     chunks_indexed = 0
 
-    for path in sorted(source_dir.rglob("*")):
+    for path in sorted(source_dir.rglob("*")):  # noqa: ASYNC240 — sync sample loader
         if not path.is_file():
             continue
         rel = path.relative_to(source_dir).as_posix()
-        content_type = detect_content_type(rel)
+        content_type = document_parser.detect_content_type(rel)
         if content_type is None:
             skipped.append(rel)
             continue
         data = path.read_bytes()
         document_path: DocumentPath = rel
         await storage.put(engagement_id, document_path, data)
-        parsed = parse_bytes(data, path=rel)
-        chunks = chunk_document(parsed)
-        if not chunks:
+        parsed = document_parser.parse_bytes(data, path=rel)
+        parsed_chunks = document_chunker.chunk_document(parsed)
+        if not parsed_chunks:
             skipped.append(rel)
             continue
 
@@ -96,7 +98,7 @@ async def ingest_directory(
         )
         await documents.upsert(document)
 
-        chunks = [
+        domain_chunks = [
             Chunk(
                 id=ChunkId(new_uuid()),
                 document_id=document_id,
@@ -108,20 +110,20 @@ async def ingest_directory(
                 token_count=chunk.token_count,
                 created_at=now,
             )
-            for chunk in chunks
+            for chunk in parsed_chunks
         ]
-        embedded = await embedder.embed([p.text for p in chunks])
+        embedded = await embedder.embed([p.text for p in domain_chunks])
         await vector_index.upsert_chunks(
             engagement_id=engagement_id,
             document_id=document_id,
             document_path=document_path,
             document_version=version,
-            chunks=chunks,
+            chunks=domain_chunks,
             embeddings=embedded.vectors,
             embedding_model=embedder.model_name,
         )
         docs_indexed += 1
-        chunks_indexed += len(chunks)
+        chunks_indexed += len(domain_chunks)
 
     return IngestDirectoryResult(
         engagement_id=engagement_id,

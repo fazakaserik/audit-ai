@@ -8,9 +8,9 @@ import httpx
 import pytest
 from rich.console import Console
 
+from backend.domain.errors import ErrorCode
 from cli.client import AuditApiClient, CliApiError
 from cli.repl import _CONNECT_BACKOFF_SECONDS, _wait_for_api
-from domain.errors import ErrorCode
 
 
 def test_check_live_success() -> None:
@@ -68,9 +68,8 @@ def test_wait_for_api_gives_up_after_backoff() -> None:
     )
     console = Console(force_terminal=False, quiet=True)
 
-    with patch("cli.repl.time.sleep") as sleep:
-        with pytest.raises(SystemExit) as exc_info:
-            _wait_for_api(client, console)
+    with patch("cli.repl.time.sleep") as sleep, pytest.raises(SystemExit) as exc_info:
+        _wait_for_api(client, console)
 
     assert exc_info.value.code == 1
     assert client.check_live.call_count == len(_CONNECT_BACKOFF_SECONDS) + 1

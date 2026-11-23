@@ -11,6 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from backend.application.ports import DocumentStorage
 from backend.bootstrap import Container, SessionBound
 from backend.config import Settings
+from backend.infrastructure.parsing import (
+    build_archive_extractor,
+    build_document_chunker,
+    build_document_parser,
+)
 from support.fakes import (
     FakeChatModel,
     FakeEmbedder,
@@ -68,4 +73,7 @@ def build_test_container(
         chat_model=chat or FakeChatModel(),
         embedder=embedder or FakeEmbedder(),
         document_storage=document_storage or InMemoryDocumentStorage(),
+        document_parser=build_document_parser(),
+        document_chunker=build_document_chunker(),
+        archive_extractor=build_archive_extractor(),
     )

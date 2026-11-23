@@ -12,7 +12,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from backend.api.contracts.v1.responses import (
+from backend.application.api.contracts.v1.responses import (
     AskResponse,
     CitationResponse,
     DocumentListingResponse,
@@ -80,7 +80,7 @@ def render_insufficient(
     if not questions:
         return
     console.print()
-    console.print("May I ask you to give me more details about:")
+    console.print("May I ask you to give me more:")
     for item in questions:
         console.print(f"- {item.question}")
 
@@ -173,11 +173,7 @@ def _dedupe_sources_by_path(
         if not path:
             continue
         score_raw = item.get("score")
-        score: float | None
-        if isinstance(score_raw, (int, float)):
-            score = float(score_raw)
-        else:
-            score = None
+        score: float | None = float(score_raw) if isinstance(score_raw, (int, float)) else None
         if path not in best:
             order.append(path)
             best[path] = score

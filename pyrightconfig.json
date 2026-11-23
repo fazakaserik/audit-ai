@@ -1,7 +1,5 @@
 {
   "include": [
-    "packages/domain/src",
-    "packages/domain/tests",
     "services/backend/src",
     "services/backend/tests",
     "cli/src",
@@ -17,7 +15,6 @@
   "reportAny": "error",
   "reportExplicitAny": "error",
   "extraPaths": [
-    "packages/domain/src",
     "services/backend/src",
     "services/backend/tests",
     "cli/src"

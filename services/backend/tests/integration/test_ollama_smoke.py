@@ -7,9 +7,9 @@ import os
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from backend.adapters.ollama_chat import OllamaChatModel
-from backend.adapters.ollama_embed import OllamaEmbedder
 from backend.application.ports import ChatMessage
+from backend.infrastructure.ollama_chat import OllamaChatModel
+from backend.infrastructure.ollama_embed import OllamaEmbedder
 
 
 class _Ping(BaseModel):

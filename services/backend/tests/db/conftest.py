@@ -9,7 +9,7 @@ import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from testcontainers.postgres import PostgresContainer
 
-from backend.adapters.postgres.engine import create_engine, create_session_factory
+from backend.infrastructure.postgres.engine import create_engine, create_session_factory
 
 
 @pytest.fixture(scope="session")

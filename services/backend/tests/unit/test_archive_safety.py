@@ -7,8 +7,8 @@ import zipfile
 
 import pytest
 
-from backend.ingestion.archive import extract_zip_files, list_zip_member_paths
-from domain.errors import UnsafeUploadError
+from backend.domain.errors import UnsafeUploadError
+from backend.infrastructure.parsing.archive import extract_zip_files, list_zip_member_paths
 
 
 def _zip_bytes(entries: dict[str, bytes]) -> bytes:

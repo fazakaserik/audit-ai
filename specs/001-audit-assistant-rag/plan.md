@@ -20,7 +20,7 @@ Build a backend-only, document-grounded auditor assistant as a uv monorepo. Clie
 
 **Target Platform**: Linux containers via Docker Compose (dev/demo); Windows/macOS hosts for CLI and optional host-side Ollama
 
-**Project Type**: uv workspace monorepo — `domain` + single `backend` service (API + logic + worker) + terminal CLI
+**Project Type**: uv workspace monorepo — single `backend` service (domain + application + infrastructure + worker) + terminal CLI
 
 **Performance Goals**: Cloud mode: 90% of sample-engagement questions answered under 10 seconds (SC-007). Upload acceptance under 1 second for uploads within limits. Seed-to-first-answer under 15 minutes for a reviewer (SC-001).
 
@@ -32,15 +32,15 @@ Build a backend-only, document-grounded auditor assistant as a uv monorepo. Clie
 
 _GATE: Must pass before Phase 0 research. Re-check after Phase 1 design._
 
-| Principle                                    | Status | How the plan complies                                                                                                                          |
-| -------------------------------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
-| I. Strict Type Safety                        | PASS   | basedpyright strict in `just check`; frozen pydantic domain models; distinct id NewTypes; `assert_never` on unions; `Any` only inside adapters |
-| II. Enforced Layering                        | PASS   | three workspace members; ports in `backend.application`; vendors only in adapters; CLI uses `backend.api.contracts` over HTTP                  |
-| III. Tested Behaviour, Offline by Default    | PASS   | required paths listed in research; fakes behind the same ports; `db` and `integration` markers opt-in                                          |
-| IV. Consistent Errors and Safe Observability | PASS   | RFC 9457 Problem Details + stable `ErrorCode` enum; single mapper in `backend.api`; structlog JSON; no document content/secrets in logs        |
-| V. Simplicity Over Breadth                   | PASS   | single backend (not split api/core/worker packages); scope matches spec P1→P3; auth/OCR/frontend/streaming stay as next steps                  |
-| Product & Security                           | PASS   | grounded answers with citation post-filter; engagement filters in SQL; zip path traversal rejected; OpenAI and Ollama modes by config          |
-| Workflow & Quality Gates                     | PASS   | `just check` = ruff + basedpyright + import-linter + offline tests; Alembic-only schema changes under `services/backend`                       |
+| Principle                                    | Status | How the plan complies                                                                                                                               |
+| -------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| I. Strict Type Safety                        | PASS   | basedpyright strict in `just check`; frozen pydantic domain models; distinct id NewTypes; `assert_never` on unions; `Any` only inside adapters      |
+| II. Enforced Layering                        | PASS   | three workspace members; ports in `backend.application`; vendors only in adapters; CLI uses `backend.application.api.contracts` over HTTP           |
+| III. Tested Behaviour, Offline by Default    | PASS   | required paths listed in research; fakes behind the same ports; `db` and `integration` markers opt-in                                               |
+| IV. Consistent Errors and Safe Observability | PASS   | RFC 9457 Problem Details + stable `ErrorCode` enum; single mapper in `backend.application.api`; structlog JSON; no document content/secrets in logs |
+| V. Simplicity Over Breadth                   | PASS   | single backend (not split api/core/worker packages); scope matches spec P1→P3; auth/OCR/frontend/streaming stay as next steps                       |
+| Product & Security                           | PASS   | grounded answers with citation post-filter; engagement filters in SQL; zip path traversal rejected; OpenAI and Ollama modes by config               |
+| Workflow & Quality Gates                     | PASS   | `just check` = ruff + basedpyright + import-linter + offline tests; Alembic-only schema changes under `services/backend`                            |
 
 No unjustified violations. Justified complexity (optional worker process, hybrid search, interactive CLI) is recorded in [research.md](./research.md), not as constitution breaches.
 
@@ -64,12 +64,6 @@ specs/001-audit-assistant-rag/
 
 ```text
 audit-ai/
-├── packages/
-│   └── domain/                          # domain (feature packages)
-│       ├── pyproject.toml
-│       └── src/domain/
-│           ├── common.py / errors.py / problem.py / providers.py
-│           ├── engagement/ document/ upload/ chunk/ answer/ session/
 ├── services/
 │   └── backend/                         # single backend service
 │       ├── pyproject.toml
@@ -77,21 +71,18 @@ audit-ai/
 │       ├── alembic.ini
 │       ├── migrations/
 │       └── src/backend/
+│           ├── domain/                  # frozen pydantic feature models
+│           ├── application/             # ports, use cases, rag, api, worker
+│           ├── infrastructure/          # postgres, llm providers, fs, parsing
 │           ├── config.py / bootstrap.py / logging.py
-│           ├── application/             # ports + use cases
-│           ├── adapters/                # postgres, openai, ollama, local_fs
-│           ├── rag/ ingestion/          # ask graph + ingest pipeline
-│           ├── api/                     # FastAPI + contracts/v1
-│           └── worker/main.py           # claim loop (same image)
 ├── cli/                                 # audit-ai (HTTP client)
-├── packages/domain/tests/               # domain unit tests
 ├── services/backend/tests/{unit,api,db,integration,support}/
 ├── cli/tests/
 ├── scripts/ docs/samples/ deployment/
 ├── justfile / pyproject.toml / uv.lock / importlinter.ini / README.md
 ```
 
-**Structure Decision**: Three-member uv workspace (`domain`, `backend`, `cli`) as decided in [research.md](./research.md). Tests are colocated next to each package (`*/tests`). Alembic migrations are owned by `services/backend`.
+**Structure Decision**: Two-member uv workspace (`backend`, `cli`) as decided in [research.md](./research.md). Domain lives under `backend.domain`. Tests are colocated next to each package (`*/tests`). Alembic migrations are owned by `services/backend`.
 
 ## Complexity Tracking
 

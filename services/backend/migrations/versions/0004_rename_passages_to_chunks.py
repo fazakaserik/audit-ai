@@ -23,15 +23,11 @@ def upgrade() -> None:
     op.execute(
         "ALTER INDEX IF EXISTS ix_passages_document_version RENAME TO ix_chunks_document_version"
     )
-    op.execute(
-        "ALTER INDEX IF EXISTS ix_passages_search_vector RENAME TO ix_chunks_search_vector"
-    )
+    op.execute("ALTER INDEX IF EXISTS ix_passages_search_vector RENAME TO ix_chunks_search_vector")
 
 
 def downgrade() -> None:
-    op.execute(
-        "ALTER INDEX IF EXISTS ix_chunks_search_vector RENAME TO ix_passages_search_vector"
-    )
+    op.execute("ALTER INDEX IF EXISTS ix_chunks_search_vector RENAME TO ix_passages_search_vector")
     op.execute(
         "ALTER INDEX IF EXISTS ix_chunks_document_version RENAME TO ix_passages_document_version"
     )

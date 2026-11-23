@@ -9,9 +9,9 @@ from backend.application.ports import (
     DocumentStorage,
     EngagementRepository,
 )
-from domain.document import ContentType, Document, DocumentPath
-from domain.engagement import EngagementId
-from domain.errors import NotFoundError
+from backend.domain.document import ContentType, Document, DocumentPath
+from backend.domain.engagement import EngagementId
+from backend.domain.errors import NotFoundError
 
 _CONTENT_TYPE_TO_MEDIA: dict[ContentType, str] = {
     ContentType.MARKDOWN: "text/markdown",

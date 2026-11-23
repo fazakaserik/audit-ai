@@ -8,11 +8,11 @@ import zipfile
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from backend.api.dependencies import get_bound
-from backend.api.main import create_app
+from backend.application.api.dependencies import get_bound
+from backend.application.api.main import create_app
 from backend.config import Settings
-from domain.common import utc_now
-from domain.engagement import Engagement, EngagementId
+from backend.domain.common import utc_now
+from backend.domain.engagement import Engagement, EngagementId
 from support.fakes import InMemoryEngagementRepository
 from support.test_container import build_fakes_bound, build_test_container
 

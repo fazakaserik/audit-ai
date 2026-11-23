@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from backend.adapters.ollama_chat import OllamaChatModel
 from backend.application.ports import ChatMessage, ThinkingCallbacks, ToolSpec
+from backend.infrastructure.ollama_chat import OllamaChatModel
 
 
 def _tool_spec() -> ToolSpec:
@@ -67,7 +67,7 @@ async def test_tool_turn_retries_without_think_when_stream_emits_no_calls() -> N
         eval_count=6,
     )
 
-    chat._client.chat = AsyncMock(side_effect=[stream_no_tools(), cold])  # noqa: SLF001
+    chat._client.chat = AsyncMock(side_effect=[stream_no_tools(), cold])
 
     seconds: list[float] = []
     result = await chat.complete_tool_turn(
@@ -79,7 +79,7 @@ async def test_tool_turn_retries_without_think_when_stream_emits_no_calls() -> N
     assert len(result.tool_calls) == 1
     assert result.tool_calls[0].name == "search_relevant_chunks"
     assert "services revenue" in result.tool_calls[0].arguments
-    assert chat._client.chat.await_count == 2  # noqa: SLF001
+    assert chat._client.chat.await_count == 2
     assert seconds and seconds[0] > 0
 
 
@@ -118,7 +118,7 @@ async def test_tool_turn_keeps_tool_calls_from_earlier_stream_chunk() -> None:
             eval_count=2,
         )
 
-    chat._client.chat = AsyncMock(side_effect=[stream_with_mid_chunk_tools()])  # noqa: SLF001
+    chat._client.chat = AsyncMock(side_effect=[stream_with_mid_chunk_tools()])
 
     result = await chat.complete_tool_turn(
         [ChatMessage(role="user", content="Q1 revenue?")],
@@ -128,4 +128,4 @@ async def test_tool_turn_keeps_tool_calls_from_earlier_stream_chunk() -> None:
 
     assert len(result.tool_calls) == 1
     assert result.tool_calls[0].id == "call_keep"
-    assert chat._client.chat.await_count == 1  # noqa: SLF001 — no cold retry
+    assert chat._client.chat.await_count == 1

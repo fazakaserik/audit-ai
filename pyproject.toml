@@ -8,7 +8,6 @@ dependencies = []
 
 [tool.uv.workspace]
 members = [
-  "packages/domain",
   "services/backend",
   "cli",
 ]
@@ -27,9 +26,8 @@ dev = [
 [tool.ruff]
 target-version = "py313"
 line-length = 100
+extend-exclude = [".specify", ".cursor"]
 src = [
-  "packages/domain/src",
-  "packages/domain/tests",
   "services/backend/src",
   "services/backend/tests",
   "cli/src",
@@ -51,8 +49,11 @@ select = [
 ]
 ignore = ["E501", "TCH"]
 
+[tool.ruff.lint.per-file-ignores]
+"cli/**/*.py" = ["B008"]
+
 [tool.ruff.lint.isort]
-known-first-party = ["domain", "backend", "cli"]
+known-first-party = ["backend", "cli"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
@@ -63,12 +64,10 @@ markers = [
   "integration: real Ollama/OpenAI (opt-in)",
 ]
 testpaths = [
-  "packages/domain/tests",
   "services/backend/tests",
   "cli/tests",
 ]
 pythonpath = [
-  "packages/domain/src",
   "services/backend/src",
   "services/backend/tests",
   "cli/src",
@@ -77,8 +76,6 @@ addopts = "-m \"not db and not integration\""
 
 [tool.basedpyright]
 include = [
-  "packages/domain/src",
-  "packages/domain/tests",
   "services/backend/src",
   "services/backend/tests",
   "cli/src",

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from backend.adapters.ollama_chat import _extract_json_text
-from domain.errors import ModelUnavailableError
+from backend.domain.errors import ModelUnavailableError
+from backend.infrastructure.ollama_chat import _extract_json_text
 
 
 def test_extract_prefers_content() -> None:

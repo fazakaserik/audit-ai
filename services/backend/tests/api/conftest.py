@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from backend.api.dependencies import get_bound
-from backend.api.main import create_app
+from backend.application.api.dependencies import get_bound
+from backend.application.api.main import create_app
 from support.test_container import build_fakes_bound, build_test_container
 
 

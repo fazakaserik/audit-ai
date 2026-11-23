@@ -7,11 +7,11 @@ from datetime import timedelta
 
 from httpx import ASGITransport, AsyncClient
 
-from backend.api.dependencies import get_bound
-from backend.api.main import create_app
-from domain.common import utc_now
-from domain.engagement import Engagement, EngagementId
-from domain.upload import Upload, UploadId, UploadStatus
+from backend.application.api.dependencies import get_bound
+from backend.application.api.main import create_app
+from backend.domain.common import utc_now
+from backend.domain.engagement import Engagement, EngagementId
+from backend.domain.upload import Upload, UploadId, UploadStatus
 from support.fakes import InMemoryEngagementRepository, InMemoryUploadRepository
 from support.test_container import build_fakes_bound, build_test_container
 

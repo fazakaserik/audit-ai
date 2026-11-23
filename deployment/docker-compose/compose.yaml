@@ -3,6 +3,7 @@ name: auditor-ai
 services:
   postgres:
     image: pgvector/pgvector:pg16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: audit
       POSTGRES_PASSWORD: audit
@@ -21,6 +22,7 @@ services:
       dockerfile: services/backend/Dockerfile
     env_file:
       - .env
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql+asyncpg://audit:audit@postgres:5432/audit
       DOCUMENT_STORAGE_PATH: /data/storage
@@ -40,6 +42,7 @@ services:
   ollama:
     profiles: ["local"]
     image: ollama/ollama:latest
+    restart: unless-stopped
     volumes:
       - ollama_data:/root/.ollama
     deploy:

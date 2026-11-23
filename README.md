@@ -9,8 +9,7 @@ See [specs/001-audit-assistant-rag/](specs/001-audit-assistant-rag/) for the ful
 
 | Path               | Package   | Role                                                                                  |
 | ------------------ | --------- | ------------------------------------------------------------------------------------- |
-| `packages/domain`  | `domain`  | Domain models; tests in `packages/domain/tests/`                                      |
-| `services/backend` | `backend` | HTTP API, use cases, adapters, worker, migrations; tests in `services/backend/tests/` |
+| `services/backend` | `backend` | Domain, application, infrastructure layers; HTTP API + worker; tests under `tests/` |
 | `cli`              | `cli`     | `audit-ai` terminal client; tests in `cli/tests/`                                     |
 
 Compose runs a single `backend` container (HTTP API + in-process upload worker).
@@ -66,9 +65,10 @@ Requires Python 3.13, [uv](https://docs.astral.sh/uv/), [just](https://github.co
 
 ## Architecture
 
-- **domain** — frozen pydantic feature models
-- **backend** — FastAPI, ports/adapters (Postgres/pgvector, OpenAI, Ollama), RAG ask graph, async upload worker
-- **cli** — HTTP-only client using `backend.api.contracts.v1`
+- **`backend.domain`** — frozen pydantic feature models
+- **`backend.application`** — ports, use cases, RAG, HTTP API, worker entrypoints
+- **`backend.infrastructure`** — Postgres/pgvector, OpenAI, Ollama, local FS, parsing
+- **`cli`** — HTTP-only client using `backend.domain` + `backend.application.api.contracts.v1`
 
 ## Limitations / next steps
 

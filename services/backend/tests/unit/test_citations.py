@@ -6,9 +6,9 @@ import uuid
 from datetime import UTC, datetime
 
 from backend.application.ports import ScoredChunk
-from backend.rag.citations import filter_and_build_citations
-from domain.document import DocumentId, DocumentPath
-from domain.chunk import Chunk, ChunkId
+from backend.application.rag.citations import filter_and_build_citations
+from backend.domain.chunk import Chunk, ChunkId
+from backend.domain.document import DocumentId, DocumentPath
 
 
 def _chunk(text: str) -> Chunk:

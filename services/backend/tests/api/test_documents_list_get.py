@@ -7,11 +7,11 @@ import uuid
 
 import httpx
 
-from backend.api.dependencies import get_bound
-from backend.api.main import create_app
-from domain.common import utc_now
-from domain.document import ContentType, Document, DocumentId, DocumentPath
-from domain.engagement import Engagement, EngagementId
+from backend.application.api.dependencies import get_bound
+from backend.application.api.main import create_app
+from backend.domain.common import utc_now
+from backend.domain.document import ContentType, Document, DocumentId, DocumentPath
+from backend.domain.engagement import Engagement, EngagementId
 from support.fakes import (
     InMemoryDocumentRepository,
     InMemoryDocumentStorage,

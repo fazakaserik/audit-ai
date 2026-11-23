@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Audit Assistant backend (HTTP API, business logic, ingestion worker)"
 requires-python = ">=3.13"
 dependencies = [
-  "domain",
+  "pydantic>=2.10",
   "fastapi>=0.115",
   "uvicorn[standard]>=0.34",
   "python-multipart>=0.0.20",
@@ -23,11 +23,8 @@ dependencies = [
 ]
 
 [project.scripts]
-audit-api = "backend.api.main:run"
-audit-worker = "backend.worker.main:run"
-
-[tool.uv.sources]
-domain = { workspace = true }
+audit-api = "backend.application.api.main:run"
+audit-worker = "backend.application.worker.main:run"
 
 [build-system]
 requires = ["hatchling"]

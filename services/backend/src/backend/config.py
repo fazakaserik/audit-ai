@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from domain.providers import LlmProvider
+from backend.domain.providers import LlmProvider
 
 
 class Settings(BaseSettings):
@@ -56,10 +56,11 @@ class Settings(BaseSettings):
     @model_validator(mode="after")
     def require_openai_key_when_needed(self) -> Settings:
         needs_openai = (
-            self.llm_provider == LlmProvider.OPENAI
-            or self.embedding_provider == LlmProvider.OPENAI
+            self.llm_provider == LlmProvider.OPENAI or self.embedding_provider == LlmProvider.OPENAI
         )
-        if needs_openai and (self.openai_api_key is None or not self.openai_api_key.get_secret_value()):
+        if needs_openai and (
+            self.openai_api_key is None or not self.openai_api_key.get_secret_value()
+        ):
             msg = "OPENAI_API_KEY is required when LLM_PROVIDER or EMBEDDING_PROVIDER is openai"
             raise ValueError(msg)
         return self

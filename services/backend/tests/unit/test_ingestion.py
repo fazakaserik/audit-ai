@@ -2,20 +2,17 @@
 
 from __future__ import annotations
 
+import itertools
 from io import BytesIO
 
 import pytest
 from pypdf import PdfWriter
 
-from backend.ingestion.chunking import chunk_document
-from backend.ingestion.parsers import (
-    ParsedDocument,
-    ParsedSection,
-    detect_content_type,
-    parse_bytes,
-)
-from domain.document import ContentType
-from domain.errors import UnsafeUploadError
+from backend.application.dto import ParsedDocument, ParsedSection
+from backend.domain.document import ContentType
+from backend.domain.errors import UnsafeUploadError
+from backend.infrastructure.parsing.chunking import chunk_document
+from backend.infrastructure.parsing.parsers import detect_content_type, parse_bytes
 
 
 def test_detect_content_type_by_extension() -> None:
@@ -75,7 +72,7 @@ def test_chunk_overlap_and_token_bounds() -> None:
     assert all(c.page is None for c in chunks)
     assert [c.ordinal for c in chunks] == list(range(len(chunks)))
 
-    for left, right in zip(chunks[:-1], chunks[1:], strict=True):
+    for left, right in itertools.pairwise(chunks):
         assert left.heading_path == right.heading_path
         assert left.page == right.page
 

@@ -6,19 +6,31 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from backend.application.ports import (
+    ArchiveExtractor,
     DocumentStorage,
     EngagementRepository,
     JobQueue,
     UploadRepository,
 )
 from backend.config import Settings
-from backend.ingestion.archive import extract_zip_files, is_zip_upload, list_zip_member_paths
-from domain.common import new_uuid, utc_now
-from domain.document import DocumentPath, FolderPath
-from domain.document.validators import validate_document_path, validate_folder_path
-from domain.engagement import EngagementId
-from domain.errors import NotFoundError, PayloadTooLargeError, UnsafeUploadError, ValidationError
-from domain.upload import Upload, UploadId, UploadItem, UploadItemId, UploadItemStatus, UploadStatus
+from backend.domain.common import new_uuid, utc_now
+from backend.domain.document import DocumentPath, FolderPath
+from backend.domain.document import validate_document_path, validate_folder_path
+from backend.domain.engagement import EngagementId
+from backend.domain.errors import (
+    NotFoundError,
+    PayloadTooLargeError,
+    UnsafeUploadError,
+    ValidationError,
+)
+from backend.domain.upload import (
+    Upload,
+    UploadId,
+    UploadItem,
+    UploadItemId,
+    UploadItemStatus,
+    UploadStatus,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,10 +54,7 @@ def _basename(filename: str) -> str:
 
 
 def _join_folder(target_folder: FolderPath, relative: str) -> DocumentPath:
-    if target_folder:
-        combined = f"{target_folder.rstrip('/')}/{relative}"
-    else:
-        combined = relative
+    combined = f"{target_folder.rstrip('/')}/{relative}" if target_folder else relative
     try:
         return validate_document_path(combined)
     except ValueError as exc:
@@ -55,13 +64,14 @@ def _join_folder(target_folder: FolderPath, relative: str) -> DocumentPath:
 def _expand_incoming(
     files: Sequence[IncomingUploadFile],
     target_folder: FolderPath,
+    archives: ArchiveExtractor,
 ) -> list[tuple[DocumentPath, bytes]]:
     planned: list[tuple[DocumentPath, bytes]] = []
     for incoming in files:
-        if is_zip_upload(filename=incoming.filename, data=incoming.data):
+        if archives.is_zip_upload(filename=incoming.filename, data=incoming.data):
             # Validate listing before extract (traversal / symlink checks).
-            list_zip_member_paths(incoming.data)
-            for rel, payload in extract_zip_files(incoming.data):
+            archives.list_zip_member_paths(incoming.data)
+            for rel, payload in archives.extract_zip_files(incoming.data):
                 planned.append((_join_folder(target_folder, rel), payload))
         else:
             rel = _basename(incoming.filename)
@@ -77,9 +87,7 @@ def _enforce_limits(
     settings: Settings,
 ) -> None:
     if len(planned) > settings.upload_max_files:
-        raise PayloadTooLargeError(
-            f"upload exceeds max file count ({settings.upload_max_files})"
-        )
+        raise PayloadTooLargeError(f"upload exceeds max file count ({settings.upload_max_files})")
     total = sum(len(data) for _, data in planned)
     if total > settings.upload_max_bytes:
         raise PayloadTooLargeError(
@@ -98,6 +106,7 @@ async def upload_documents(
     uploads: UploadRepository,
     storage: DocumentStorage,
     jobs: JobQueue,
+    archives: ArchiveExtractor,
     settings: Settings,
     engagement_id: EngagementId,
     target_folder: str,
@@ -111,7 +120,7 @@ async def upload_documents(
     if not files:
         raise ValidationError("upload must include at least one file")
 
-    planned = _expand_incoming(files, folder)
+    planned = _expand_incoming(files, folder, archives)
     _enforce_limits(planned, settings=settings)
 
     now = utc_now()

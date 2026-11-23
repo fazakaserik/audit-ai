@@ -16,9 +16,9 @@ from uuid import UUID
 import httpx
 from pydantic import TypeAdapter, ValidationError
 
-from backend.api.contracts.v1.page import Page
-from backend.api.contracts.v1.requests import AskRequest, CreateEngagementRequest
-from backend.api.contracts.v1.responses import (
+from backend.application.api.contracts.v1.page import Page
+from backend.application.api.contracts.v1.requests import AskRequest, CreateEngagementRequest
+from backend.application.api.contracts.v1.responses import (
     AnsweredResponse,
     AskResponse,
     AskResponseRoot,
@@ -31,11 +31,11 @@ from backend.api.contracts.v1.responses import (
     UploadResponse,
     UploadSummaryResponse,
 )
-from domain.common import RequestId
-from domain.engagement import EngagementId
-from domain.errors import ErrorCode
-from domain.problem import ProblemDetails
-from domain.upload import UploadStatus
+from backend.domain.common import RequestId
+from backend.domain.engagement import EngagementId
+from backend.domain.errors import ErrorCode
+from backend.domain.problem import ProblemDetails
+from backend.domain.upload import UploadStatus
 
 T = TypeVar("T")
 
@@ -280,9 +280,7 @@ class AuditApiClient:
                         )
                     if payload.get("type") == "final":
                         raw_final = payload.get("response")
-                        root = AskResponseRoot.model_validate_json(
-                            json.dumps(raw_final)
-                        )
+                        root = AskResponseRoot.model_validate_json(json.dumps(raw_final))
                         yield {"type": "final", "response": root.root}
                     else:
                         yield payload

@@ -34,7 +34,12 @@ def upgrade() -> None:
     op.create_table(
         "uploads",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("engagement_id", sa.String(length=63), sa.ForeignKey("engagements.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "engagement_id",
+            sa.String(length=63),
+            sa.ForeignKey("engagements.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("target_folder", sa.String(length=1024), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("completed_at", sa.DateTime(timezone=True), nullable=True),
@@ -46,7 +51,9 @@ def upgrade() -> None:
     op.create_table(
         "upload_items",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("upload_id", sa.Uuid(), sa.ForeignKey("uploads.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "upload_id", sa.Uuid(), sa.ForeignKey("uploads.id", ondelete="CASCADE"), nullable=False
+        ),
         sa.Column("document_path", sa.String(length=1024), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False),
         sa.Column("reason", sa.Text(), nullable=True),
@@ -59,12 +66,19 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
     )
     op.create_index("ix_upload_items_upload_id", "upload_items", ["upload_id"])
-    op.create_index("ix_upload_items_status_next_attempt", "upload_items", ["status", "next_attempt_at"])
+    op.create_index(
+        "ix_upload_items_status_next_attempt", "upload_items", ["status", "next_attempt_at"]
+    )
 
     op.create_table(
         "documents",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("engagement_id", sa.String(length=63), sa.ForeignKey("engagements.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "engagement_id",
+            sa.String(length=63),
+            sa.ForeignKey("engagements.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("path", sa.String(length=1024), nullable=False),
         sa.Column("content_type", sa.String(length=32), nullable=False),
         sa.Column("size_bytes", sa.Integer(), nullable=False),
@@ -80,7 +94,12 @@ def upgrade() -> None:
     op.create_table(
         "passages",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("document_id", sa.Uuid(), sa.ForeignKey("documents.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "document_id",
+            sa.Uuid(),
+            sa.ForeignKey("documents.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("document_version", sa.Integer(), nullable=False),
         sa.Column("ordinal", sa.Integer(), nullable=False),
         sa.Column("page", sa.Integer(), nullable=True),
@@ -95,16 +114,28 @@ def upgrade() -> None:
             sa.Computed("to_tsvector('english', coalesce(text, ''))", persisted=True),
             nullable=True,
         ),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("now()")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("now()"),
+        ),
     )
     op.create_index("ix_passages_document_id", "passages", ["document_id"])
     op.create_index("ix_passages_document_version", "passages", ["document_id", "document_version"])
-    op.create_index("ix_passages_search_vector", "passages", ["search_vector"], postgresql_using="gin")
+    op.create_index(
+        "ix_passages_search_vector", "passages", ["search_vector"], postgresql_using="gin"
+    )
 
     op.create_table(
         "sessions",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("engagement_id", sa.String(length=63), sa.ForeignKey("engagements.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "engagement_id",
+            sa.String(length=63),
+            sa.ForeignKey("engagements.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("title", sa.String(length=200), nullable=False),
         sa.Column("turn_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
@@ -116,7 +147,12 @@ def upgrade() -> None:
     op.create_table(
         "session_turns",
         sa.Column("id", sa.Uuid(), primary_key=True),
-        sa.Column("session_id", sa.Uuid(), sa.ForeignKey("sessions.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "session_id",
+            sa.Uuid(),
+            sa.ForeignKey("sessions.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("ordinal", sa.Integer(), nullable=False),
         sa.Column("question", postgresql.JSONB(), nullable=False),
         sa.Column("standalone_question", sa.Text(), nullable=False),

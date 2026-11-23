@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock
 
 import httpx
 
-from backend.api.main import create_app
+from backend.application.api.main import create_app
 from support.fakes import FakeEmbedder
 from support.test_container import build_test_container
 

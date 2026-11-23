@@ -6,7 +6,7 @@ import pytest
 from pydantic import ValidationError
 
 from backend.config import Settings
-from domain.providers import LlmProvider
+from backend.domain.providers import LlmProvider
 
 
 def test_openai_without_key_fails() -> None:

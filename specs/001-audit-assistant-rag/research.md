@@ -10,13 +10,12 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 
 ## Monorepo layout
 
-- **Decision**: One uv workspace at the repository root with three members:
-  - `packages/domain` (import name `domain`): feature-oriented domain models only (`domain.engagement`, `domain.document`, `domain.upload`, `domain.chunk`, `domain.answer`, `domain.session`), plus shared root modules (`errors`, `problem`, `common`, `providers`). No HTTP contracts here. Only dependency: pydantic.
-  - `services/backend` (import name `backend`): HTTP API (`backend.api`, including `backend.api.contracts.v1`), application ports/use cases, RAG, ingestion, adapters, composition root, Alembic migrations, and the worker entrypoint (`backend.worker`). One Dockerfile; compose may run a second container of the same image with `audit-worker`.
-  - `cli/` (import name `cli`): interactive terminal client; HTTP only; imports `domain` and `backend.api.contracts`.
+- **Decision**: One uv workspace at the repository root with two members:
+  - `services/backend` (import name `backend`): DDD layers `backend.domain`, `backend.application` (ports/use cases/RAG/HTTP API/worker), `backend.infrastructure` (Postgres, LLM providers, FS, parsing), plus composition root and Alembic migrations. One Dockerfile; compose may run a second container of the same image with `audit-worker`.
+  - `cli/` (import name `cli`): interactive terminal client; HTTP only; imports `backend.domain` and `backend.application.api.contracts`.
 - **Rationale**: Auditor tooling does not need independently scaled API/worker packages. A single backend is simpler to run and demo while still allowing an optional second worker process from the same image. One `uv.lock` keeps versions consistent.
-- **Import rules (enforced with import-linter)**: `domain` imports nothing from the project. `backend.application` imports only `domain`; vendors stay in `backend.adapters`. `cli` may import `domain` and `backend.api.contracts`, never application/adapters/worker/bootstrap.
-- **Internal models vs contracts**: domain entities live in feature packages under `domain`. HTTP DTOs and mappers live in `backend.api.contracts.v1`.
+- **Import rules (enforced with import-linter)**: `backend.domain` imports nothing from the rest of the project. Application use cases/RAG/ports must not import infrastructure or bootstrap; vendors stay in `backend.infrastructure`. `cli` may import `backend.domain` and `backend.application.api.contracts` only.
+- **Internal models vs contracts**: domain entities live as one module per model under `backend.domain` (folders only when models are tightly coupled). HTTP DTOs and mappers live in `backend.application.api.contracts.v1`.
 
 ## Domain model (draft for data-model.md)
 
@@ -30,7 +29,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 | `Upload`     | `id`, `engagement_id`, `target_folder`, `status` (queued, processing, completed, failed), `completed_at`                           | created, updated |
 | `UploadItem` | `id`, `upload_id`, `document_path`, `status` (pending, processing, indexed, skipped, not_searchable, failed), `reason`, `attempts` | created, updated |
 | `Document`   | `id`, `engagement_id`, `path`, `content_type`, `size_bytes`, `sha256`, `version`, `searchable`                                     | created, updated |
-| `Chunk`    | `id`, `document_id`, `document_version`, `ordinal`, `page`, `heading_path`, `text`, `token_count`                                  | created          |
+| `Chunk`      | `id`, `document_id`, `document_version`, `ordinal`, `page`, `heading_path`, `text`, `token_count`                                  | created          |
 | `Session`    | `id`, `engagement_id`, `title`, `turn_count` (`updated_at` = last activity)                                                        | created, updated |
 | `Turn`       | `id`, `session_id`, `ordinal`, `question`, `standalone_question`, `answer`                                                         | created          |
 
@@ -75,7 +74,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 
 ## Testing strategy
 
-- **Decision**: pytest suites colocated next to packages (`packages/domain/tests`, `services/backend/tests`, `cli/tests`), in three groups:
+- **Decision**: pytest suites colocated next to packages (`services/backend/tests/unit/domain`, `services/backend/tests`, `cli/tests`), in three groups:
   - `unit` (default, no I/O): domain, ingestion and graph tests with in-memory fakes, and API tests through an in-process httpx client with a fake container.
   - `db`: repository, hybrid search and job-claiming tests against a real Postgres with pgvector, started by testcontainers. Needs Docker but no paid services.
   - `integration`: end-to-end tests against real Ollama or OpenAI. Opt-in only.
@@ -89,7 +88,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 
 ## Ask orchestration
 
-- **Decision**: Ask flow is a tool-calling agent (`complete_tool_turn` loop over `backend.rag.tools`, then structured `AnswerGenerationResult` + citation filter) composed by `backend.rag.graph.run_ask_graph` / `backend.rag.agent.run_ask_agent`. Tools live one-per-file under `backend.rag.tools` (`search_relevant_chunks`, `list_documents`, `read_document`).
+- **Decision**: Ask flow is a tool-calling agent (`complete_tool_turn` loop over `backend.application.rag.tools`, then structured `AnswerGenerationResult` + citation filter) composed by `backend.application.rag.graph.run_ask_graph` / `backend.application.rag.agent.run_ask_agent`. Tools live one-per-file under `backend.application.rag.tools` (`search_relevant_chunks`, `list_documents`, `read_document`).
 - **Rationale**: Same graph topology and testability without hard-failing API imports on hosts that block native wheels.
 
 ## Grounding and citations

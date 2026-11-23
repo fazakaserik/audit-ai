@@ -5,15 +5,15 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
+from backend.application.rag.agent import AskAgentDeps, run_ask_agent
+from backend.application.rag.prompts import AnswerGenerationResult, build_agent_messages
 from backend.config import Settings
-from backend.rag.agent import AskAgentDeps, run_ask_agent
-from backend.rag.prompts import AnswerGenerationResult, build_agent_messages
-from domain.answer import Answered, Citation, Question
-from domain.common import utc_now
-from domain.document import DocumentId
-from domain.engagement import EngagementId
-from domain.chunk import Chunk, ChunkId
-from domain.session import LlmUsage, SessionId, Turn, TurnId
+from backend.domain.answer import Answered, Citation, Question
+from backend.domain.chunk import Chunk, ChunkId
+from backend.domain.common import utc_now
+from backend.domain.document import DocumentId
+from backend.domain.engagement import EngagementId
+from backend.domain.session import LlmUsage, SessionId, Turn, TurnId
 from support.fakes import (
     FakeChatModel,
     FakeEmbedder,

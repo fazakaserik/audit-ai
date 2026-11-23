@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from rich.console import Console
 
-from backend.api.contracts.v1.responses import TurnResponse
+from backend.application.api.contracts.v1.responses import TurnResponse
 from cli.render import (
     ToolProgressView,
     render_persisted_thinking,
@@ -30,9 +30,7 @@ def test_tool_progress_view_search_tree() -> None:
         name="search_relevant_chunks",
         arguments=json.dumps(
             {
-                "query": (
-                    "company pay beer orange juice cheese reimbursement expense policy"
-                ),
+                "query": ("company pay beer orange juice cheese reimbursement expense policy"),
             }
         ),
     )
