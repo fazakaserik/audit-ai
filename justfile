@@ -74,4 +74,7 @@ seed:
     uv run python scripts/seed_samples.py
 
 cli:
-    uv run aiditor
+    uv run aiditor --help
+
+tui:
+    uv run python -m tui

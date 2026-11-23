@@ -34,7 +34,7 @@ blocks the build is the cheapest reviewer, and it keeps refactors safe across pa
 
 ### II. Enforced Layering
 
-- Workspace packages: `backend`, `cli`.
+- Workspace packages: `backend`, `cli`, `tui`.
 - Backend layers (under `services/backend/src/backend`):
   - `backend.domain` — frozen pydantic entities and domain errors
   - `backend.application` — Protocols (`llm`, `parsing`, `repositories`, `storage`), DTOs, services, RAG (retrieve + ingestion worker), ask agent, HTTP API (controllers)
@@ -51,8 +51,14 @@ blocks the build is the cheapest reviewer, and it keeps refactors safe across pa
   - HTTP surface, services, infrastructure, RAG, agent, and the worker entrypoint live in the
     single `backend` package (`services/backend`). Alembic migrations are owned by `backend`.
   - `cli` MAY import `backend.domain` and `backend.application.api.contracts` and MUST NOT import
+    services, Protocols, RAG, agent, infrastructure, bootstrap, config, logging, or `tui`.
+    It communicates with the running system over HTTP. Shared HTTP access for other clients is
+    `cli.client`.
+  - `tui` MAY import `cli.client` (and other non-command `cli` library modules), `backend.domain`,
+    and `backend.application.api.contracts`. It MUST NOT import `cli.commands`, `cli.main`,
     services, Protocols, RAG, agent, infrastructure, bootstrap, config, or logging.
-    It communicates with the running system over HTTP.
+    It communicates with the running system over HTTP via `cli.client`.
+  - `cli` MUST NOT import `tui`.
 - Domain entities live as one module per model under `backend.domain` (e.g. `backend.domain.engagement`).
   Related types for a model stay in that file; folders are used only when models are tightly coupled.
   Shared primitives live at the domain root (`errors`, `problem`, `common`, `providers`). Public
@@ -66,7 +72,8 @@ blocks the build is the cheapest reviewer, and it keeps refactors safe across pa
   an operational choice, not a separate package.
 
 Rationale: for this product scale, one backend service is simpler to run and reason about while
-still keeping domain models and a typed HTTP client boundary for the CLI.
+still keeping domain models and a typed HTTP client boundary (`cli.client`) shared by the
+non-interactive CLI and the Textual TUI.
 
 ### III. Tested Behaviour, Offline by Default
 

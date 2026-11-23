@@ -7,10 +7,11 @@ See [specs/001-audit-assistant-rag/](specs/001-audit-assistant-rag/) for the ful
 
 ## Workspace
 
-| Path               | Package   | Role                                                                                |
-| ------------------ | --------- | ----------------------------------------------------------------------------------- |
-| `services/backend` | `backend` | Domain, application, infrastructure layers; HTTP API + worker; tests under `tests/` |
-| `cli`              | `cli`     | `aiditor` terminal client; tests in `cli/tests/`                                    |
+| Path               | Package   | Role                                                                                         |
+| ------------------ | --------- | -------------------------------------------------------------------------------------------- |
+| `services/backend` | `backend` | Domain, application, infrastructure layers; HTTP API + worker; tests under `tests/`          |
+| `cli`              | `cli`     | `aiditor` non-interactive CLI + shared HTTP client; tests in `cli/tests/`                    |
+| `tui`              | `tui`     | `aiditor-tui` fullscreen Textual client; tests in `tui/tests/`                               |
 
 Compose runs a single `backend` container (HTTP API + in-process upload worker).
 
@@ -36,7 +37,8 @@ cp deployment/docker-compose/.env.example deployment/docker-compose/.env
 uv sync
 just up
 just seed    # HTTP upload of northwind samples (API + worker must be up)
-aiditor      # interactive REPL
+aiditor-tui  # fullscreen interactive UI
+aiditor engagements list   # non-interactive / agents
 ```
 
 Schema migrations apply automatically when the API starts. To author a new
@@ -68,7 +70,8 @@ Requires Python 3.13, [uv](https://docs.astral.sh/uv/), [just](https://github.co
 - **`backend.domain`** — frozen pydantic feature models
 - **`backend.application`** — Protocols (`llm`, `parsing`, `repositories`, `storage`), services, RAG, HTTP API (controllers), worker entrypoints
 - **`backend.infrastructure`** — Postgres/pgvector, OpenAI, Ollama, local FS, parsing
-- **`cli`** — HTTP-only client using `backend.domain` + `backend.application.api.contracts.v1`
+- **`cli`** — HTTP-only Typer client + shared `cli.client` using `backend.domain` + `backend.application.api.contracts.v1`
+- **`tui`** — Textual fullscreen UI over the same HTTP client
 
 ## Limitations / next steps
 

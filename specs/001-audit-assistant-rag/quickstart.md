@@ -40,11 +40,11 @@ just seed
 
 Uses `scripts/seed_samples.py` → HTTP create engagement + upload folders with wait.
 
-## 3. Ask via CLI
+## 3. Ask via TUI (or list via CLI)
 
 ```bash
-uv run aiditor
-# or: uv run aiditor engagements list
+uv run aiditor-tui
+# non-interactive: uv run aiditor engagements list
 ```
 
 ### Scenario A — grounded answer
@@ -63,7 +63,7 @@ Expect `insufficient_evidence` + suggestions.
 
 ### Scenario D — follow-up session
 
-Ask a question, then a pronoun follow-up in the same REPL session.
+Ask a question, then a pronoun follow-up in the same TUI chat session.
 
 ### Scenario E — upload
 

@@ -12,7 +12,7 @@ Build a backend-only, document-grounded auditor assistant as a uv monorepo. Clie
 
 **Language/Version**: Python 3.13
 
-**Primary Dependencies**: FastAPI, LangGraph (graph only), pydantic v2, pydantic-settings, SQLAlchemy 2.0 async + asyncpg + Alembic + pgvector-python, openai SDK, ollama SDK, tenacity, structlog, httpx, Typer, prompt_toolkit, Rich, ruff, basedpyright, import-linter, pytest + pytest-asyncio + testcontainers, uv, just
+**Primary Dependencies**: FastAPI, LangGraph (graph only), pydantic v2, pydantic-settings, SQLAlchemy 2.0 async + asyncpg + Alembic + pgvector-python, openai SDK, ollama SDK, tenacity, structlog, httpx, Typer, Textual, Rich, ruff, basedpyright, import-linter, pytest + pytest-asyncio + testcontainers, uv, just
 
 **Storage**: PostgreSQL 16 with pgvector (metadata, chunks, embeddings, job queue, sessions); local filesystem volume for raw document bytes (Azure Blob documented as cloud target)
 

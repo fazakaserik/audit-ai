@@ -1,0 +1,103 @@
+/* AIditor TUI layout */
+
+Screen {
+    background: $surface;
+}
+
+BrandHeader {
+    dock: top;
+    height: auto;
+    padding: 0 1;
+    background: $surface;
+    color: $text;
+}
+
+BrandHeader.compact {
+    height: 1;
+    padding: 0 1;
+    background: $boost;
+    text-style: bold;
+}
+
+StatusBar {
+    dock: bottom;
+    height: 1;
+    background: $boost;
+    color: $text;
+    padding: 0 1;
+}
+
+#picker-list {
+    height: 1fr;
+    border: tall $primary 40%;
+    margin: 0 1 1 1;
+}
+
+#picker-help {
+    dock: bottom;
+    height: 1;
+    padding: 0 1;
+    color: $text-muted;
+}
+
+ChatScreen #chat-log {
+    height: 1fr;
+    border: tall $primary 30%;
+    margin: 0 1;
+    scrollbar-size: 1 1;
+    padding: 0 1;
+}
+
+ChatScreen #chat-log > Static {
+    height: auto;
+    margin: 0;
+}
+
+ChatScreen #chat-log > Collapsible {
+    height: auto;
+    margin: 0 0 1 0;
+    padding: 0;
+}
+
+ChatScreen #chat-log .thinking-body {
+    color: $text-muted;
+    padding: 0 1 1 1;
+    height: auto;
+}
+
+ChatScreen #chat-input {
+    dock: bottom;
+    margin: 0 1 1 1;
+}
+
+DocumentsModal,
+UploadsModal {
+    align: center middle;
+}
+
+DocumentsModal > #modal-container,
+UploadsModal > #modal-container {
+    width: 80%;
+    height: 80%;
+    border: thick $primary;
+    background: $surface;
+}
+
+#modal-title {
+    dock: top;
+    height: 1;
+    padding: 0 1;
+    text-style: bold;
+}
+
+#modal-list {
+    height: 1fr;
+    margin: 1;
+}
+
+#modal-help {
+    dock: bottom;
+    height: 1;
+    padding: 0 1;
+    color: $text-muted;
+}

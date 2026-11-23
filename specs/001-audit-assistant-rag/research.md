@@ -12,7 +12,8 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 
 - **Decision**: One uv workspace at the repository root with two members:
   - `services/backend` (import name `backend`): DDD layers `backend.domain`, `backend.application` (ports/use cases/RAG/HTTP API/worker), `backend.infrastructure` (Postgres, LLM providers, FS, parsing), plus composition root and Alembic migrations. One Dockerfile; compose may run a second container of the same image with `audit-worker`.
-  - `cli/` (import name `cli`): interactive terminal client; HTTP only; imports `backend.domain` and `backend.application.api.contracts`.
+  - `cli/` (import name `cli`): non-interactive Typer client + shared HTTP library (`cli.client`); imports `backend.domain` and `backend.application.api.contracts`.
+  - `tui/` (import name `tui`): fullscreen Textual client (`aiditor-tui`); HTTP only via `cli.client`.
 - **Rationale**: Auditor tooling does not need independently scaled API/worker packages. A single backend is simpler to run and demo while still allowing an optional second worker process from the same image. One `uv.lock` keeps versions consistent.
 - **Import rules (enforced with import-linter)**: `backend.domain` imports nothing from the rest of the project. Application use cases/RAG/ports must not import infrastructure or bootstrap; vendors stay in `backend.infrastructure`. `cli` may import `backend.domain` and `backend.application.api.contracts` only.
 - **Internal models vs contracts**: domain entities live as one module per model under `backend.domain` (folders only when models are tightly coupled). HTTP DTOs and mappers live in `backend.application.api.contracts.v1`.
@@ -61,11 +62,13 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 - **Rationale**: Follow-up questions work without weakening grounding, and the rest of the graph stays unchanged.
 - **Alternative considered**: the LangGraph Postgres checkpointer as session storage. Rejected because it stores graph-internal state rather than a typed, queryable transcript, and the API needs to list sessions and return turns as part of its own contract.
 
-## Terminal client (`cli/`)
+## Terminal clients (`cli/` + `tui/`)
 
-- **Decision**: `cli/` is a uv workspace member (import name `cli`, command `aiditor`). Typer provides the subcommands, prompt_toolkit the interactive input (history, completion, slash commands) and Rich the output (markdown answers, citation panels, spinners). It talks to the service only over HTTP, using httpx.
-- **Behaviour**: `aiditor` without arguments opens the interactive chat: choose an engagement, then start a new session or resume a recent one. A new session starts implicitly with the first question, and the CLI then keeps sending the returned `session_id`. Slash commands include `/engagement`, `/new`, `/sessions`, `/resume`, `/open <citation>`, `/help` and `/quit`. The non-interactive subcommands are `engagements list|create`, `upload <path> --engagement --folder [--wait]`, `uploads status` and `sessions list`. There are no sample-specific or test-only commands.
-- **Rationale**: A real client of the public API proves that the API is complete and typed end to end, and it gives the interview a strong live demo.
+- **Decision**: Two uv workspace members share one HTTP library:
+  - `cli/` (command `aiditor`): Typer subcommands only; Rich for script-friendly stdout. Agents and seed scripts use this surface. `aiditor` with no args prints help (does not launch a TUI).
+  - `tui/` (command `aiditor-tui`): Textual fullscreen app with sticky brand header, status bar (engagement · session · tokens), and a screen stack (Engagements → Sessions → Chat). Slash commands and Esc/Ctrl+E navigation. Depends on `cli.client` only (not `cli.commands` / `cli.main`).
+- **Behaviour**: Interactive humans run `aiditor-tui`. Automations run `aiditor engagements|upload|uploads|sessions|documents …`. Both talk to the service only over HTTP (httpx).
+- **Rationale**: Keeps the automation CLI lean and predictable while giving humans a Claude Code–like TUI; one typed HTTP client avoids duplicated API logic.
 
 ## Sample data and seeding
 
