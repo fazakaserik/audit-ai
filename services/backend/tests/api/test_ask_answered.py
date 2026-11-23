@@ -72,7 +72,14 @@ async def test_post_ask_answered_with_citations() -> None:
     )
     container = build_test_container(embedder=embedder, chat=chat)
     settings = container.settings
-    bound = build_fakes_bound(engagements=engagements, vector_index=vector_index)
+    bound = build_fakes_bound(
+        engagements=engagements,
+        vector_index=vector_index,
+        settings=settings,
+        chat=chat,
+        embedder=embedder,
+        storage=container.document_storage,
+    )
     app = create_app(settings=settings, container=container)
 
     async def override_bound():

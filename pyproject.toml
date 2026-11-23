@@ -72,8 +72,7 @@ pythonpath = [
   "services/backend/tests",
   "cli/src",
 ]
-# Disable langsmith's pytest plugin: it imports xxhash at collection time, which
-# fails on AppLocker hosts before our native-wheel shims can run.
+# Disable langsmith's pytest plugin to avoid collection-time side effects.
 addopts = "-m \"not db and not integration\" -p no:langsmith"
 
 [tool.basedpyright]
@@ -88,7 +87,6 @@ exclude = [
   "**/__pycache__",
   ".venv",
 ]
-stubPath = "typings"
 pythonVersion = "3.13"
 typeCheckingMode = "strict"
 venvPath = "."

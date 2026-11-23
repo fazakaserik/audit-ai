@@ -1,4 +1,4 @@
-"""In-memory fakes for application ports (offline unit/api tests)."""
+"""In-memory fakes for application Protocols (offline unit/api tests)."""
 
 from __future__ import annotations
 

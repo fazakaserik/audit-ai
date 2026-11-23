@@ -86,7 +86,14 @@ async def test_post_ask_stream_progress_and_final() -> None:
         thinking_seconds=1.26,
     )
     container = build_test_container(embedder=embedder, chat=chat)
-    bound = build_fakes_bound(engagements=engagements, vector_index=vector_index)
+    bound = build_fakes_bound(
+        engagements=engagements,
+        vector_index=vector_index,
+        settings=container.settings,
+        chat=chat,
+        embedder=embedder,
+        storage=container.document_storage,
+    )
     app = create_app(settings=container.settings, container=container)
 
     async def override_bound():

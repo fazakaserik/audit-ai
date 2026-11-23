@@ -69,8 +69,13 @@ async def test_list_documents_with_prefix_and_depth() -> None:
         storage=storage,
     )
 
-    bound = build_fakes_bound(engagements=engagements, documents=documents)
     container = build_test_container(document_storage=storage)
+    bound = build_fakes_bound(
+        engagements=engagements,
+        documents=documents,
+        storage=storage,
+        settings=container.settings,
+    )
     app = create_app(settings=container.settings, container=container)
 
     async def override_bound():

@@ -5,7 +5,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from backend.application.agents._langgraph import END, START, StateGraph
+from langgraph.graph import END, START, StateGraph
+
 from backend.application.agents.progress import AskProgress
 from backend.application.agents.research_agent.nodes import (
     AfterTools,

@@ -8,9 +8,16 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from backend.application.api.controllers import (
+    ask,
+    documents,
+    engagements,
+    health,
+    sessions,
+    uploads,
+)
 from backend.application.api.middleware import RequestIdMiddleware
 from backend.application.api.problem_handlers import register_exception_handlers
-from backend.application.api.routers import ask, documents, engagements, health, sessions, uploads
 from backend.application.rag.worker.main import run_worker_loop
 from backend.bootstrap import Container, build_container
 from backend.config import Settings

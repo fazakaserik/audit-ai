@@ -1,4 +1,4 @@
-"""Health endpoints."""
+"""Health controllers."""
 
 from __future__ import annotations
 

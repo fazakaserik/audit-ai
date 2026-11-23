@@ -1,8 +1,11 @@
 [project]
 name = "backend"
 version = "0.1.0"
-description = "AIditor backend (HTTP API, business logic, ingestion worker)"
+description = "AIditor backend (HTTP API, business logic, ingestion worker). Linux-only; Windows is not supported."
 requires-python = ">=3.13"
+classifiers = [
+  "Operating System :: POSIX :: Linux",
+]
 dependencies = [
   "pydantic>=2.10",
   "fastapi>=0.115",

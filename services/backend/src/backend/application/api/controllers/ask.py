@@ -1,4 +1,4 @@
-"""Ask question routes (sync + SSE stream)."""
+"""Ask question controllers (sync + SSE stream)."""
 
 from __future__ import annotations
 
@@ -11,14 +11,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
-from backend.application.api.contracts.v1.mapping import answer_to_response
 from backend.application.api.contracts.v1.requests import AskRequest
 from backend.application.api.contracts.v1.responses import AskResponse
-from backend.application.api.dependencies import get_bound, get_container
+from backend.application.api.dependencies import get_bound
 from backend.application.api.problem_handlers import http_status_for
-from backend.application.ask_question import ask_question, ask_question_stream
-from backend.application.dto import AskResult
-from backend.bootstrap import Container, SessionBound
+from backend.bootstrap import SessionBound
 from backend.domain.answer import Question
 from backend.domain.common import RequestId
 from backend.domain.engagement import EngagementId
@@ -58,27 +55,14 @@ async def post_ask(
     body: AskRequest,
     request: Request,
     bound: Annotated[SessionBound, Depends(get_bound)],
-    container: Annotated[Container, Depends(get_container)],
 ) -> AskResponse:
     """Ask a grounded question (creates or continues a session)."""
     question, session_id = _question_from_body(body)
-    result = await ask_question(
-        bound,
-        chat=container.chat_model,
-        embedder=container.embedder,
-        storage=container.document_storage,
-        settings=container.settings,
+    return await bound.ask.ask_question(
         engagement_id=engagement_id,
         question=question,
         session_id=session_id,
-    )
-    return answer_to_response(
-        result.answer,
-        session_id=result.session_id,
-        turn_id=result.turn_id,
         request_id=_request_id(request),
-        usage=result.usage,
-        session_total_tokens=result.session_total_tokens,
     )
 
 
@@ -91,35 +75,22 @@ async def post_ask_stream(
     body: AskRequest,
     request: Request,
     bound: Annotated[SessionBound, Depends(get_bound)],
-    container: Annotated[Container, Depends(get_container)],
 ) -> StreamingResponse:
     """Stream dimmed pipeline progress, optional thinking, then the final answer."""
     question, session_id = _question_from_body(body)
     request_id = _request_id(request)
 
     async def event_gen() -> AsyncIterator[str]:
-        async for event in ask_question_stream(
-            bound,
-            chat=container.chat_model,
-            embedder=container.embedder,
-            storage=container.document_storage,
-            settings=container.settings,
+        async for event in bound.ask.ask_question_stream(
             engagement_id=engagement_id,
             question=question,
             session_id=session_id,
+            request_id=request_id,
         ):
             event_type = event.get("type")
             if event_type == "final":
-                result = event["result"]
-                assert isinstance(result, AskResult)
-                payload = answer_to_response(
-                    result.answer,
-                    session_id=result.session_id,
-                    turn_id=result.turn_id,
-                    request_id=request_id,
-                    usage=result.usage,
-                    session_total_tokens=result.session_total_tokens,
-                )
+                payload = event["response"]
+                assert isinstance(payload, AskResponse)
                 yield _sse(
                     {
                         "type": "final",

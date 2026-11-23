@@ -30,8 +30,8 @@ def _build_upload_app(*, settings: Settings | None = None):
                 updated_at=now,
             )
         )
-        bound = build_fakes_bound(engagements=engagements)
         cfg = settings or Settings()
+        bound = build_fakes_bound(engagements=engagements, settings=cfg)
         container = build_test_container(settings=cfg)
         app = create_app(settings=cfg, container=container)
 
@@ -93,4 +93,4 @@ async def test_unsafe_zip_returns_400(upload_app_factory) -> None:
         )
     assert response.status_code == 400
     assert response.json()["code"] == "unsafe_upload"
-    assert len(bound.documents._items) == 0
+    assert len(bound.documents._documents._items) == 0

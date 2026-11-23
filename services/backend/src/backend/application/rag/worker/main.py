@@ -53,11 +53,11 @@ async def run_worker_loop(
                     outcome = await process_upload_item(
                         item=item,
                         engagement_id=upload.engagement_id,
-                        documents=bound.documents,
+                        documents=bound.document_repository,
                         storage=container.document_storage,
                         vector_index=bound.vector_index,
                         embedder=container.embedder,
-                        uploads=bound.uploads,
+                        uploads=bound.upload_repository,
                         document_parser=container.document_parser,
                         document_chunker=container.document_chunker,
                     )

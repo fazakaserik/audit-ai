@@ -66,13 +66,13 @@ Requires Python 3.13, [uv](https://docs.astral.sh/uv/), [just](https://github.co
 ## Architecture
 
 - **`backend.domain`** — frozen pydantic feature models
-- **`backend.application`** — Protocols (`llm`, `parsing`, `repositories`, `storage`), use cases, RAG, HTTP API, worker entrypoints
+- **`backend.application`** — Protocols (`llm`, `parsing`, `repositories`, `storage`), services, RAG, HTTP API (controllers), worker entrypoints
 - **`backend.infrastructure`** — Postgres/pgvector, OpenAI, Ollama, local FS, parsing
 - **`cli`** — HTTP-only client using `backend.domain` + `backend.application.api.contracts.v1`
 
 ## Limitations / next steps
 
 - No authentication or user management
-- Ask flow is a LangGraph `StateGraph` (tool loop → grade → generate → finalize); Windows AppLocker hosts use pure-Python shims for blocked native wheels
+- Ask flow is a LangGraph `StateGraph` (tool loop → grade → generate → finalize). Strict basedpyright reports type errors on that usage; those come from LangGraph (namespace-package `py.typed` / unbound generics in `StateGraph`), not from this repo. Tracking upstream: [langchain-ai/langgraph#9659](https://github.com/langchain-ai/langgraph/issues/9659).
 - Chunk sizes not corpus-tuned; OCR out of scope
 - Cloud mapping: `deployment/cloud/README.md`

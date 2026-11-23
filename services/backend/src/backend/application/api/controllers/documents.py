@@ -1,4 +1,4 @@
-"""Document list, download, and upload routes."""
+"""Document list, download, and upload controllers."""
 
 from __future__ import annotations
 
@@ -8,16 +8,13 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, Path, Query, Request, UploadFile, status
 from fastapi.responses import Response
 
-from backend.application.api.contracts.v1.mapping import document_to_response
 from backend.application.api.contracts.v1.responses import (
     DocumentListingResponse,
     UploadAcceptedResponse,
 )
-from backend.application.api.dependencies import get_bound, get_container
-from backend.application.get_document import get_document
-from backend.application.list_documents import list_documents
-from backend.application.upload_documents import IncomingUploadFile, upload_documents
-from backend.bootstrap import Container, SessionBound
+from backend.application.api.dependencies import get_bound
+from backend.application.services.documents import IncomingUploadFile
+from backend.bootstrap import SessionBound
 from backend.domain.common import RequestId
 from backend.domain.document import DocumentPath, FolderPath
 from backend.domain.engagement import EngagementId
@@ -62,20 +59,10 @@ async def get_documents_list(
     Also returns immediate child folder names so clients can browse the tree.
     """
     folder_prefix = FolderPath(prefix) if prefix is not None and prefix != "" else None
-    result = await list_documents(
-        bound.engagements,
-        bound.documents,
+    return await bound.documents.list_documents(
         engagement_id=engagement_id,
         prefix=folder_prefix,
         depth=depth,
-        limit=limit,
-        offset=offset,
-    )
-    responses = tuple(document_to_response(doc) for doc in result.items)
-    return DocumentListingResponse(
-        items=responses,
-        folders=result.folders,
-        total=result.total,
         limit=limit,
         offset=offset,
     )
@@ -95,17 +82,13 @@ async def get_document_content(
         Path(description="Full relative document path"),
     ],
     bound: Annotated[SessionBound, Depends(get_bound)],
-    container: Annotated[Container, Depends(get_container)],
 ) -> Response:
     """Return the raw bytes for one document."""
-    result = await get_document(
-        bound.engagements,
-        bound.documents,
-        container.document_storage,
+    content = await bound.documents.get_document_content(
         engagement_id=engagement_id,
         path=document_path,
     )
-    return Response(content=result.data, media_type=result.media_type)
+    return Response(content=content.data, media_type=content.media_type)
 
 
 @router.post(
@@ -121,7 +104,6 @@ async def post_documents_upload(
     ],
     request: Request,
     bound: Annotated[SessionBound, Depends(get_bound)],
-    container: Annotated[Container, Depends(get_container)],
     folder: Annotated[
         str,
         Form(description="Target folder prefix where uploaded files are stored"),
@@ -141,17 +123,11 @@ async def post_documents_upload(
         filename = upload.filename or "upload.bin"
         incoming.append(IncomingUploadFile(filename=filename, data=payload))
 
-    result = await upload_documents(
-        engagements=bound.engagements,
-        uploads=bound.uploads,
-        storage=container.document_storage,
-        jobs=bound.jobs,
-        archives=container.archive_extractor,
-        settings=container.settings,
+    raw_rid = getattr(request.state, "request_id", None)
+    request_id = RequestId(raw_rid) if isinstance(raw_rid, uuid.UUID) else RequestId(uuid.uuid4())
+    return await bound.documents.upload_documents(
         engagement_id=engagement_id,
         target_folder=folder,
         files=incoming,
+        request_id=request_id,
     )
-    raw_rid = getattr(request.state, "request_id", None)
-    request_id = RequestId(raw_rid) if isinstance(raw_rid, uuid.UUID) else RequestId(uuid.uuid4())
-    return UploadAcceptedResponse(upload_id=result.upload.id, request_id=request_id)

@@ -13,9 +13,12 @@ from backend.application.parsing.archive_extractor import ArchiveExtractor
 from backend.application.parsing.document_chunker import DocumentChunker
 from backend.application.parsing.document_parser import DocumentParser
 from backend.application.repositories.document import DocumentRepository
-from backend.application.repositories.engagement import EngagementRepository
-from backend.application.repositories.session import SessionRepository
 from backend.application.repositories.upload import UploadRepository
+from backend.application.services.ask import AskService
+from backend.application.services.documents import DocumentService
+from backend.application.services.engagements import EngagementService
+from backend.application.services.sessions import SessionService
+from backend.application.services.uploads import UploadService
 from backend.application.storage.document_storage import DocumentStorage
 from backend.application.storage.job_queue import JobQueue
 from backend.application.storage.vector_index import VectorIndex
@@ -40,14 +43,18 @@ from backend.infrastructure.postgres.vector_index import PostgresVectorIndex
 
 @dataclass(frozen=True, slots=True)
 class SessionBound:
-    """Per-request repositories bound to one AsyncSession."""
+    """Per-request application services bound to one AsyncSession."""
 
-    engagements: EngagementRepository
-    documents: DocumentRepository
-    sessions: SessionRepository
-    uploads: UploadRepository
-    vector_index: VectorIndex
+    engagements: EngagementService
+    documents: DocumentService
+    uploads: UploadService
+    sessions: SessionService
+    ask: AskService
+    # Worker/ingestion adapters not covered by HTTP-facing services.
     jobs: JobQueue
+    vector_index: VectorIndex
+    document_repository: DocumentRepository
+    upload_repository: UploadRepository
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,13 +70,39 @@ class Container:
     archive_extractor: ArchiveExtractor
 
     def bind(self, session: AsyncSession) -> SessionBound:
+        engagements = PostgresEngagementRepository(session)
+        documents = PostgresDocumentRepository(session)
+        sessions = PostgresSessionRepository(session)
+        uploads = PostgresUploadRepository(session)
+        vector_index = PostgresVectorIndex(session)
+        jobs = PostgresJobQueue(session)
         return SessionBound(
-            engagements=PostgresEngagementRepository(session),
-            documents=PostgresDocumentRepository(session),
-            sessions=PostgresSessionRepository(session),
-            uploads=PostgresUploadRepository(session),
-            vector_index=PostgresVectorIndex(session),
-            jobs=PostgresJobQueue(session),
+            engagements=EngagementService(engagements),
+            documents=DocumentService(
+                engagements,
+                documents,
+                uploads,
+                storage=self.document_storage,
+                jobs=jobs,
+                archives=self.archive_extractor,
+                settings=self.settings,
+            ),
+            uploads=UploadService(engagements, uploads),
+            sessions=SessionService(engagements, sessions),
+            ask=AskService(
+                engagements,
+                documents,
+                sessions,
+                vector_index,
+                chat=self.chat_model,
+                embedder=self.embedder,
+                storage=self.document_storage,
+                settings=self.settings,
+            ),
+            jobs=jobs,
+            vector_index=vector_index,
+            document_repository=documents,
+            upload_repository=uploads,
         )
 
 

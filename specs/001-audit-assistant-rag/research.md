@@ -89,7 +89,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 ## Ask orchestration
 
 - **Decision**: Ask flow is a LangGraph `StateGraph` under `backend.application.agents.research_agent` (`agent` ⇄ `tools` → `grade_evidence` → `generate` → `finalize`), with tool turns via `complete_tool_turn` / shared `backend.application.tools` and a structured `AnswerGenerationResult` + citation filter. Entry: `agents.research_agent.graph.run_graph`. Retrieval is `backend.application.rag.retrieve_relevant_chunks`; ingestion is `backend.application.rag.worker`. The `search_relevant_chunks` tool calls retrieve.
-- **Rationale**: Keeps the ask agent separate from RAG (ingest + retrieve). LangGraph owns control flow; project-owned `ChatModel` ports stay free of LangChain model wrappers. On hosts that block native `xxhash`/`ormsgpack` wheels, `backend.native_wheel_compat` installs pure-Python shims so imports still succeed.
+- **Rationale**: Keeps the ask agent separate from RAG (ingest + retrieve). LangGraph owns control flow; project-owned `ChatModel` ports stay free of LangChain model wrappers.
 
 ## Grounding and citations
 

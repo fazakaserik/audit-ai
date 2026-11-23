@@ -1,4 +1,4 @@
-"""Build a FastAPI test container with in-memory port fakes."""
+"""Build a FastAPI test container with in-memory Protocol fakes."""
 
 from __future__ import annotations
 
@@ -8,7 +8,21 @@ from unittest.mock import AsyncMock
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from backend.application.llm.chat_model import ChatModel
+from backend.application.llm.embedder import Embedder
+from backend.application.parsing.archive_extractor import ArchiveExtractor
+from backend.application.repositories.document import DocumentRepository
+from backend.application.repositories.engagement import EngagementRepository
+from backend.application.repositories.session import SessionRepository
+from backend.application.repositories.upload import UploadRepository
+from backend.application.services.ask import AskService
+from backend.application.services.documents import DocumentService
+from backend.application.services.engagements import EngagementService
+from backend.application.services.sessions import SessionService
+from backend.application.services.uploads import UploadService
 from backend.application.storage.document_storage import DocumentStorage
+from backend.application.storage.job_queue import JobQueue
+from backend.application.storage.vector_index import VectorIndex
 from backend.bootstrap import Container, SessionBound
 from backend.config import Settings
 from backend.infrastructure.parsing.archive import build_archive_extractor
@@ -34,20 +48,56 @@ class _DummyEngine:
 
 def build_fakes_bound(
     *,
-    engagements: InMemoryEngagementRepository | None = None,
-    documents: InMemoryDocumentRepository | None = None,
-    sessions: InMemorySessionRepository | None = None,
-    uploads: InMemoryUploadRepository | None = None,
-    vector_index: InMemoryVectorIndex | None = None,
-    jobs: NoopJobQueue | None = None,
+    engagements: EngagementRepository | None = None,
+    documents: DocumentRepository | None = None,
+    sessions: SessionRepository | None = None,
+    uploads: UploadRepository | None = None,
+    vector_index: VectorIndex | None = None,
+    jobs: JobQueue | None = None,
+    storage: DocumentStorage | None = None,
+    archives: ArchiveExtractor | None = None,
+    settings: Settings | None = None,
+    chat: ChatModel | None = None,
+    embedder: Embedder | None = None,
 ) -> SessionBound:
+    eng = engagements or InMemoryEngagementRepository()
+    docs = documents or InMemoryDocumentRepository()
+    sess = sessions or InMemorySessionRepository()
+    ups = uploads or InMemoryUploadRepository()
+    vectors = vector_index or InMemoryVectorIndex()
+    job_queue = jobs or NoopJobQueue()
+    document_storage = storage or InMemoryDocumentStorage()
+    cfg = settings or Settings(relevance_threshold=0.0, retrieval_top_k=8)
+    archive_extractor = archives or build_archive_extractor()
+    chat_model = chat or FakeChatModel()
+    emb = embedder or FakeEmbedder()
     return SessionBound(
-        engagements=engagements or InMemoryEngagementRepository(),
-        documents=documents or InMemoryDocumentRepository(),
-        sessions=sessions or InMemorySessionRepository(),
-        uploads=uploads or InMemoryUploadRepository(),
-        vector_index=vector_index or InMemoryVectorIndex(),
-        jobs=jobs or NoopJobQueue(),
+        engagements=EngagementService(eng),
+        documents=DocumentService(
+            eng,
+            docs,
+            ups,
+            storage=document_storage,
+            jobs=job_queue,
+            archives=archive_extractor,
+            settings=cfg,
+        ),
+        uploads=UploadService(eng, ups),
+        sessions=SessionService(eng, sess),
+        ask=AskService(
+            eng,
+            docs,
+            sess,
+            vectors,
+            chat=chat_model,
+            embedder=emb,
+            storage=document_storage,
+            settings=cfg,
+        ),
+        jobs=job_queue,
+        vector_index=vectors,
+        document_repository=docs,
+        upload_repository=ups,
     )
 
 

@@ -96,6 +96,10 @@ def build_ask_app(
     bound = build_fakes_bound(
         engagements=engagements,
         vector_index=vector_index or InMemoryVectorIndex(),
+        settings=container.settings,
+        chat=chat_model,
+        embedder=emb,
+        storage=container.document_storage,
     )
     app = create_app(settings=container.settings, container=container)
 
