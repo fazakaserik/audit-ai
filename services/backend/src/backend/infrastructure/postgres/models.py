@@ -64,7 +64,12 @@ class UploadRow(Base):
 class UploadItemRow(Base):
     __tablename__ = "upload_items"
     __table_args__: tuple[Index, ...] = (
-        Index("ix_upload_items_status_next_attempt", "status", "next_attempt_at"),
+        Index(
+            "ix_upload_items_status_next_attempt",
+            "status",
+            "next_attempt_at",
+            "created_at",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)

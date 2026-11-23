@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Response, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from backend.application.api.contracts.v1.mapping import (
     engagement_view_to_response,
@@ -38,8 +38,8 @@ async def post_engagement(
 @router.get("", response_model=Page[EngagementResponse])
 async def list_engagements(
     bound: Annotated[SessionBound, Depends(get_bound)],
-    limit: int = 50,
-    offset: int = 0,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> Page[EngagementResponse]:
     page = await bound.engagements.list(limit=limit, offset=offset)
     return to_contract_page(page, engagement_view_to_response)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import assert_never
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -85,6 +86,8 @@ def _build_chat(settings: Settings) -> ChatModel:
                 timeout_seconds=settings.model_timeout_seconds,
                 max_concurrent_calls=settings.max_concurrent_model_calls,
             )
+        case _:
+            assert_never(settings.llm_provider)
 
 
 def _build_embedder(settings: Settings) -> Embedder:
@@ -105,6 +108,8 @@ def _build_embedder(settings: Settings) -> Embedder:
                 timeout_seconds=settings.model_timeout_seconds,
                 max_concurrent_calls=settings.max_concurrent_model_calls,
             )
+        case _:
+            assert_never(settings.embedding_provider)
 
 
 def build_container(settings: Settings) -> Container:

@@ -11,7 +11,6 @@ from backend.application.parsing.document_chunker import DocumentChunker
 from backend.application.parsing.document_parser import DocumentParser
 from backend.application.rag.index_document import index_document_chunks
 from backend.application.repositories.document import DocumentRepository
-from backend.application.repositories.upload import UploadRepository
 from backend.application.storage.document_storage import DocumentStorage
 from backend.application.storage.vector_index import VectorIndex
 from backend.domain.common import new_uuid, utc_now
@@ -42,7 +41,6 @@ async def process_upload_item(
     storage: DocumentStorage,
     vector_index: VectorIndex,
     embedder: Embedder,
-    uploads: UploadRepository,
     document_parser: DocumentParser,
     document_chunker: DocumentChunker,
 ) -> ProcessItemOutcome:
@@ -96,7 +94,6 @@ async def process_upload_item(
             prior=prior,
             now=now,
         )
-        await uploads.refresh_status(item.upload_id)
         return ProcessItemOutcome(status=UploadItemStatus.NOT_SEARCHABLE, reason=detail)
 
     if not chunks:
@@ -135,7 +132,6 @@ async def process_upload_item(
         vector_count=indexed.chunk_count,
         embedding_total_tokens=usage.total_tokens,
     )
-    await uploads.refresh_status(item.upload_id)
     log.info(
         "ingest_indexed",
         path=path,

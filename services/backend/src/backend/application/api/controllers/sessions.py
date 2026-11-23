@@ -6,7 +6,7 @@ import uuid
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Query, Request
 
 from backend.application.api.contracts.v1.mapping import (
     session_detail_to_response,
@@ -31,8 +31,8 @@ router = APIRouter(prefix="/api/v1/engagements", tags=["sessions"])
 async def get_sessions_list(
     engagement_id: EngagementId,
     bound: Annotated[SessionBound, Depends(get_bound)],
-    limit: int = 50,
-    offset: int = 0,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
 ) -> Page[SessionSummaryResponse]:
     page = await bound.sessions.list_sessions(
         engagement_id=engagement_id,

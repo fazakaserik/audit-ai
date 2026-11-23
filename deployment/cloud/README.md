@@ -64,6 +64,8 @@ Locally, the service writes structured JSON logs (structlog) with a `request_id`
 - Managed identities for the API and workers; role assignments instead of connection strings.
 - Customer documents are encrypted at rest (platform-managed keys by default, customer-managed keys if required by the engagement).
 
+Local `docker compose` exposes the API on host port `8000` with **no authentication**. Treat that as loopback/dev-only: do not publish it to the public internet without a network ACL, VPN, or an auth-capable edge (see Identity next step).
+
 ## Next steps beyond the infrastructure
 
 - User and contact management on Entra ID: auditor team members and client contacts with responsibilities. When the documents lack an answer, the assistant could address the suggested outreach to the right client contact, and access could be restricted per engagement.

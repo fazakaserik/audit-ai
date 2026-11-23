@@ -102,9 +102,8 @@ async def run_graph(
     folder_scope: FolderPath | None,
     prior_turns: Sequence[Turn] = (),
     deps: GraphDeps,
-    progress: AskProgress | None = None,
 ) -> GraphResult:
-    progress_sink = progress if progress is not None else deps.progress
+    progress_sink = deps.progress
     history = tuple(prior_turns)
     folder = folder_scope if folder_scope is not None else question.folder_scope
     standalone_question = question.text

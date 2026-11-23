@@ -23,8 +23,10 @@ from backend.domain.common import RequestId
 from backend.domain.engagement import EngagementId
 from backend.domain.errors import DomainError, ErrorCode
 from backend.domain.session import SessionId
+from backend.logging import get_logger
 
 router = APIRouter(prefix="/api/v1/engagements", tags=["ask"])
+log = get_logger(__name__)
 
 _PROGRESS_EVENT_TYPES = frozenset(
     {
@@ -128,12 +130,13 @@ async def post_ask_stream(
                         }
                     )
                 else:
+                    log.exception("ask_stream_unhandled_error", error=str(exc))
                     yield _sse(
                         {
                             "type": "error",
                             "status": 500,
                             "code": ErrorCode.INTERNAL_ERROR.value,
-                            "detail": str(exc),
+                            "detail": "An unexpected error occurred",
                         }
                     )
             elif isinstance(event, AskStreamThinkingDone):

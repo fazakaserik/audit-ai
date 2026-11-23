@@ -6,6 +6,7 @@ import asyncio
 from collections.abc import AsyncIterator, Sequence
 
 from backend.application.agents.progress import CollectingAskProgress
+from backend.application.agents.research_agent.graph import GraphDeps, run_graph
 from backend.application.dto import (
     AskResult,
     AskStreamError,
@@ -139,9 +140,7 @@ class AskService:
             session_total_tokens=_session_total_tokens(prior_turns, usage),
         )
 
-    def _graph_deps(self, progress: CollectingAskProgress):
-        from backend.application.agents.research_agent.graph import GraphDeps
-
+    def _graph_deps(self, progress: CollectingAskProgress) -> GraphDeps:
         return GraphDeps(
             chat=self._chat,
             embedder=self._embedder,
@@ -161,8 +160,6 @@ class AskService:
         session_id: SessionId | None,
         progress: CollectingAskProgress,
     ) -> AskResult:
-        from backend.application.agents.research_agent.graph import run_graph
-
         session, prior_turns = await self._prepare_session(
             engagement_id=engagement_id,
             question=question,
