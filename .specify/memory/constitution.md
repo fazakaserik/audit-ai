@@ -67,7 +67,7 @@ still keeping domain models and a typed HTTP client boundary for the CLI.
 - Tests needing real infrastructure MUST be opt-in via markers: `db` (Postgres with pgvector,
   started by testcontainers) and `integration` (real Ollama or OpenAI).
 - Required paths MUST be covered: successful answer with citations, invalid input, no
-  relevant passages, model timeout, model provider error, unsafe upload, cross-engagement
+  relevant chunks, model timeout, model provider error, unsafe upload, cross-engagement
   isolation, and every documented error code.
 - Fakes MUST live in shared test support code, not be redefined per test file.
 
@@ -84,7 +84,7 @@ Fakes that honour the ports keep the tests honest about the real integration poi
   Problem Details MUST happen in exactly one place in `backend.api`.
 - Logs MUST be structured JSON (structlog) carrying `request_id`, and `upload_id`/`job_id` for
   background work.
-- Logs, error responses and traces MUST NOT contain document content, passage text, prompts,
+- Logs, error responses and traces MUST NOT contain document content, chunk text, prompts,
   model outputs, or secrets. Documents are referenced by id and path only. Secrets MUST be held
   as `SecretStr` and never formatted into strings.
 - Unexpected exceptions MUST return a generic `internal_error` problem without stack traces or
@@ -127,9 +127,9 @@ dependency set. Global installs pollute the host and break reproducibility.
 
 ## Product and Security Constraints
 
-- Answers MUST be derived only from passages retrieved from the engagement's own documents.
+- Answers MUST be derived only from chunks retrieved from the engagement's own documents.
   The model's general knowledge MUST NOT supply facts, and every claim MUST be traceable to a
-  citation of a retrieved passage.
+  citation of a retrieved chunk.
 - Every read, search and answer MUST be scoped to exactly one engagement. Engagement scoping MUST
   be enforced in the data access layer, not only in request handling, and covered by tests.
 - Untrusted input (uploaded archives, paths, questions) MUST be validated at the boundary: path

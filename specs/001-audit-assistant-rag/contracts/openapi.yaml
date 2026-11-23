@@ -282,9 +282,10 @@ paths:
       operationId: askQuestionStream
       summary: Ask a question with SSE progress
       description: >
-        Streams pipeline stages, retrieved sources, optional thinking deltas,
-        a single thinking_done (Thought for X seconds), then a final AskResponse.
-        Thinking events appear only when the chat provider reports thinking support.
+        Streams agent stages, tool_call / tool_result events, retrieved sources,
+        optional thinking deltas, a single thinking_done (Thought for X seconds),
+        then a final AskResponse. Thinking events appear only when the chat
+        provider reports thinking support.
       parameters:
         - $ref: "#/components/parameters/EngagementId"
       requestBody:
@@ -608,12 +609,12 @@ components:
     Citation:
       type: object
       additionalProperties: false
-      required: [marker, document_path, snippet, score, passage_id, document_id]
+      required: [marker, document_path, snippet, score, chunk_id, document_id]
       properties:
         marker:
           type: integer
           minimum: 1
-        passage_id:
+        chunk_id:
           type: string
           format: uuid
         document_id:
@@ -720,7 +721,7 @@ components:
           const: insufficient_evidence
         reason:
           type: string
-          enum: [no_relevant_passages, model_judged_insufficient]
+          enum: [no_relevant_chunks, model_judged_insufficient]
         partial_citations:
           type: array
           items:

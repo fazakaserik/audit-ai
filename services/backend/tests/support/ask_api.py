@@ -15,7 +15,7 @@ from backend.rag.prompts import AnswerGenerationResult
 from domain.common import utc_now
 from domain.document import DocumentId
 from domain.engagement import Engagement, EngagementId
-from domain.passage import Passage, PassageId
+from domain.chunk import Chunk, ChunkId
 from support.fakes import (
     FakeChatModel,
     FakeEmbedder,
@@ -37,7 +37,7 @@ async def seed_engagement(
     )
 
 
-async def index_passage(
+async def index_chunk(
     vector_index: InMemoryVectorIndex,
     embedder: FakeEmbedder,
     *,
@@ -45,10 +45,10 @@ async def index_passage(
     path: str,
     text: str,
     page: int | None = 1,
-) -> Passage:
+) -> Chunk:
     doc_id = DocumentId(uuid.uuid4())
-    passage = Passage(
-        id=PassageId(uuid.uuid4()),
+    chunk = Chunk(
+        id=ChunkId(uuid.uuid4()),
         document_id=doc_id,
         document_version=1,
         ordinal=0,
@@ -59,16 +59,16 @@ async def index_passage(
         created_at=datetime.now(UTC),
     )
     embedded = await embedder.embed((text,))
-    await vector_index.upsert_passages(
+    await vector_index.upsert_chunks(
         engagement_id=engagement_id,
         document_id=doc_id,
         document_path=path,
         document_version=1,
-        passages=(passage,),
+        chunks=(chunk,),
         embeddings=(embedded.vectors[0],),
         embedding_model=embedder.model_name,
     )
-    return passage
+    return chunk
 
 
 def answered_chat(text: str = "Payment is due within thirty days [1].") -> FakeChatModel:

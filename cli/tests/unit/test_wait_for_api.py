@@ -1,0 +1,77 @@
+"""Tests for CLI API connection retry at startup."""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+
+import httpx
+import pytest
+from rich.console import Console
+
+from cli.client import AuditApiClient, CliApiError
+from cli.repl import _CONNECT_BACKOFF_SECONDS, _wait_for_api
+from domain.errors import ErrorCode
+
+
+def test_check_live_success() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/health/live"
+        return httpx.Response(200, json={"status": "ok"}, request=request)
+
+    transport = httpx.MockTransport(handler)
+    http_client = httpx.Client(transport=transport, base_url="http://test")
+    client = AuditApiClient(http_client=http_client)
+    client.check_live()
+
+
+def test_check_live_maps_transport_error() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    transport = httpx.MockTransport(handler)
+    http_client = httpx.Client(transport=transport, base_url="http://test")
+    client = AuditApiClient(base_url="http://test", http_client=http_client)
+
+    with pytest.raises(CliApiError) as exc_info:
+        client.check_live()
+
+    err = exc_info.value
+    assert err.code == ErrorCode.DEPENDENCY_UNAVAILABLE
+    assert err.status == 0
+    assert "http://test" in err.detail
+
+
+def test_wait_for_api_retries_then_succeeds() -> None:
+    client = MagicMock(spec=AuditApiClient)
+    client.base_url = "http://localhost:8000"
+    client.check_live.side_effect = [
+        CliApiError(code=ErrorCode.DEPENDENCY_UNAVAILABLE, detail="down", status=0),
+        CliApiError(code=ErrorCode.DEPENDENCY_UNAVAILABLE, detail="down", status=0),
+        None,
+    ]
+    console = Console(force_terminal=False, quiet=True)
+
+    with patch("cli.repl.time.sleep") as sleep:
+        _wait_for_api(client, console)
+
+    assert client.check_live.call_count == 3
+    assert [call.args[0] for call in sleep.call_args_list] == [1, 2]
+
+
+def test_wait_for_api_gives_up_after_backoff() -> None:
+    client = MagicMock(spec=AuditApiClient)
+    client.base_url = "http://localhost:8000"
+    client.check_live.side_effect = CliApiError(
+        code=ErrorCode.DEPENDENCY_UNAVAILABLE,
+        detail="down",
+        status=0,
+    )
+    console = Console(force_terminal=False, quiet=True)
+
+    with patch("cli.repl.time.sleep") as sleep:
+        with pytest.raises(SystemExit) as exc_info:
+            _wait_for_api(client, console)
+
+    assert exc_info.value.code == 1
+    assert client.check_live.call_count == len(_CONNECT_BACKOFF_SECONDS) + 1
+    assert [call.args[0] for call in sleep.call_args_list] == list(_CONNECT_BACKOFF_SECONDS)

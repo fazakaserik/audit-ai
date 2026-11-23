@@ -13,7 +13,7 @@ from backend.rag.prompts import AnswerGenerationResult
 from domain.common import utc_now
 from domain.document import DocumentId
 from domain.engagement import Engagement, EngagementId
-from domain.passage import Passage, PassageId
+from domain.chunk import Chunk, ChunkId
 from support.fakes import (
     FakeChatModel,
     FakeEmbedder,
@@ -36,29 +36,29 @@ async def test_post_ask_answered_with_citations() -> None:
         )
     )
 
-    passage_text = "The Contoso agreement requires payment within thirty days of invoice date."
+    chunk_text = "The Contoso agreement requires payment within thirty days of invoice date."
     doc_id = DocumentId(uuid.uuid4())
-    passage = Passage(
-        id=PassageId(uuid.uuid4()),
+    chunk = Chunk(
+        id=ChunkId(uuid.uuid4()),
         document_id=doc_id,
         document_version=1,
         ordinal=0,
         page=3,
         heading_path=("Payment terms",),
-        text=passage_text,
+        text=chunk_text,
         token_count=12,
         created_at=datetime.now(UTC),
     )
 
     embedder = FakeEmbedder()
-    embedded = await embedder.embed((passage_text, "payment terms contoso"))
+    embedded = await embedder.embed((chunk_text, "payment terms contoso"))
     vector_index = InMemoryVectorIndex()
-    await vector_index.upsert_passages(
+    await vector_index.upsert_chunks(
         engagement_id=engagement_id,
         document_id=doc_id,
         document_path="contracts/contoso.pdf",
         document_version=1,
-        passages=(passage,),
+        chunks=(chunk,),
         embeddings=(embedded.vectors[0],),
         embedding_model=embedder.model_name,
     )

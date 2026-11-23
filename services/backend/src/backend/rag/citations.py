@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence
 
-from backend.application.ports import ScoredPassage
+from backend.application.ports import ScoredChunk
 from domain.answer import Citation
 
 _MARKER_RE = re.compile(r"\[(\d+)\]")
@@ -14,9 +14,9 @@ _SNIPPET_MAX = 500
 
 def filter_and_build_citations(
     answer_text: str,
-    scored: Sequence[ScoredPassage],
+    scored: Sequence[ScoredChunk],
 ) -> tuple[str, tuple[Citation, ...]] | None:
-    """Keep only markers that reference retrieved passages, renumber, build citations."""
+    """Keep only markers that reference retrieved chunks, renumber, build citations."""
     if not scored:
         return None
 
@@ -47,16 +47,16 @@ def filter_and_build_citations(
     citations: list[Citation] = []
     for new_marker, old_index in enumerate(seen_in_text, start=1):
         row = scored[old_index - 1]
-        passage = row.passage
-        snippet = passage.text[:_SNIPPET_MAX]
+        chunk = row.chunk
+        snippet = chunk.text[:_SNIPPET_MAX]
         citations.append(
             Citation(
                 marker=new_marker,
-                passage_id=passage.id,
-                document_id=passage.document_id,
+                chunk_id=chunk.id,
+                document_id=chunk.document_id,
                 document_path=row.document_path,
-                page=passage.page,
-                heading_path=passage.heading_path,
+                page=chunk.page,
+                heading_path=chunk.heading_path,
                 snippet=snippet,
                 score=row.score,
             )

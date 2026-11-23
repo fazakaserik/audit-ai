@@ -1,4 +1,4 @@
-"""Unit tests: condense_question rewrites follow-ups; evidence stays in retrieval only."""
+"""Prior turns are passed into the agent prompt for reference resolution only."""
 
 from __future__ import annotations
 
@@ -6,166 +6,129 @@ import uuid
 from datetime import UTC, datetime
 
 from backend.config import Settings
-from backend.rag.graph import run_ask_graph
-from backend.rag.nodes import AskGraphDeps, condense_question
-from backend.rag.prompts import AnswerGenerationResult, CondenseQuestionResult
-from backend.rag.state import AskState
+from backend.rag.agent import AskAgentDeps, run_ask_agent
+from backend.rag.prompts import AnswerGenerationResult, build_agent_messages
 from domain.answer import Answered, Citation, Question
-from domain.common import new_uuid, utc_now
+from domain.common import utc_now
 from domain.document import DocumentId
 from domain.engagement import EngagementId
-from domain.passage import Passage, PassageId
-from domain.session import SessionId, Turn, TurnId
-from support.fakes import FakeChatModel, FakeEmbedder, InMemoryVectorIndex
+from domain.chunk import Chunk, ChunkId
+from domain.session import LlmUsage, SessionId, Turn, TurnId
+from support.fakes import (
+    FakeChatModel,
+    FakeEmbedder,
+    InMemoryDocumentRepository,
+    InMemoryDocumentStorage,
+    InMemoryEngagementRepository,
+    InMemoryVectorIndex,
+)
 
 
-async def test_condense_skips_model_without_prior_turns() -> None:
-    chat = FakeChatModel(
-        response=CondenseQuestionResult(standalone_question="should not be used"),
-    )
-    deps = AskGraphDeps(
-        chat=chat,
-        embedder=FakeEmbedder(),
-        vector_index=InMemoryVectorIndex(),
-        settings=Settings(),
-    )
-    state: AskState = {
-        "question": Question(text="What are payment terms?"),
-        "prior_turns": (),
-    }
-    update = await condense_question(state, deps)
-    assert update["standalone_question"] == "What are payment terms?"
-    assert chat.calls == []
-
-
-async def test_condense_uses_chat_when_prior_turns_exist() -> None:
-    chat = FakeChatModel(
-        response=CondenseQuestionResult(
-            standalone_question="What is the Contoso payment period in days?",
-        ),
-    )
-    deps = AskGraphDeps(
-        chat=chat,
-        embedder=FakeEmbedder(),
-        vector_index=InMemoryVectorIndex(),
-        settings=Settings(session_context_turns=5),
-    )
+def test_agent_messages_include_prior_questions_not_answers() -> None:
     prior = Turn(
-        id=TurnId(new_uuid()),
-        session_id=SessionId(new_uuid()),
+        id=TurnId(uuid.uuid4()),
+        session_id=SessionId(uuid.uuid4()),
         ordinal=0,
-        question=Question(text="Tell me about Contoso."),
-        standalone_question="What does the Contoso contract cover?",
+        question=Question(text="What is Contoso?"),
+        standalone_question="What is Contoso supply agreement?",
         answer=Answered(
-            text="Contoso requires payment within thirty days [1].",
+            text="A vendor [1]",
             citations=(
                 Citation(
                     marker=1,
-                    passage_id=PassageId(new_uuid()),
+                    chunk_id=ChunkId(uuid.uuid4()),
                     document_id=DocumentId(uuid.uuid4()),
-                    document_path="contracts/contoso.pdf",
-                    page=1,
-                    heading_path=(),
-                    snippet="thirty days",
+                    document_path="a.pdf",
+                    snippet="Contoso",
                     score=0.9,
                 ),
             ),
         ),
         created_at=utc_now(),
+        usage=LlmUsage(),
     )
-    state: AskState = {
-        "question": Question(text="And the exact period?"),
-        "prior_turns": (prior,),
-    }
-    update = await condense_question(state, deps)
-    assert update["standalone_question"] == "What is the Contoso payment period in days?"
-    assert len(chat.calls) == 1
-    _, schema = chat.calls[0]
-    assert schema is CondenseQuestionResult
-    user_content = chat.calls[0][0][1].content
-    assert "prior answer omitted" in user_content
-    assert "thirty days" not in user_content
+    messages = build_agent_messages(
+        question="What are payment terms?",
+        prior_turns=(prior,),
+        auditor_role=None,
+        topic=None,
+        folder_scope=None,
+    )
+    user = messages[1].content or ""
+    assert "What is Contoso supply agreement?" in user
+    assert "A vendor" not in user
+    assert "What are payment terms?" in user
 
 
-async def test_follow_up_retrieval_uses_condensed_query_not_prior_answer() -> None:
-    passage_text = "Net payment terms are thirty calendar days from invoice date."
-    embedder = FakeEmbedder()
-    embedded = await embedder.embed((passage_text,))
-    vector_index = InMemoryVectorIndex()
+async def test_follow_up_ask_still_retrieves_fresh_evidence() -> None:
     engagement_id = EngagementId("northwind-fy2025")
-    doc_id = DocumentId(uuid.uuid4())
-    passage = Passage(
-        id=PassageId(uuid.uuid4()),
-        document_id=doc_id,
+    embedder = FakeEmbedder()
+    vector_index = InMemoryVectorIndex()
+    chunk = Chunk(
+        id=ChunkId(uuid.uuid4()),
+        document_id=DocumentId(uuid.uuid4()),
         document_version=1,
         ordinal=0,
-        page=2,
+        page=1,
         heading_path=(),
-        text=passage_text,
-        token_count=12,
+        text="Payment is due within thirty days.",
+        token_count=6,
         created_at=datetime.now(UTC),
     )
-    await vector_index.upsert_passages(
+    embedded = await embedder.embed((chunk.text,))
+    await vector_index.upsert_chunks(
         engagement_id=engagement_id,
-        document_id=doc_id,
-        document_path="contracts/contoso.pdf",
+        document_id=chunk.document_id,
+        document_path="contracts/a.pdf",
         document_version=1,
-        passages=(passage,),
+        chunks=(chunk,),
         embeddings=(embedded.vectors[0],),
         embedding_model=embedder.model_name,
     )
-
     chat = FakeChatModel(
-        responses=[
-            CondenseQuestionResult(
-                standalone_question=passage_text,
-            ),
-            AnswerGenerationResult(
-                can_answer=True,
-                answer_text="Thirty days [1].",
-                markers_used=(1,),
-            ),
-        ],
-    )
-    deps = AskGraphDeps(
-        chat=chat,
-        embedder=embedder,
-        vector_index=vector_index,
-        settings=Settings(relevance_threshold=0.0),
+        response=AnswerGenerationResult(
+            can_answer=True,
+            answer_text="Thirty days [1].",
+            markers_used=(1,),
+        ),
     )
     prior = Turn(
-        id=TurnId(new_uuid()),
-        session_id=SessionId(new_uuid()),
+        id=TurnId(uuid.uuid4()),
+        session_id=SessionId(uuid.uuid4()),
         ordinal=0,
-        question=Question(text="What about Contoso?"),
-        standalone_question="Summarize the Contoso contract.",
+        question=Question(text="earlier"),
+        standalone_question="earlier standalone",
         answer=Answered(
-            text="SECRET PRIOR ANSWER BODY",
+            text="prior answer body must not be evidence",
             citations=(
                 Citation(
                     marker=1,
-                    passage_id=PassageId(new_uuid()),
-                    document_id=doc_id,
-                    document_path="contracts/contoso.pdf",
-                    page=1,
-                    heading_path=(),
-                    snippet="old",
+                    chunk_id=ChunkId(uuid.uuid4()),
+                    document_id=DocumentId(uuid.uuid4()),
+                    document_path="other.pdf",
+                    snippet="other",
                     score=0.5,
                 ),
             ),
         ),
         created_at=utc_now(),
     )
-    result = await run_ask_graph(
+    result = await run_ask_agent(
         engagement_id=engagement_id,
-        question=Question(text="How long to pay?"),
+        question=Question(text="payment terms?"),
         folder_scope=None,
         prior_turns=(prior,),
-        deps=deps,
+        deps=AskAgentDeps(
+            chat=chat,
+            embedder=embedder,
+            vector_index=vector_index,
+            engagements=InMemoryEngagementRepository(),
+            documents=InMemoryDocumentRepository(),
+            storage=InMemoryDocumentStorage(),
+            settings=Settings(relevance_threshold=0.0),
+        ),
     )
-    assert result.standalone_question == passage_text
-    assert isinstance(result.answer, Answered)
-    gen_call = chat.calls[1]
-    user_content = gen_call[0][1].content
-    assert "SECRET PRIOR ANSWER BODY" not in user_content
-    assert passage_text in user_content
+    assert result.answer.status == "answered"
+    assert "prior answer body" not in result.answer.text
+    first_user = chat.tool_turn_calls[0][0][1].content or ""
+    assert "earlier standalone" in first_user

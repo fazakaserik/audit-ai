@@ -22,7 +22,7 @@ from domain.common import new_uuid, utc_now
 from domain.document import ContentType, Document, DocumentId, DocumentPath
 from domain.engagement import EngagementId
 from domain.errors import NotFoundError, UnsafeUploadError, ValidationError
-from domain.passage import Passage, PassageId
+from domain.chunk import Chunk, ChunkId
 from domain.upload import UploadItem, UploadItemStatus
 
 log = get_logger(__name__)
@@ -139,9 +139,9 @@ async def process_upload_item(
     )
     await documents.upsert(document)
 
-    passages = [
-        Passage(
-            id=PassageId(new_uuid()),
+    chunks = [
+        Chunk(
+            id=ChunkId(new_uuid()),
             document_id=document_id,
             document_version=version,
             ordinal=chunk.ordinal,
@@ -156,22 +156,22 @@ async def process_upload_item(
     log.info(
         "ingest_embed_start",
         path=path,
-        passage_count=len(passages),
+        chunk_count=len(chunks),
         model=embedder.model_name,
     )
-    embedded = await embedder.embed([p.text for p in passages])
+    embedded = await embedder.embed([p.text for p in chunks])
     log.info("ingest_embed_done", path=path, vector_count=len(embedded.vectors))
-    await vector_index.upsert_passages(
+    await vector_index.upsert_chunks(
         engagement_id=engagement_id,
         document_id=document_id,
         document_path=path,
         document_version=version,
-        passages=passages,
+        chunks=chunks,
         embeddings=embedded.vectors,
         embedding_model=embedder.model_name,
     )
     await uploads.refresh_status(item.upload_id)
-    log.info("ingest_indexed", path=path, passage_count=len(passages), version=version)
+    log.info("ingest_indexed", path=path, chunk_count=len(chunks), version=version)
     return ProcessItemOutcome(status=UploadItemStatus.INDEXED, reason=None)
 
 

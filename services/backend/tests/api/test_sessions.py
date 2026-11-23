@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import httpx
 
-from backend.rag.prompts import AnswerGenerationResult, CondenseQuestionResult
+from backend.rag.prompts import AnswerGenerationResult
 from domain.engagement import EngagementId
-from support.ask_api import build_ask_app, index_passage, post_ask, seed_engagement
+from support.ask_api import build_ask_app, index_chunk, post_ask, seed_engagement
 from support.fakes import (
     FakeChatModel,
     FakeEmbedder,
@@ -21,7 +21,7 @@ async def test_ask_creates_session_and_follow_up_continues() -> None:
     await seed_engagement(engagements, engagement_id)
     embedder = FakeEmbedder()
     vector_index = InMemoryVectorIndex()
-    await index_passage(
+    await index_chunk(
         vector_index,
         embedder,
         engagement_id=engagement_id,
@@ -34,9 +34,6 @@ async def test_ask_creates_session_and_follow_up_continues() -> None:
                 can_answer=True,
                 answer_text="Thirty days [1].",
                 markers_used=(1,),
-            ),
-            CondenseQuestionResult(
-                standalone_question="What penalties apply for late Contoso payment?",
             ),
             AnswerGenerationResult(
                 can_answer=True,
@@ -80,7 +77,7 @@ async def test_ask_creates_session_and_follow_up_continues() -> None:
         turns = detail.json()["turns"]
         assert len(turns) == 2
         assert turns[0]["standalone_question"] == "What are payment terms?"
-        assert turns[1]["standalone_question"] == "What penalties apply for late Contoso payment?"
+        assert turns[1]["standalone_question"] == "Any penalties?"
 
 
 async def test_get_session_wrong_engagement_returns_404() -> None:
@@ -91,7 +88,7 @@ async def test_get_session_wrong_engagement_returns_404() -> None:
     await seed_engagement(engagements, engagement_b, name="B")
     embedder = FakeEmbedder()
     vector_index = InMemoryVectorIndex()
-    await index_passage(
+    await index_chunk(
         vector_index,
         embedder,
         engagement_id=engagement_a,

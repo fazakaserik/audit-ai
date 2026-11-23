@@ -1,4 +1,4 @@
-"""Passage entity (searchable document fragment)."""
+"""Chunk entity (searchable document fragment)."""
 
 from __future__ import annotations
 
@@ -11,13 +11,13 @@ from pydantic import BaseModel, Field
 from domain.common import MODEL_CONFIG
 from domain.document import DocumentId
 
-PassageId = NewType("PassageId", uuid.UUID)
+ChunkId = NewType("ChunkId", uuid.UUID)
 
 
-class Passage(BaseModel):
+class Chunk(BaseModel):
     model_config = MODEL_CONFIG
 
-    id: PassageId
+    id: ChunkId
     document_id: DocumentId
     document_version: Annotated[int, Field(ge=1)]
     ordinal: Annotated[int, Field(ge=0)]

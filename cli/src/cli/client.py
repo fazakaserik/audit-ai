@@ -132,6 +132,10 @@ class AuditApiClient:
         timeout = float(raw_timeout)
         return cls(base_url=base, timeout=timeout)
 
+    @property
+    def base_url(self) -> str:
+        return self._base_url
+
     def close(self) -> None:
         if self._owns_client:
             self._client.close()
@@ -142,10 +146,25 @@ class AuditApiClient:
     def __exit__(self, *args: object) -> None:
         self.close()
 
+    def _transport_error(self, exc: httpx.RequestError) -> CliApiError:
+        return CliApiError(
+            code=ErrorCode.DEPENDENCY_UNAVAILABLE,
+            detail=f"cannot reach API at {self._base_url}: {exc}",
+            status=0,
+        )
+
     def _raise_for_response(self, response: httpx.Response) -> None:
         if response.is_success:
             return
         raise _problem_to_cli_error(response)
+
+    def check_live(self) -> None:
+        """Probe `/health/live`; raise CliApiError if the API is unreachable."""
+        try:
+            response = self._client.get("/health/live")
+        except httpx.RequestError as exc:
+            raise self._transport_error(exc) from exc
+        self._raise_for_response(response)
 
     def _get_json(self, response: httpx.Response, adapter: TypeAdapter[T]) -> T:
         self._raise_for_response(response)

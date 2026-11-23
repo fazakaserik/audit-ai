@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import cast
 from uuid import UUID
 
+import httpx
 import questionary
 from prompt_toolkit import PromptSession
 from prompt_toolkit.formatted_text import HTML
@@ -24,10 +26,10 @@ from backend.api.contracts.v1.responses import (
 )
 from cli.client import AuditApiClient, CliApiError, unwrap_answer, unwrap_insufficient
 from cli.render import (
+    ToolProgressView,
     render_ask_response,
     render_document_bytes,
     render_error,
-    render_progress_sources,
     render_progress_stage,
     render_session_detail,
     render_session_summaries,
@@ -457,6 +459,7 @@ def _ask_question(
     response: AskResponse | None = None
     thinking_at_line_start = True
     saw_thinking = False
+    tools = ToolProgressView()
     status = Status("Thinking…", console=console)
     status.start()
     try:
@@ -479,10 +482,21 @@ def _ask_question(
             elif event_type == "sources":
                 sources = event.get("sources")
                 if isinstance(sources, list):
-                    status.stop()
-                    render_progress_sources(console, sources)
-                    if not saw_thinking:
-                        status.start()
+                    tools.on_sources([item for item in sources if isinstance(item, dict)])
+            elif event_type == "tool_call":
+                status.stop()
+                name = str(event.get("name", "tool"))
+                arguments = str(event.get("arguments", ""))
+                tools.on_tool_call(console, name=name, arguments=arguments)
+                if not saw_thinking:
+                    status.start()
+            elif event_type == "tool_result":
+                status.stop()
+                name = str(event.get("name", "tool"))
+                summary = str(event.get("summary", ""))
+                tools.on_tool_result(console, name=name, summary=summary)
+                if not saw_thinking:
+                    status.start()
             elif event_type == "thinking_delta":
                 text = event.get("text")
                 if isinstance(text, str) and text:
@@ -534,16 +548,43 @@ def _session_from_response(response: AskResponse) -> UUID:
     return response.session_id
 
 
+_CONNECT_BACKOFF_SECONDS = (1, 2, 3, 5, 10)
+
+
+def _wait_for_api(client: AuditApiClient, console: Console) -> None:
+    """Retry `/health/live` with backoff; exit cleanly if the API never comes up."""
+    try:
+        with Status("Connecting to API…", console=console) as status:
+            for attempt, delay in enumerate((0, *_CONNECT_BACKOFF_SECONDS)):
+                if delay:
+                    status.update("Connecting...")
+                    time.sleep(delay)
+                try:
+                    client.check_live()
+                except CliApiError:
+                    if attempt == len(_CONNECT_BACKOFF_SECONDS):
+                        break
+                    continue
+                return
+    except KeyboardInterrupt:
+        console.print()
+        raise SystemExit(130) from None
+
+    console.print(f"[red]No connection to API at {client.base_url}.[/red]")
+    raise SystemExit(1)
+
+
 def run_repl() -> None:
     console = Console()
     state = ReplState()
-    session: PromptSession[str] = PromptSession(
-        bottom_toolbar=lambda: _token_toolbar(state),
-    )
 
     with AuditApiClient.from_env() as client:
         try:
             console.print("[bold]Audit Assistant[/bold] — interactive mode")
+            _wait_for_api(client, console)
+            session: PromptSession[str] = PromptSession(
+                bottom_toolbar=lambda: _token_toolbar(state),
+            )
             state.engagement_id = _select_engagement(client, console)
             _pick_initial_session(client, console, state.engagement_id, state)
 
@@ -564,3 +605,6 @@ def run_repl() -> None:
 
         except CliApiError as exc:
             render_error(console, exc)
+        except httpx.RequestError as exc:
+            console.print(f"[red]No connection to API at {client.base_url}: {exc}[/red]")
+            raise SystemExit(1) from None

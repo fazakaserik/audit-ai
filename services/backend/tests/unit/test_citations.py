@@ -5,16 +5,16 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from backend.application.ports import ScoredPassage
+from backend.application.ports import ScoredChunk
 from backend.rag.citations import filter_and_build_citations
 from domain.document import DocumentId, DocumentPath
-from domain.passage import Passage, PassageId
+from domain.chunk import Chunk, ChunkId
 
 
-def _passage(text: str) -> Passage:
+def _chunk(text: str) -> Chunk:
     now = datetime.now(UTC)
-    return Passage(
-        id=PassageId(uuid.uuid4()),
+    return Chunk(
+        id=ChunkId(uuid.uuid4()),
         document_id=DocumentId(uuid.uuid4()),
         document_version=1,
         ordinal=0,
@@ -24,9 +24,9 @@ def _passage(text: str) -> Passage:
     )
 
 
-def _scored(text: str, *, score: float = 0.9) -> ScoredPassage:
-    return ScoredPassage(
-        passage=_passage(text),
+def _scored(text: str, *, score: float = 0.9) -> ScoredChunk:
+    return ScoredChunk(
+        chunk=_chunk(text),
         document_path=DocumentPath("contracts/a.pdf"),
         score=score,
     )
@@ -52,7 +52,7 @@ def test_unknown_markers_dropped_and_renumbered() -> None:
 
 
 def test_empty_when_no_valid_markers() -> None:
-    scored = (_scored("Only passage."),)
+    scored = (_scored("Only chunk."),)
     assert filter_and_build_citations("No markers here.", scored) is None
     assert filter_and_build_citations("Unknown [5] marker.", scored) is None
-    assert filter_and_build_citations("Empty passages.", ()) is None
+    assert filter_and_build_citations("Empty chunks.", ()) is None

@@ -14,7 +14,7 @@ Build a backend-only, document-grounded auditor assistant as a uv monorepo. Clie
 
 **Primary Dependencies**: FastAPI, LangGraph (graph only), pydantic v2, pydantic-settings, SQLAlchemy 2.0 async + asyncpg + Alembic + pgvector-python, openai SDK, ollama SDK, tenacity, structlog, httpx, Typer, prompt_toolkit, Rich, ruff, basedpyright, import-linter, pytest + pytest-asyncio + testcontainers, uv, just
 
-**Storage**: PostgreSQL 16 with pgvector (metadata, passages, embeddings, job queue, sessions); local filesystem volume for raw document bytes (Azure Blob documented as cloud target)
+**Storage**: PostgreSQL 16 with pgvector (metadata, chunks, embeddings, job queue, sessions); local filesystem volume for raw document bytes (Azure Blob documented as cloud target)
 
 **Testing**: pytest; markers `unit` (default, offline fakes), `db` (testcontainers Postgres+pgvector), `integration` (real Ollama/OpenAI, opt-in)
 
@@ -26,7 +26,7 @@ Build a backend-only, document-grounded auditor assistant as a uv monorepo. Clie
 
 **Constraints**: Offline default test suite (no network, no paid keys, no Docker). Answers MUST NOT use model general knowledge. Engagement isolation enforced in data access. No auth/users. No OCR. No streaming. Secret-free config samples. basedpyright strict + import-linter + ruff must pass (`just check`).
 
-**Scale/Scope**: Demo / interview prototype: 1–few engagements, hundreds of documents, tens of thousands of passages. Single backend service; optional second worker container from the same image; shared Postgres with SKIP LOCKED jobs.
+**Scale/Scope**: Demo / interview prototype: 1–few engagements, hundreds of documents, tens of thousands of chunks. Single backend service; optional second worker container from the same image; shared Postgres with SKIP LOCKED jobs.
 
 ## Constitution Check
 
@@ -69,7 +69,7 @@ audit-ai/
 │       ├── pyproject.toml
 │       └── src/domain/
 │           ├── common.py / errors.py / problem.py / providers.py
-│           ├── engagement/ document/ upload/ passage/ answer/ session/
+│           ├── engagement/ document/ upload/ chunk/ answer/ session/
 ├── services/
 │   └── backend/                         # single backend service
 │       ├── pyproject.toml

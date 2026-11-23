@@ -6,7 +6,7 @@ from domain.engagement import EngagementId
 from support.ask_api import (
     answered_chat,
     build_ask_app,
-    index_passage,
+    index_chunk,
     post_ask,
     seed_engagement,
 )
@@ -20,14 +20,14 @@ async def test_folder_prefix_scopes_retrieval() -> None:
 
     embedder = FakeEmbedder()
     vector_index = InMemoryVectorIndex()
-    await index_passage(
+    await index_chunk(
         vector_index,
         embedder,
         engagement_id=engagement_id,
         path="contracts/contoso-msa.md",
         text="Payment is due within 30 days of invoice.",
     )
-    await index_passage(
+    await index_chunk(
         vector_index,
         embedder,
         engagement_id=engagement_id,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Literal, assert_never
 
 from rich.console import Console
@@ -24,6 +26,15 @@ from backend.api.contracts.v1.responses import (
     UploadSummaryResponse,
 )
 from cli.client import CliApiError, unwrap_answer, unwrap_insufficient
+
+_TOOL_LABELS: dict[str, str] = {
+    "search_relevant_chunks": "Search",
+    "read_document": "Read",
+    "list_documents": "List",
+}
+_TOOL_DETAIL_MAX = 72
+_SOURCE_PATHS_MAX = 5
+_RESULT_ARROW_RE = re.compile(r"^.*→\s*")
 
 
 def render_error(console: Console, error: CliApiError) -> None:
@@ -92,12 +103,14 @@ def render_user_message(console: Console, question: str) -> None:
 
 
 _STAGE_LABELS: dict[str, str] = {
-    "condense": "Condense question…",
-    "retrieve": "Retrieve passages…",
-    "grade": "Grade evidence…",
+    "agent": "Agent thinking…",
+    "tool": "Running tools…",
     "generate": "Generate answer…",
     "suggest": "Suggest client questions…",
     "finalize": "Finalize answer…",
+    "condense": "Condense question…",
+    "retrieve": "Retrieve chunks…",
+    "grade": "Grade evidence…",
 }
 
 
@@ -109,19 +122,149 @@ def render_progress_stage(console: Console, stage: str) -> None:
     console.print(Text(stage_label(stage), style="dim"))
 
 
-def render_progress_sources(console: Console, sources: list[dict[str, object]]) -> None:
-    if not sources:
-        console.print(Text("Sources: (none)", style="dim"))
-        return
-    parts: list[str] = []
+def _truncate(text: str, max_len: int) -> str:
+    if len(text) <= max_len:
+        return text
+    if max_len <= 1:
+        return "…"
+    return text[: max_len - 1].rstrip() + "…"
+
+
+def _parse_tool_args(arguments: str) -> dict[str, object]:
+    raw = arguments.strip()
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _tool_detail(name: str, arguments: str) -> str:
+    args = _parse_tool_args(arguments)
+    if name == "search_relevant_chunks":
+        query = args.get("query")
+        if isinstance(query, str) and query.strip():
+            return f"“{_truncate(query.strip(), _TOOL_DETAIL_MAX)}”"
+    elif name == "read_document":
+        path = args.get("path")
+        if isinstance(path, str) and path.strip():
+            return _truncate(path.strip(), _TOOL_DETAIL_MAX)
+    elif name == "list_documents":
+        prefix = args.get("prefix")
+        if isinstance(prefix, str) and prefix.strip():
+            return _truncate(prefix.strip(), _TOOL_DETAIL_MAX)
+        return "/"
+    if args:
+        compact = json.dumps(args, ensure_ascii=False, separators=(",", ":"))
+        return _truncate(compact, _TOOL_DETAIL_MAX)
+    stripped = arguments.strip()
+    return _truncate(stripped, _TOOL_DETAIL_MAX) if stripped else ""
+
+
+def _dedupe_sources_by_path(
+    sources: list[dict[str, object]],
+) -> list[tuple[str, float | None]]:
+    best: dict[str, float | None] = {}
+    order: list[str] = []
     for item in sources:
-        path = str(item.get("path", ""))
-        score = item.get("score")
-        if isinstance(score, (int, float)):
-            parts.append(f"{path} ({score:.2f})")
+        path = str(item.get("path", "")).strip()
+        if not path:
+            continue
+        score_raw = item.get("score")
+        score: float | None
+        if isinstance(score_raw, (int, float)):
+            score = float(score_raw)
         else:
-            parts.append(path)
-    console.print(Text("Sources: " + ", ".join(parts), style="dim"))
+            score = None
+        if path not in best:
+            order.append(path)
+            best[path] = score
+            continue
+        previous = best[path]
+        if score is not None and (previous is None or score > previous):
+            best[path] = score
+    ranked = [(path, best[path]) for path in order]
+    ranked.sort(
+        key=lambda row: (-row[1] if row[1] is not None else float("inf"), row[0]),
+    )
+    return ranked
+
+
+def _short_tool_result(name: str, summary: str) -> str:
+    text = summary.strip()
+    if not text:
+        return ""
+    if text.startswith(name):
+        text = _RESULT_ARROW_RE.sub("", text).strip()
+    elif "→" in text:
+        text = text.split("→", 1)[1].strip()
+    return text
+
+
+class ToolProgressView:
+    """Correlate tool_call → sources → tool_result into one compact tree."""
+
+    def __init__(self) -> None:
+        self._pending_sources: list[dict[str, object]] = []
+
+    def on_tool_call(self, console: Console, *, name: str, arguments: str) -> None:
+        self._pending_sources = []
+        label = _TOOL_LABELS.get(name, name)
+        detail = _tool_detail(name, arguments)
+        line = f"▸ {label}" if not detail else f"▸ {label}  {detail}"
+        console.print(Text(line, style="dim"))
+
+    def on_sources(self, sources: list[dict[str, object]]) -> None:
+        self._pending_sources = list(sources)
+
+    def on_tool_result(self, console: Console, *, name: str, summary: str) -> None:
+        sources = self._pending_sources
+        self._pending_sources = []
+        if sources:
+            unique = _dedupe_sources_by_path(sources)
+            hits = len(sources)
+            docs = len(unique)
+            console.print(Text(f"  {hits} hits · {docs} docs", style="dim"))
+            shown = unique[:_SOURCE_PATHS_MAX]
+            for path, score in shown:
+                if score is None:
+                    console.print(Text(f"  · {path}", style="dim"))
+                else:
+                    console.print(Text(f"  · {path}  {score:.2f}", style="dim"))
+            remaining = len(unique) - len(shown)
+            if remaining > 0:
+                console.print(Text(f"  · +{remaining} more", style="dim"))
+            return
+        short = _short_tool_result(name, summary)
+        if short:
+            console.print(Text(f"  {short}", style="dim"))
+
+
+def render_progress_sources(console: Console, sources: list[dict[str, object]]) -> None:
+    """Legacy one-shot source dump; prefer ToolProgressView during ask streams."""
+    if not sources:
+        console.print(Text("  (no sources)", style="dim"))
+        return
+    unique = _dedupe_sources_by_path(sources)
+    shown = unique[:_SOURCE_PATHS_MAX]
+    for path, score in shown:
+        if score is None:
+            console.print(Text(f"  · {path}", style="dim"))
+        else:
+            console.print(Text(f"  · {path}  {score:.2f}", style="dim"))
+    remaining = len(unique) - len(shown)
+    if remaining > 0:
+        console.print(Text(f"  · +{remaining} more", style="dim"))
+
+
+def render_progress_tool_call(console: Console, *, name: str, arguments: str) -> None:
+    ToolProgressView().on_tool_call(console, name=name, arguments=arguments)
+
+
+def render_progress_tool_result(console: Console, *, name: str, summary: str) -> None:
+    ToolProgressView().on_tool_result(console, name=name, summary=summary)
 
 
 def render_thinking_delta(console: Console, text: str, *, at_line_start: bool) -> bool:
@@ -168,7 +311,6 @@ def render_ask_response(console: Console, response: AskResponse) -> None:
         )
         if insufficient.partial_citations:
             render_citations(console, insufficient.partial_citations)
-        console.print(Text(f"session_id: {insufficient.session_id}", style="dim"))
 
 
 def render_agent_message(

@@ -4,19 +4,21 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import assert_never
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from backend.adapters.postgres.models import (
     DocumentRow,
     EngagementRow,
     SessionRow,
     SessionTurnRow,
+    TurnCitationRow,
+    TurnSuggestedQuestionRow,
     UploadItemRow,
     UploadRow,
 )
@@ -30,6 +32,7 @@ from domain.answer import (
     Question,
     SuggestedClientQuestion,
 )
+from domain.chunk import ChunkId
 from domain.document import ContentType, Document, DocumentId, DocumentPath, FolderPath
 from domain.document.paths import (
     child_folder_name,
@@ -39,7 +42,6 @@ from domain.document.paths import (
 )
 from domain.engagement import Engagement, EngagementId
 from domain.errors import ConflictError, NotFoundError
-from domain.passage import PassageId
 from domain.session import LlmUsage, Session, SessionId, Turn, TurnId
 from domain.upload import (
     Upload,
@@ -92,58 +94,67 @@ def _session_from_row(row: SessionRow) -> Session:
     )
 
 
-def _citation_from_dict(raw: dict[str, object]) -> Citation:
-    page_raw = raw.get("page")
-    page = int(page_raw) if isinstance(page_raw, int) else None
-    heading_raw = raw.get("heading_path", ())
-    if isinstance(heading_raw, list) or isinstance(heading_raw, tuple):
-        heading_path = tuple(str(item) for item in heading_raw)
-    else:
-        heading_path = ()
+def _citation_from_row(row: TurnCitationRow) -> Citation:
     return Citation(
-        marker=int(raw["marker"]),  # type: ignore[arg-type]
-        passage_id=PassageId(UUID(str(raw["passage_id"]))),
-        document_id=DocumentId(UUID(str(raw["document_id"]))),
-        document_path=str(raw["document_path"]),
-        page=page,
-        heading_path=heading_path,
-        snippet=str(raw["snippet"]),
-        score=float(raw["score"]),  # type: ignore[arg-type]
+        marker=row.marker,
+        chunk_id=ChunkId(row.chunk_id),
+        document_id=DocumentId(row.document_id),
+        document_path=row.document_path,
+        page=row.page,
+        heading_path=tuple(row.heading_path or ()),
+        snippet=row.snippet,
+        score=row.score,
     )
 
 
-def _answer_from_dict(raw: dict[str, object]) -> Answer:
-    status = str(raw["status"])
+def _citation_row(
+    *,
+    turn_id: UUID,
+    kind: str,
+    citation: Citation,
+) -> TurnCitationRow:
+    return TurnCitationRow(
+        id=uuid4(),
+        turn_id=turn_id,
+        kind=kind,
+        marker=citation.marker,
+        chunk_id=citation.chunk_id,
+        document_id=citation.document_id,
+        document_path=citation.document_path,
+        page=citation.page,
+        heading_path=list(citation.heading_path),
+        snippet=citation.snippet,
+        score=citation.score,
+    )
+
+
+def _answer_from_turn_row(row: SessionTurnRow) -> Answer:
+    status = row.answer_status
     if status == AnswerStatus.ANSWERED:
-        citations_raw = raw.get("citations", [])
-        if not isinstance(citations_raw, list):
-            citations_raw = []
         citations = tuple(
-            _citation_from_dict(item) for item in citations_raw if isinstance(item, dict)
+            _citation_from_row(item)
+            for item in sorted(row.citations, key=lambda c: c.marker)
+            if item.kind == "answer"
         )
-        return Answered(text=str(raw["text"]), citations=citations)
+        text = row.answer_text or ""
+        return Answered(text=text, citations=citations)
     if status == AnswerStatus.INSUFFICIENT_EVIDENCE:
-        partial_raw = raw.get("partial_citations", [])
-        if not isinstance(partial_raw, list):
-            partial_raw = []
-        suggestions_raw = raw.get("suggested_client_questions", [])
-        if not isinstance(suggestions_raw, list):
-            suggestions_raw = []
-        suggestions: list[SuggestedClientQuestion] = []
-        for item in suggestions_raw:
-            if isinstance(item, dict):
-                suggestions.append(
-                    SuggestedClientQuestion(
-                        question=str(item["question"]),
-                        rationale=str(item["rationale"]),
-                    )
-                )
+        partial = tuple(
+            _citation_from_row(item)
+            for item in sorted(row.citations, key=lambda c: c.marker)
+            if item.kind == "partial"
+        )
+        suggestions = tuple(
+            SuggestedClientQuestion(question=item.question, rationale=item.rationale)
+            for item in sorted(row.suggested_questions, key=lambda s: s.ordinal)
+        )
+        reason_raw = row.insufficient_reason or InsufficientReason.MODEL_JUDGED_INSUFFICIENT.value
+        if reason_raw == "no_relevant_passages":
+            reason_raw = InsufficientReason.NO_RELEVANT_CHUNKS.value
         return InsufficientEvidence(
-            reason=InsufficientReason(str(raw["reason"])),
-            partial_citations=tuple(
-                _citation_from_dict(item) for item in partial_raw if isinstance(item, dict)
-            ),
-            suggested_client_questions=tuple(suggestions),
+            reason=InsufficientReason(reason_raw),
+            partial_citations=partial,
+            suggested_client_questions=suggestions,
         )
     msg = f"unknown answer status: {status}"
     raise ValueError(msg)
@@ -174,31 +185,69 @@ def _upload_item_from_row(row: UploadItemRow) -> UploadItem:
     )
 
 
+def _usage_from_turn_row(row: SessionTurnRow) -> LlmUsage | None:
+    if (
+        row.usage_prompt_tokens is None
+        and row.usage_completion_tokens is None
+        and row.usage_total_tokens is None
+    ):
+        return None
+    return LlmUsage(
+        prompt_tokens=row.usage_prompt_tokens or 0,
+        completion_tokens=row.usage_completion_tokens or 0,
+        total_tokens=row.usage_total_tokens or 0,
+    )
+
+
 def _turn_from_row(row: SessionTurnRow) -> Turn:
-    question_data = row.question
-    usage = LlmUsage.model_validate(row.llm_usage) if row.llm_usage is not None else None
     return Turn(
         id=TurnId(row.id),
         session_id=SessionId(row.session_id),
         ordinal=row.ordinal,
-        question=Question.model_validate(question_data),
+        question=Question(
+            text=row.question_text,
+            folder_scope=row.question_folder_scope,
+            auditor_role=row.question_auditor_role,
+            topic=row.question_topic,
+        ),
         standalone_question=row.standalone_question,
-        answer=_answer_from_dict(row.answer),
+        answer=_answer_from_turn_row(row),
         created_at=_aware(row.created_at),
         thinking_text=row.thinking_text,
         thinking_seconds=row.thinking_seconds,
-        usage=usage,
+        usage=_usage_from_turn_row(row),
     )
 
 
-def _answer_to_dict(answer: Answer) -> dict[str, object]:
+def _populate_answer_rows(row: SessionTurnRow, answer: Answer) -> None:
     match answer:
         case Answered():
-            return answer.model_dump(mode="json")
+            row.answer_status = AnswerStatus.ANSWERED.value
+            row.answer_text = answer.text
+            row.insufficient_reason = None
+            row.citations = [
+                _citation_row(turn_id=row.id, kind="answer", citation=citation)
+                for citation in answer.citations
+            ]
+            row.suggested_questions = []
         case InsufficientEvidence():
-            return answer.model_dump(mode="json")
-        case _ as unreachable:
-            assert_never(unreachable)
+            row.answer_status = AnswerStatus.INSUFFICIENT_EVIDENCE.value
+            row.answer_text = None
+            row.insufficient_reason = answer.reason.value
+            row.citations = [
+                _citation_row(turn_id=row.id, kind="partial", citation=citation)
+                for citation in answer.partial_citations
+            ]
+            row.suggested_questions = [
+                TurnSuggestedQuestionRow(
+                    id=uuid4(),
+                    turn_id=row.id,
+                    ordinal=index,
+                    question=item.question,
+                    rationale=item.rationale,
+                )
+                for index, item in enumerate(answer.suggested_client_questions)
+            ]
 
 
 class PostgresEngagementRepository:
@@ -399,26 +448,45 @@ class PostgresSessionRepository:
         return [_session_from_row(row) for row in rows], total
 
     async def add_turn(self, turn: Turn) -> Turn:
+        usage = turn.usage
         row = SessionTurnRow(
             id=turn.id,
             session_id=turn.session_id,
             ordinal=turn.ordinal,
-            question=turn.question.model_dump(mode="json"),
+            question_text=turn.question.text,
+            question_folder_scope=turn.question.folder_scope,
+            question_auditor_role=turn.question.auditor_role,
+            question_topic=turn.question.topic,
             standalone_question=turn.standalone_question,
-            answer=_answer_to_dict(turn.answer),
+            answer_status=turn.answer.status.value,
+            answer_text=None,
+            insufficient_reason=None,
             thinking_text=turn.thinking_text,
             thinking_seconds=turn.thinking_seconds,
-            llm_usage=turn.usage.model_dump(mode="json") if turn.usage is not None else None,
+            usage_prompt_tokens=usage.prompt_tokens if usage is not None else None,
+            usage_completion_tokens=usage.completion_tokens if usage is not None else None,
+            usage_total_tokens=usage.total_tokens if usage is not None else None,
             created_at=turn.created_at,
+            citations=[],
+            suggested_questions=[],
         )
+        _populate_answer_rows(row, turn.answer)
         self._session.add(row)
         await self._session.flush()
+        await self._session.refresh(
+            row,
+            attribute_names=["citations", "suggested_questions"],
+        )
         return _turn_from_row(row)
 
     async def list_turns(self, session_id: SessionId) -> list[Turn]:
         stmt = (
             select(SessionTurnRow)
             .where(SessionTurnRow.session_id == session_id)
+            .options(
+                selectinload(SessionTurnRow.citations),
+                selectinload(SessionTurnRow.suggested_questions),
+            )
             .order_by(SessionTurnRow.ordinal.asc())
         )
         rows = (await self._session.execute(stmt)).scalars().all()

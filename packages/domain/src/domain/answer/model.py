@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field, field_validator
 
 from domain.common import MODEL_CONFIG
 from domain.document import DocumentId, DocumentPath, FolderPath
-from domain.passage import PassageId
+from domain.chunk import ChunkId
 
 
 class AnswerStatus(StrEnum):
@@ -18,7 +18,7 @@ class AnswerStatus(StrEnum):
 
 
 class InsufficientReason(StrEnum):
-    NO_RELEVANT_PASSAGES = "no_relevant_passages"
+    NO_RELEVANT_CHUNKS = "no_relevant_chunks"
     MODEL_JUDGED_INSUFFICIENT = "model_judged_insufficient"
 
 
@@ -43,7 +43,7 @@ class Citation(BaseModel):
     model_config = MODEL_CONFIG
 
     marker: Annotated[int, Field(ge=1)]
-    passage_id: PassageId
+    chunk_id: ChunkId
     document_id: DocumentId
     document_path: DocumentPath
     page: Annotated[int, Field(ge=1)] | None = None

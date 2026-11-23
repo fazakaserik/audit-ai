@@ -12,7 +12,7 @@ from pydantic import BaseModel
 from domain.answer import Answer
 from domain.document import Document, DocumentId, DocumentPath, FolderPath
 from domain.engagement import Engagement, EngagementId
-from domain.passage import Passage
+from domain.chunk import Chunk
 from domain.session import LlmUsage, Session, SessionId, Turn, TurnId
 from domain.upload import Upload, UploadId, UploadItem, UploadItemId
 
@@ -20,9 +20,30 @@ TModel = TypeVar("TModel", bound=BaseModel)
 
 
 @dataclass(frozen=True, slots=True)
+class ToolCall:
+    """Model-requested tool invocation."""
+
+    id: str
+    name: str
+    arguments: str
+
+
+@dataclass(frozen=True, slots=True)
+class ToolSpec:
+    """Provider-agnostic tool definition (JSON Schema parameters)."""
+
+    name: str
+    description: str
+    parameters: dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
 class ChatMessage:
     role: str
-    content: str
+    content: str | None = None
+    tool_calls: tuple[ToolCall, ...] = ()
+    tool_call_id: str | None = None
+    name: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +60,15 @@ class StructuredResult[TModel: BaseModel]:
     usage: LlmUsage
 
 
+@dataclass(frozen=True, slots=True)
+class ToolTurnResult:
+    """One assistant turn that may request tools or continue with text only."""
+
+    content: str | None
+    tool_calls: tuple[ToolCall, ...]
+    usage: LlmUsage
+
+
 class IncompleteStructuredOutputError(Exception):
     """Chat finished without usable structured JSON (e.g. thinking loop / empty body)."""
 
@@ -50,8 +80,8 @@ class EmbedResult:
 
 
 @dataclass(frozen=True, slots=True)
-class ScoredPassage:
-    passage: Passage
+class ScoredChunk:
+    chunk: Chunk
     document_path: DocumentPath
     score: float
 
@@ -75,6 +105,14 @@ class ChatModel(Protocol):
         thinking: ThinkingCallbacks | None = None,
     ) -> StructuredResult[TModel]: ...
 
+    async def complete_tool_turn(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[ToolSpec],
+        *,
+        thinking: ThinkingCallbacks | None = None,
+    ) -> ToolTurnResult: ...
+
 
 class Embedder(Protocol):
     async def embed(self, texts: Sequence[str]) -> EmbedResult: ...
@@ -87,14 +125,14 @@ class Embedder(Protocol):
 
 
 class VectorIndex(Protocol):
-    async def upsert_passages(
+    async def upsert_chunks(
         self,
         *,
         engagement_id: EngagementId,
         document_id: DocumentId,
         document_path: DocumentPath,
         document_version: int,
-        passages: Sequence[Passage],
+        chunks: Sequence[Chunk],
         embeddings: Sequence[Sequence[float]],
         embedding_model: str,
     ) -> None: ...
@@ -107,7 +145,7 @@ class VectorIndex(Protocol):
         *,
         embedding_model: str,
         min_score: float,
-    ) -> list[ScoredPassage]: ...
+    ) -> list[ScoredChunk]: ...
 
 
 class DocumentStorage(Protocol):
@@ -185,11 +223,19 @@ class SessionRepository(Protocol):
 
 
 class AskSessionBound(Protocol):
-    """Repos/session/vector ports needed by ask_question (avoids bootstrap import)."""
+    """Repos/session/vector/document ports needed by ask_question (avoids bootstrap import)."""
 
-    engagements: EngagementRepository
-    sessions: SessionRepository
-    vector_index: VectorIndex
+    @property
+    def engagements(self) -> EngagementRepository: ...
+
+    @property
+    def documents(self) -> DocumentRepository: ...
+
+    @property
+    def sessions(self) -> SessionRepository: ...
+
+    @property
+    def vector_index(self) -> VectorIndex: ...
 
 
 class JobQueue(Protocol):

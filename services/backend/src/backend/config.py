@@ -35,6 +35,8 @@ class Settings(BaseSettings):
     relevance_threshold: float = Field(default=0.30, ge=0.0, le=1.0)
     max_concurrent_model_calls: int = Field(default=2, ge=1, le=64)
     session_context_turns: int = Field(default=5, ge=0, le=20)
+    agent_max_tool_rounds: int = Field(default=6, ge=1, le=20)
+    agent_read_max_chars: int = Field(default=12_000, ge=500, le=200_000)
 
     upload_max_bytes: int = Field(default=50 * 1024 * 1024, ge=1)
     upload_max_files: int = Field(default=200, ge=1)

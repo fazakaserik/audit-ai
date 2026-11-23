@@ -96,7 +96,7 @@ class CitationResponse(BaseModel):
     model_config = _CFG
 
     marker: Annotated[int, Field(ge=1)]
-    passage_id: UUID
+    chunk_id: UUID
     document_id: UUID
     document_path: str
     page: Annotated[int, Field(ge=1)] | None = None

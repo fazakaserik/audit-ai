@@ -39,7 +39,7 @@ def usage_to_response(usage: LlmUsage) -> LlmUsageResponse:
 def citation_to_response(citation: Citation) -> CitationResponse:
     return CitationResponse(
         marker=citation.marker,
-        passage_id=citation.passage_id,
+        chunk_id=citation.chunk_id,
         document_id=citation.document_id,
         document_path=citation.document_path,
         page=citation.page,

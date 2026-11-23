@@ -18,7 +18,7 @@ from domain.answer import (
 )
 from domain.document import DocumentId, DocumentPath
 from domain.engagement import EngagementId
-from domain.passage import PassageId
+from domain.chunk import ChunkId
 
 
 def test_question_strips_and_rejects_blank() -> None:
@@ -49,7 +49,7 @@ def test_document_path_rejects_traversal() -> None:
 def test_answered_requires_citation() -> None:
     citation = Citation(
         marker=1,
-        passage_id=PassageId(uuid.uuid4()),
+        chunk_id=ChunkId(uuid.uuid4()),
         document_id=DocumentId(uuid.uuid4()),
         document_path="contracts/a.pdf",
         snippet="payment within 30 days",
@@ -64,11 +64,11 @@ def test_answered_requires_citation() -> None:
 def test_insufficient_requires_suggestions() -> None:
     with pytest.raises(ValidationError):
         InsufficientEvidence(
-            reason=InsufficientReason.NO_RELEVANT_PASSAGES,
+            reason=InsufficientReason.NO_RELEVANT_CHUNKS,
             suggested_client_questions=(),
         )
     result = InsufficientEvidence(
-        reason=InsufficientReason.NO_RELEVANT_PASSAGES,
+        reason=InsufficientReason.NO_RELEVANT_CHUNKS,
         suggested_client_questions=(
             SuggestedClientQuestion(
                 question="Please provide the lease agreement.",

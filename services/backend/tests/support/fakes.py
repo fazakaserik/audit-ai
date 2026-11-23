@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -15,9 +16,12 @@ from backend.application.ports import (
     EmbedResult,
     IncompleteStructuredOutputError,
     RetrievalScope,
-    ScoredPassage,
+    ScoredChunk,
     StructuredResult,
     ThinkingCallbacks,
+    ToolCall,
+    ToolSpec,
+    ToolTurnResult,
 )
 from domain.document import Document, DocumentId, DocumentPath, FolderPath
 from domain.document.paths import (
@@ -28,7 +32,7 @@ from domain.document.paths import (
 )
 from domain.engagement import Engagement, EngagementId
 from domain.errors import ModelTimeoutError, ModelUnavailableError, NotFoundError
-from domain.passage import Passage
+from domain.chunk import Chunk
 from domain.session import LlmUsage, Session, SessionId, Turn
 from domain.upload import (
     Upload,
@@ -42,8 +46,20 @@ from domain.upload import (
 TModel = TypeVar("TModel", bound=BaseModel)
 
 
+def _last_user_text(messages: Sequence[ChatMessage]) -> str:
+    for message in reversed(messages):
+        if message.role == "user" and message.content:
+            return message.content
+    return "search"
+
+
 class FakeChatModel:
-    """Configurable ChatModel: return a pydantic instance or raise a model error."""
+    """Configurable ChatModel: return a pydantic instance or raise a model error.
+
+    By default, the first ``complete_tool_turn`` issues ``search_relevant_chunks``
+    using the last user message, then subsequent turns return no tool calls so the
+    agent can run ``generate_structured``. Pass ``tool_turns`` to script exact turns.
+    """
 
     def __init__(
         self,
@@ -57,6 +73,8 @@ class FakeChatModel:
         thinking_text: str = "",
         thinking_seconds: float = 0.0,
         usage: LlmUsage | None = None,
+        tool_turns: Sequence[ToolTurnResult] | None = None,
+        auto_search: bool = True,
     ) -> None:
         self._response = response
         self._responses = list(responses) if responses is not None else None
@@ -65,7 +83,10 @@ class FakeChatModel:
         self._thinking_text = thinking_text
         self._thinking_seconds = thinking_seconds
         self._usage = usage or LlmUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15)
+        self._tool_turns = list(tool_turns) if tool_turns is not None else None
+        self._auto_search = auto_search
         self.calls: list[tuple[tuple[ChatMessage, ...], type[BaseModel]]] = []
+        self.tool_turn_calls: list[tuple[tuple[ChatMessage, ...], tuple[ToolSpec, ...]]] = []
 
     @property
     def supports_thinking(self) -> bool:
@@ -79,10 +100,16 @@ class FakeChatModel:
         error: (
             ModelTimeoutError | ModelUnavailableError | IncompleteStructuredOutputError | None
         ) = None,
+        tool_turns: Sequence[ToolTurnResult] | None = None,
+        auto_search: bool | None = None,
     ) -> None:
         self._response = response
         self._responses = list(responses) if responses is not None else None
         self._error = error
+        if tool_turns is not None:
+            self._tool_turns = list(tool_turns)
+        if auto_search is not None:
+            self._auto_search = auto_search
 
     async def generate_structured(
         self,
@@ -118,6 +145,46 @@ class FakeChatModel:
             raise TypeError(msg)
         return StructuredResult(value=self._response, usage=self._usage)
 
+    async def complete_tool_turn(
+        self,
+        messages: Sequence[ChatMessage],
+        tools: Sequence[ToolSpec],
+        *,
+        thinking: ThinkingCallbacks | None = None,
+    ) -> ToolTurnResult:
+        self.tool_turn_calls.append((tuple(messages), tuple(tools)))
+        if thinking is not None and self._supports_thinking:
+            if self._thinking_text:
+                await thinking.on_delta(self._thinking_text)
+            thinking.on_seconds(self._thinking_seconds)
+        if self._error is not None:
+            raise self._error
+        if self._tool_turns is not None:
+            if not self._tool_turns:
+                return ToolTurnResult(content=None, tool_calls=(), usage=self._usage)
+            return self._tool_turns.pop(0)
+        # Once per agent run: if no tool results yet, issue search_relevant_chunks.
+        has_tool_results = any(message.role == "tool" for message in messages)
+        if self._auto_search and not has_tool_results:
+            query = _last_user_text(messages)
+            for line in reversed(query.splitlines()):
+                stripped = line.strip()
+                if stripped.lower().startswith("question:"):
+                    query = stripped.split(":", 1)[1].strip() or query
+                    break
+            return ToolTurnResult(
+                content=None,
+                tool_calls=(
+                    ToolCall(
+                        id=f"fake_search_{len(self.tool_turn_calls)}",
+                        name="search_relevant_chunks",
+                        arguments=json.dumps({"query": query}),
+                    ),
+                ),
+                usage=self._usage,
+            )
+        return ToolTurnResult(content=None, tool_calls=(), usage=self._usage)
+
 
 class FakeEmbedder:
     def __init__(
@@ -147,12 +214,12 @@ class FakeEmbedder:
 
 
 @dataclass
-class _IndexedPassage:
+class _IndexedChunk:
     engagement_id: EngagementId
     document_id: DocumentId
     document_path: DocumentPath
     document_version: int
-    passage: Passage
+    chunk: Chunk
     embedding: tuple[float, ...]
     embedding_model: str
 
@@ -170,35 +237,35 @@ def _cosine(left: Sequence[float], right: Sequence[float]) -> float:
 
 class InMemoryVectorIndex:
     def __init__(self) -> None:
-        self._rows: list[_IndexedPassage] = []
+        self._rows: list[_IndexedChunk] = []
 
-    async def upsert_passages(
+    async def upsert_chunks(
         self,
         *,
         engagement_id: EngagementId,
         document_id: DocumentId,
         document_path: DocumentPath,
         document_version: int,
-        passages: Sequence[Passage],
+        chunks: Sequence[Chunk],
         embeddings: Sequence[Sequence[float]],
         embedding_model: str,
     ) -> None:
-        if len(passages) != len(embeddings):
-            msg = "passages and embeddings length mismatch"
+        if len(chunks) != len(embeddings):
+            msg = "chunks and embeddings length mismatch"
             raise ValueError(msg)
         self._rows = [
             row
             for row in self._rows
             if not (row.engagement_id == engagement_id and row.document_id == document_id)
         ]
-        for passage, embedding in zip(passages, embeddings, strict=True):
+        for chunk, embedding in zip(chunks, embeddings, strict=True):
             self._rows.append(
-                _IndexedPassage(
+                _IndexedChunk(
                     engagement_id=engagement_id,
                     document_id=document_id,
                     document_path=document_path,
                     document_version=document_version,
-                    passage=passage,
+                    chunk=chunk,
                     embedding=tuple(float(value) for value in embedding),
                     embedding_model=embedding_model,
                 )
@@ -212,9 +279,9 @@ class InMemoryVectorIndex:
         *,
         embedding_model: str,
         min_score: float,
-    ) -> list[ScoredPassage]:
+    ) -> list[ScoredChunk]:
         _ = query
-        scored: list[ScoredPassage] = []
+        scored: list[ScoredChunk] = []
         for row in self._rows:
             if row.engagement_id != scope.engagement_id:
                 continue
@@ -229,8 +296,8 @@ class InMemoryVectorIndex:
             if score < min_score:
                 continue
             scored.append(
-                ScoredPassage(
-                    passage=row.passage,
+                ScoredChunk(
+                    chunk=row.chunk,
                     document_path=row.document_path,
                     score=score,
                 )

@@ -1,30 +1,45 @@
-"""Unit test: empty retrieval skips LLM generation."""
+"""Empty retrieval yields insufficient evidence (no generate)."""
 
 from __future__ import annotations
 
 from backend.config import Settings
-from backend.rag.nodes import AskGraphDeps, grade_evidence, retrieve, route_after_retrieve
-from backend.rag.state import AskState
-from domain.answer import InsufficientReason, Question
+from backend.rag.agent import AskAgentDeps, run_ask_agent
+from backend.rag.prompts import AnswerGenerationResult
+from domain.answer import AnswerStatus, InsufficientReason, Question
 from domain.engagement import EngagementId
-from support.fakes import FakeChatModel, FakeEmbedder, InMemoryVectorIndex
+from support.fakes import (
+    FakeChatModel,
+    FakeEmbedder,
+    InMemoryDocumentRepository,
+    InMemoryDocumentStorage,
+    InMemoryEngagementRepository,
+    InMemoryVectorIndex,
+)
 
 
-async def test_empty_retrieval_routes_to_suggestions_without_chat() -> None:
-    chat = FakeChatModel()
-    deps = AskGraphDeps(
-        chat=chat,
-        embedder=FakeEmbedder(),
-        vector_index=InMemoryVectorIndex(),
-        settings=Settings(relevance_threshold=0.0),
+async def test_empty_index_is_insufficient_without_generation() -> None:
+    chat = FakeChatModel(
+        response=AnswerGenerationResult(
+            can_answer=True,
+            answer_text="should not appear [1]",
+            markers_used=(1,),
+        ),
     )
-    state: AskState = {
-        "engagement_id": EngagementId("northwind-fy2025"),
-        "question": Question(text="What is the warranty period?"),
-        "folder_scope": None,
-    }
-    state = {**state, **(await retrieve(state, deps))}
-    assert state.get("insufficient_reason") == InsufficientReason.NO_RELEVANT_PASSAGES
-    assert route_after_retrieve(state) == "suggest_client_questions"
-    state = {**state, **(await grade_evidence(state, deps))}
+    result = await run_ask_agent(
+        engagement_id=EngagementId("northwind-fy2025"),
+        question=Question(text="What is the payment term?"),
+        folder_scope=None,
+        prior_turns=(),
+        deps=AskAgentDeps(
+            chat=chat,
+            embedder=FakeEmbedder(),
+            vector_index=InMemoryVectorIndex(),
+            engagements=InMemoryEngagementRepository(),
+            documents=InMemoryDocumentRepository(),
+            storage=InMemoryDocumentStorage(),
+            settings=Settings(relevance_threshold=0.0),
+        ),
+    )
+    assert result.answer.status == AnswerStatus.INSUFFICIENT_EVIDENCE
+    assert result.answer.reason == InsufficientReason.NO_RELEVANT_CHUNKS
     assert chat.calls == []

@@ -11,7 +11,7 @@ This document describes how the Audit Assistant would run in Azure. The applicat
 | API runtime                       | `backend` container                      | Azure Container Apps (autoscaled, stateless replicas)                          | None                                    |
 | Ingestion worker runtime          | `worker` (same backend image)            | Container Apps Jobs, event-driven (KEDA scaling on queue length)               | None                                    |
 | Metadata (engagements, documents) | PostgreSQL container                     | Azure Database for PostgreSQL Flexible Server                                  | Configuration only                      |
-| Passage search (vector + keyword) | pgvector in the same PostgreSQL          | Azure AI Search (hybrid search, semantic ranker)                               | New `VectorIndex` adapter               |
+| Chunk search (vector + keyword) | pgvector in the same PostgreSQL          | Azure AI Search (hybrid search, semantic ranker)                               | New `VectorIndex` adapter               |
 | Document files                    | Local volume                             | Azure Blob Storage (one container per environment, engagement prefix per blob) | New `DocumentStorage` adapter           |
 | LLM and embeddings                | OpenAI API or local Ollama               | Azure OpenAI (data stays in the chosen Azure region, enterprise agreements)    | New `ChatModel` and `Embedder` adapters |
 | Secrets                           | `.env` file                              | Azure Key Vault + managed identity (no keys in configuration)                  | Configuration only                      |
@@ -27,7 +27,7 @@ This document describes how the Audit Assistant would run in Azure. The applicat
 - Scales independently of the transactional database. Search load from many auditors does not compete with metadata writes.
 - Fits a Microsoft-centric enterprise stack (Entra ID, private endpoints, regional data residency).
 
-Trade-off: replacing a document is no longer one database transaction. The upload worker writes the new passages first, switches the document's active version in PostgreSQL, then deletes the old passages from the index. Retrieval filters on the active version, so answers never mix two versions of a document.
+Trade-off: replacing a document is no longer one database transaction. The upload worker writes the new chunks first, switches the document's active version in PostgreSQL, then deletes the old chunks from the index. Retrieval filters on the active version, so answers never mix two versions of a document.
 
 ## Request and ingestion flow
 

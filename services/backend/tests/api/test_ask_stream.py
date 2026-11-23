@@ -14,7 +14,7 @@ from backend.rag.prompts import AnswerGenerationResult
 from domain.common import utc_now
 from domain.document import DocumentId
 from domain.engagement import Engagement, EngagementId
-from domain.passage import Passage, PassageId
+from domain.chunk import Chunk, ChunkId
 from support.fakes import (
     FakeChatModel,
     FakeEmbedder,
@@ -48,29 +48,29 @@ async def test_post_ask_stream_progress_and_final() -> None:
         )
     )
 
-    passage_text = "Meal reimbursement is capped at 75 USD per day."
+    chunk_text = "Meal reimbursement is capped at 75 USD per day."
     doc_id = DocumentId(uuid.uuid4())
-    passage = Passage(
-        id=PassageId(uuid.uuid4()),
+    chunk = Chunk(
+        id=ChunkId(uuid.uuid4()),
         document_id=doc_id,
         document_version=1,
         ordinal=0,
         page=1,
         heading_path=("Meals",),
-        text=passage_text,
+        text=chunk_text,
         token_count=10,
         created_at=datetime.now(UTC),
     )
 
     embedder = FakeEmbedder()
-    embedded = await embedder.embed((passage_text, "meal limits"))
+    embedded = await embedder.embed((chunk_text, "meal limits"))
     vector_index = InMemoryVectorIndex()
-    await vector_index.upsert_passages(
+    await vector_index.upsert_chunks(
         engagement_id=engagement_id,
         document_id=doc_id,
         document_path="policies/expense-policy.md",
         document_version=1,
-        passages=(passage,),
+        chunks=(chunk,),
         embeddings=(embedded.vectors[0],),
         embedding_model=embedder.model_name,
     )
@@ -82,7 +82,7 @@ async def test_post_ask_stream_progress_and_final() -> None:
             markers_used=(1,),
         ),
         supports_thinking=True,
-        thinking_text="Checking policy passages…",
+        thinking_text="Checking policy chunks…",
         thinking_seconds=1.26,
     )
     container = build_test_container(embedder=embedder, chat=chat)
@@ -112,7 +112,10 @@ async def test_post_ask_stream_progress_and_final() -> None:
         assert types.count("thinking_done") == 1
         assert types[-1] == "final"
         thinking_done = next(event for event in events if event.get("type") == "thinking_done")
-        assert thinking_done.get("duration_seconds") == round(1.26, 1)
+        # Tool loop + generate each report thinking_seconds from the fake.
+        assert thinking_done.get("duration_seconds") == round(1.26 * 3, 1)
+        assert "tool_call" in types
+        assert "tool_result" in types
         final = events[-1]["response"]
         assert isinstance(final, dict)
         assert final["status"] == "answered"
@@ -128,6 +131,6 @@ async def test_post_ask_stream_progress_and_final() -> None:
         assert detail.status_code == 200
         turns = detail.json()["turns"]
         assert len(turns) == 1
-        assert turns[0]["thinking_text"] == "Checking policy passages…"
-        assert turns[0]["thinking_seconds"] == round(1.26, 1)
+        assert turns[0]["thinking_text"] == "Checking policy chunks…" * 3
+        assert turns[0]["thinking_seconds"] == round(1.26 * 3, 1)
         assert turns[0]["answer"]["usage"]["total_tokens"] >= 15

@@ -11,7 +11,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 ## Monorepo layout
 
 - **Decision**: One uv workspace at the repository root with three members:
-  - `packages/domain` (import name `domain`): feature-oriented domain models only (`domain.engagement`, `domain.document`, `domain.upload`, `domain.passage`, `domain.answer`, `domain.session`), plus shared root modules (`errors`, `problem`, `common`, `providers`). No HTTP contracts here. Only dependency: pydantic.
+  - `packages/domain` (import name `domain`): feature-oriented domain models only (`domain.engagement`, `domain.document`, `domain.upload`, `domain.chunk`, `domain.answer`, `domain.session`), plus shared root modules (`errors`, `problem`, `common`, `providers`). No HTTP contracts here. Only dependency: pydantic.
   - `services/backend` (import name `backend`): HTTP API (`backend.api`, including `backend.api.contracts.v1`), application ports/use cases, RAG, ingestion, adapters, composition root, Alembic migrations, and the worker entrypoint (`backend.worker`). One Dockerfile; compose may run a second container of the same image with `audit-worker`.
   - `cli/` (import name `cli`): interactive terminal client; HTTP only; imports `domain` and `backend.api.contracts`.
 - **Rationale**: Auditor tooling does not need independently scaled API/worker packages. A single backend is simpler to run and demo while still allowing an optional second worker process from the same image. One `uv.lock` keeps versions consistent.
@@ -21,7 +21,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 ## Domain model (draft for data-model.md)
 
 - **Style**: Every model is a pydantic model with `ConfigDict(frozen=True, strict=True, extra="forbid")`. Value objects are `Annotated` types with validators. Ids are `NewType`s over `uuid.UUID` (UUIDv4), so different id kinds cannot be swapped by accident. Mutable records carry `created_at` and `updated_at`, immutable records only `created_at`. All timestamps are timezone-aware UTC (`AwareDatetime`).
-- **Value types**: `EngagementId` (slug `^[a-z0-9][a-z0-9-]{1,62}$`); `FolderPath` and `DocumentPath` (relative POSIX paths that reject `..`, absolute paths, backslashes, control characters and empty segments); `ContentType` (`markdown | text | pdf`); `Question` (`text`, `folder_scope`, `auditor_role`, `topic`); `Citation` (`passage_id`, `document_id`, `document_path`, `page`, `heading_path`, `snippet`, `score`); `SuggestedClientQuestion` (`question`, `rationale`); `Answer = Answered | InsufficientEvidence`, where `InsufficientEvidence.reason` is `no_relevant_passages | model_judged_insufficient`.
+- **Value types**: `EngagementId` (slug `^[a-z0-9][a-z0-9-]{1,62}$`); `FolderPath` and `DocumentPath` (relative POSIX paths that reject `..`, absolute paths, backslashes, control characters and empty segments); `ContentType` (`markdown | text | pdf`); `Question` (`text`, `folder_scope`, `auditor_role`, `topic`); `Citation` (`chunk_id`, `document_id`, `document_path`, `page`, `heading_path`, `snippet`, `score`); `SuggestedClientQuestion` (`question`, `rationale`); `Answer = Answered | InsufficientEvidence`, where `InsufficientEvidence.reason` is `no_relevant_chunks | model_judged_insufficient`.
 - **Entities**:
 
 | Model        | Fields                                                                                                                             | Timestamps       |
@@ -30,7 +30,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 | `Upload`     | `id`, `engagement_id`, `target_folder`, `status` (queued, processing, completed, failed), `completed_at`                           | created, updated |
 | `UploadItem` | `id`, `upload_id`, `document_path`, `status` (pending, processing, indexed, skipped, not_searchable, failed), `reason`, `attempts` | created, updated |
 | `Document`   | `id`, `engagement_id`, `path`, `content_type`, `size_bytes`, `sha256`, `version`, `searchable`                                     | created, updated |
-| `Passage`    | `id`, `document_id`, `document_version`, `ordinal`, `page`, `heading_path`, `text`, `token_count`                                  | created          |
+| `Chunk`    | `id`, `document_id`, `document_version`, `ordinal`, `page`, `heading_path`, `text`, `token_count`                                  | created          |
 | `Session`    | `id`, `engagement_id`, `title`, `turn_count` (`updated_at` = last activity)                                                        | created, updated |
 | `Turn`       | `id`, `session_id`, `ordinal`, `question`, `standalone_question`, `answer`                                                         | created          |
 
@@ -58,7 +58,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 ## Sessions and follow-up questions
 
 - **Decision**: Sessions are a server-side resource persisted in Postgres (`sessions` and `session_turns` tables), stored through a `SessionRepository` port. A turn stores the original question, the rewritten standalone question and the full typed response.
-- **Decision**: The ask graph gains a first step, `condense_question`. When the request carries a session id and the session has earlier turns, the step sends the last N turns (default 5, configurable) together with the new question to the chat model, which returns one standalone question. Retrieval and answering then work on that question exactly as before, and earlier answers are never passed in as evidence. Without a session the step does nothing and makes no model call.
+- **Decision**: The ask agent receives a bounded number of recent prior user questions (default 5, configurable) only for reference resolution. Evidence comes exclusively from tool results in the current turn (`search_relevant_chunks`, optional browse tools). Earlier answers are never passed in as evidence.
 - **Rationale**: Follow-up questions work without weakening grounding, and the rest of the graph stays unchanged.
 - **Alternative considered**: the LangGraph Postgres checkpointer as session storage. Rejected because it stores graph-internal state rather than a typed, queryable transcript, and the API needs to list sessions and return turns as part of its own contract.
 
@@ -83,19 +83,19 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 
 ## Chunking
 
-- **Decision**: Structure-aware chunking. Split on Markdown headings and PDF page boundaries first, then into token windows of about 500 tokens with about 15% overlap. Each passage keeps its heading path and page number as citation metadata.
-- **Rationale**: Passages that follow document structure cite cleanly ("contracts/contoso.pdf, page 3, section 4.2 Payment terms") and do not merge unrelated sections.
+- **Decision**: Structure-aware chunking. Split on Markdown headings and PDF page boundaries first, then into token windows of about 500 tokens with about 15% overlap. Each chunk keeps its heading path and page number as citation metadata.
+- **Rationale**: Chunks that follow document structure cite cleanly ("contracts/contoso.pdf, page 3, section 4.2 Payment terms") and do not merge unrelated sections.
 - **Next step**: Chunk size, overlap and the splitting rules are configuration parameters. They should be tested with different values on a labelled question set and tuned, which is out of scope for this version.
 
 ## Ask orchestration
 
-- **Decision**: Ask flow is implemented as explicit node functions (`retrieve` → `grade_evidence` → `generate_answer` → `finalize` / `suggest_client_questions`) composed by `backend.rag.graph.run_ask_graph`. A LangGraph `StateGraph` wrapper remains the intended packaging when the runtime can load `ormsgpack`; node contracts stay identical either way.
+- **Decision**: Ask flow is a tool-calling agent (`complete_tool_turn` loop over `backend.rag.tools`, then structured `AnswerGenerationResult` + citation filter) composed by `backend.rag.graph.run_ask_graph` / `backend.rag.agent.run_ask_agent`. Tools live one-per-file under `backend.rag.tools` (`search_relevant_chunks`, `list_documents`, `read_document`).
 - **Rationale**: Same graph topology and testability without hard-failing API imports on hosts that block native wheels.
 
 ## Grounding and citations
 
-- **Decision**: Retrieved passages are shown to the model numbered `[1]..[n]`. The model must return the answer text with inline markers after each claim, together with the list of marker numbers it used. A post-processing step removes markers that do not match a retrieved passage, renumbers the rest so they run consecutively, and builds `citations` in marker order. An answer with no valid marker left becomes `InsufficientEvidence(reason="model_judged_insufficient")`. The CLI renders the markers as footnotes.
-- **Rationale**: Every claim can be traced to a passage, and checking the markers is deterministic, with no extra model call.
+- **Decision**: Retrieved chunks are shown to the model numbered `[1]..[n]`. The model must return the answer text with inline markers after each claim, together with the list of marker numbers it used. A post-processing step removes markers that do not match a retrieved chunk, renumbers the rest so they run consecutively, and builds `citations` in marker order. An answer with no valid marker left becomes `InsufficientEvidence(reason="model_judged_insufficient")`. The CLI renders the markers as footnotes.
+- **Rationale**: Every claim can be traced to a chunk, and checking the markers is deterministic, with no extra model call.
 
 ## Resilience
 
@@ -113,10 +113,10 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 
 ## Metadata and vector storage
 
-- **Decision**: PostgreSQL with the pgvector extension stores engagement and document metadata, passages and embeddings. It runs as a container in docker compose.
-- **Rationale**: One datastore. Replacing a document (deleting old passages and inserting new ones) is a single transaction, so an answer never sees half of a re-uploaded document. Filtering by engagement and folder is plain SQL. Postgres full-text search allows hybrid search later. pgvector with an HNSW index comfortably handles the expected scale (thousands of engagements with up to about 100k passages each).
+- **Decision**: PostgreSQL with the pgvector extension stores engagement and document metadata, chunks and embeddings. It runs as a container in docker compose.
+- **Rationale**: One datastore. Replacing a document (deleting old chunks and inserting new ones) is a single transaction, so an answer never sees half of a re-uploaded document. Filtering by engagement and folder is plain SQL. Postgres full-text search allows hybrid search later. pgvector with an HNSW index comfortably handles the expected scale (thousands of engagements with up to about 100k chunks each).
 - **Alternatives**: Qdrant next to Postgres (two stores that can drift out of sync); Chroma (prototype-grade); Pinecone (SaaS, would send client data to a third party).
-- **Embedding dimensions**: Different embedding models produce vectors of different lengths (for example 1536 for `text-embedding-3-small`, 768 for `nomic-embed-text`). Passages store `embedding_model` and an untyped `vector` column. Retrieval filters on the configured model. One partial HNSW index is created per supported model, casting to that model's dimension (`CREATE INDEX ... ON passages USING hnsw ((embedding::vector(1536))) WHERE embedding_model = 'text-embedding-3-small'`). Switching embedding models never mixes dimensions; re-seeding is required after a switch.
+- **Embedding dimensions**: Different embedding models produce vectors of different lengths (for example 1536 for `text-embedding-3-small`, 768 for `nomic-embed-text`). Chunks store `embedding_model` and an untyped `vector` column. Retrieval filters on the configured model. One partial HNSW index is created per supported model, casting to that model's dimension (`CREATE INDEX ... ON chunks USING hnsw ((embedding::vector(1536))) WHERE embedding_model = 'text-embedding-3-small'`). Switching embedding models never mixes dimensions; re-seeding is required after a switch.
 - **Cloud target**: Azure AI Search replaces pgvector for search in a cloud deployment (managed hybrid and semantic ranking), as a new `VectorIndex` adapter with no application change. See `deployment/cloud/README.md`.
 
 ## Database access
@@ -128,12 +128,12 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 ## Retrieval
 
 - **Decision**: Hybrid search in version 1. A pgvector cosine-similarity query (HNSW index) and a Postgres full-text query (`tsvector` with a GIN index, `websearch_to_tsquery`) run filtered by engagement, folder prefix and active document version. The two ranked lists are merged with reciprocal rank fusion inside the pgvector `VectorIndex` adapter.
-- **Rationale**: Audit questions often contain exact identifiers (invoice numbers, contract ids, amounts) that vector search alone ranks poorly. Doing the fusion inside the adapter keeps the port simple (`search(query, scope) -> list[ScoredPassage]`) and lets Azure AI Search replace it with its native hybrid search.
-- **Relevance threshold**: Applied to vector cosine similarity **before** reciprocal rank fusion. Passages with cosine similarity below `RELEVANCE_THRESHOLD` (default `0.30`) are discarded from the vector candidate set. If the vector candidate set is empty after the threshold, the graph returns `insufficient_evidence` with `reason=no_relevant_passages` without calling the LLM, even if full-text search returned hits. Full-text hits participate in fusion only among the passages that also survived the vector threshold (or were in the top-k vector set before thresholding but still above threshold). Rationale: fused RRF ranks are ordinal and not comparable across queries; vector similarity is.
+- **Rationale**: Audit questions often contain exact identifiers (invoice numbers, contract ids, amounts) that vector search alone ranks poorly. Doing the fusion inside the adapter keeps the port simple (`search(query, scope) -> list[ScoredChunk]`) and lets Azure AI Search replace it with its native hybrid search.
+- **Relevance threshold**: Applied to vector cosine similarity **before** reciprocal rank fusion. Chunks with cosine similarity below `RELEVANCE_THRESHOLD` (default `0.30`) are discarded from the vector candidate set. If the vector candidate set is empty after the threshold, the graph returns `insufficient_evidence` with `reason=no_relevant_chunks` without calling the LLM, even if full-text search returned hits. Full-text hits participate in fusion only among the chunks that also survived the vector threshold (or were in the top-k vector set before thresholding but still above threshold). Rationale: fused RRF ranks are ordinal and not comparable across queries; vector similarity is.
 
 ## Ingestion
 
-- **Decision**: Asynchronous upload processing. The API validates the upload (size limits, a path-traversal-safe archive listing), stores the raw files, creates an `upload` row plus one job per file in Postgres, and returns `202 Accepted` with the upload id. A separate worker process claims jobs with `SELECT ... FOR UPDATE SKIP LOCKED`, then parses, chunks, embeds and atomically swaps the document's passages. Each job has a bounded retry count and a lease timeout, so jobs from a crashed worker are picked up again. Clients poll `GET .../uploads/{upload_id}`.
+- **Decision**: Asynchronous upload processing. The API validates the upload (size limits, a path-traversal-safe archive listing), stores the raw files, creates an `upload` row plus one job per file in Postgres, and returns `202 Accepted` with the upload id. A separate worker process claims jobs with `SELECT ... FOR UPDATE SKIP LOCKED`, then parses, chunks, embeds and atomically swaps the document's chunks. Each job has a bounded retry count and a lease timeout, so jobs from a crashed worker are picked up again. Clients poll `GET .../uploads/{upload_id}`.
 - **Rationale**: Embedding calls are slow and rate limited and must not hold HTTP requests open. A Postgres job table needs no extra infrastructure, survives restarts, and allows several workers. In the cloud target it is replaced by Azure Service Bus.
 - **Alternatives**: synchronous indexing (simpler, blocks requests); Celery or RQ with Redis (one more service, weaker typing); in-process background tasks (lost on restart, wrong with multiple instances).
 

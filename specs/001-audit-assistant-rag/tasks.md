@@ -51,20 +51,20 @@ Workspace layout from [plan.md](./plan.md): `packages/domain`, `services/backend
 
 **⚠️ CRITICAL**: No user story work begins until this phase is complete
 
-- [x] T013 [P] Implement id/value types in `packages/domain/src/domain/ids.py` citing [data-model.md](./data-model.md) `EngagementId`, `FolderPath`, `DocumentPath`, and UUID `NewType`s (`UploadId`, `DocumentId`, `PassageId`, `SessionId`, `TurnId`, `RequestId`, …)
+- [x] T013 [P] Implement id/value types in `packages/domain/src/domain/ids.py` citing [data-model.md](./data-model.md) `EngagementId`, `FolderPath`, `DocumentPath`, and UUID `NewType`s (`UploadId`, `DocumentId`, `ChunkId`, `SessionId`, `TurnId`, `RequestId`, …)
 - [x] T014 [P] Implement enums in `packages/domain/src/domain/enums.py` citing [data-model.md](./data-model.md) `ContentType`, `ErrorCode`, upload/item status enums, `InsufficientEvidence.reason` literals
 - [x] T015 [P] Implement `DomainError` hierarchy in `packages/domain/src/domain/errors.py` mapped 1:1 to `ErrorCode`
 - [x] T016 [P] Implement `ProblemDetails` + `FieldError` in `packages/domain/src/domain/problem.py` per contracts/openapi.yaml
-- [x] T017 Implement frozen entity models + `Answer` union in `packages/domain/src/domain/models.py` citing [data-model.md](./data-model.md) `Engagement`, `Document`, `Passage`, `Question`, `Citation`, `SuggestedClientQuestion`, `Answered`, `InsufficientEvidence` (Upload/Session/Turn can be stubs completed in later stories)
+- [x] T017 Implement frozen entity models + `Answer` union in `packages/domain/src/domain/models.py` citing [data-model.md](./data-model.md) `Engagement`, `Document`, `Chunk`, `Question`, `Citation`, `SuggestedClientQuestion`, `Answered`, `InsufficientEvidence` (Upload/Session/Turn can be stubs completed in later stories)
 - [x] T018 [P] Implement `contracts/v1/page.py` generic `Page[T]` (`items`, `total`, `limit`, `offset`) in `packages/domain/src/domain/contracts/v1/page.py`
 - [x] T019 [P] Implement request DTOs in `packages/domain/src/domain/contracts/v1/requests.py` (`CreateEngagementRequest`, `AskRequest`) matching contracts/openapi.yaml
 - [x] T020 Implement response DTOs + mappers in `packages/domain/src/domain/contracts/v1/responses.py` and `mapping.py` (Engagement, Document, AskResponse union, Health, ProblemDetails)
 - [x] T021 Implement `Settings` in `services/backend/src/backend/config.py` (pydantic-settings, flat env names, `SecretStr`, startup validation e.g. openai without key fails)
-- [x] T022 [P] Configure structlog JSON logging helper in `services/backend/src/backend/logging.py` (bind `request_id`; never log document/passage/prompt content)
+- [x] T022 [P] Configure structlog JSON logging helper in `services/backend/src/backend/logging.py` (bind `request_id`; never log document/chunk/prompt content)
 - [x] T023 Define application ports in `services/backend/src/backend/application/ports.py`: `ChatModel`, `Embedder`, `VectorIndex`, `DocumentStorage`, `EngagementRepository`, `DocumentRepository`, `SessionRepository`, `JobQueue` (Protocols only)
 - [x] T024 [P] Implement in-memory fakes for all ports in `services/backend/tests/support/fakes.py` for offline unit/api tests
 - [x] T025 Implement SQLAlchemy async engine + session factory in `services/backend/src/backend/adapters/postgres/engine.py`
-- [x] T026 Implement SQLAlchemy `Mapped` tables in `services/backend/src/backend/adapters/postgres/models.py` for `engagements`, `documents`, `passages` (incl. adapter-only `embedding`, `embedding_model`, `search_vector`) per data-model.md SQL sketch
+- [x] T026 Implement SQLAlchemy `Mapped` tables in `services/backend/src/backend/adapters/postgres/models.py` for `engagements`, `documents`, `chunks` (incl. adapter-only `embedding`, `embedding_model`, `search_vector`) per data-model.md SQL sketch
 - [x] T027 Initialize Alembic under `services/backend/` (`alembic.ini`, `migrations/env.py`) and create initial migration for T026 tables + pgvector extension + partial HNSW placeholders + GIN on `search_vector`
 - [x] T028 Implement `EngagementRepository` + `DocumentRepository` Postgres adapters in `services/backend/src/backend/adapters/postgres/repositories.py` with mandatory `engagement_id` filters
 - [x] T029 [P] Implement `local_fs` `DocumentStorage` in `services/backend/src/backend/adapters/local_fs.py`
@@ -72,7 +72,7 @@ Workspace layout from [plan.md](./plan.md): `packages/domain`, `services/backend
 - [x] T031 [P] Implement OpenAI `ChatModel` + `Embedder` adapters with tenacity retries in `services/backend/src/backend/adapters/openai_chat.py` and `openai_embed.py`
 - [x] T032 [P] Implement Ollama `ChatModel` + `Embedder` adapters with tenacity retries in `services/backend/src/backend/adapters/ollama_chat.py` and `ollama_embed.py`
 - [x] T033 Implement composition root `Container` in `services/backend/src/backend/bootstrap.py` wiring Settings → adapters by `LLM_PROVIDER` / `EMBEDDING_PROVIDER`
-- [x] T034 Implement sync `IngestDirectory` use case in `services/backend/src/backend/application/ingest_directory.py` (parse→chunk→embed→atomic passage swap) for sample loading before async upload exists
+- [x] T034 Implement sync `IngestDirectory` use case in `services/backend/src/backend/application/ingest_directory.py` (parse→chunk→embed→atomic chunk swap) for sample loading before async upload exists
 - [x] T035 [P] Implement Markdown/text/PDF parsers in `services/backend/src/backend/ingestion/parsers.py`
 - [x] T036 [P] Implement structure-aware chunker in `services/backend/src/backend/ingestion/chunking.py` (~500 tokens, ~15% overlap; keep heading_path/page)
 - [x] T037 Implement FastAPI app factory in `services/backend/src/backend/api/main.py` with request-id middleware (`services/backend/src/backend/api/middleware.py`) and single Problem Details exception mapper (`services/backend/src/backend/api/problem_handlers.py`)
@@ -90,7 +90,7 @@ Workspace layout from [plan.md](./plan.md): `packages/domain`, `services/backend
 
 ## Phase 3: User Story 1 — Grounded question with citations (Priority: P1) 🎯 MVP part A
 
-**Goal**: Ask a question on an engagement with indexed docs; get `answered` with inline `[n]` citations from retrieved passages only
+**Goal**: Ask a question on an engagement with indexed docs; get `answered` with inline `[n]` citations from retrieved chunks only
 
 **Independent Test**: Sync-ingest sample docs for `northwind-fy2025`, `POST .../ask` with a question whose answer is in a sample file; verify `status=answered`, markers, and citation `document_path`
 
@@ -99,7 +99,7 @@ Workspace layout from [plan.md](./plan.md): `packages/domain`, `services/backend
 - [x] T045 [P] [US1] Offline unit test: citation post-filter drops unknown markers / empty markers → insufficient in `services/backend/tests/unit/test_citations.py`
 - [x] T046 [P] [US1] Offline API test: successful ask returns AnsweredResponse shape in `services/backend/tests/api/test_ask_answered.py` (fake ChatModel/Embedder/VectorIndex)
 - [x] T047 [P] [US1] Offline API test: folder_prefix scopes retrieval in `services/backend/tests/api/test_ask_folder_scope.py`
-- [x] T048 [P] [US1] Offline API test: cross-engagement isolation (no foreign passages) in `services/backend/tests/api/test_ask_isolation.py`
+- [x] T048 [P] [US1] Offline API test: cross-engagement isolation (no foreign chunks) in `services/backend/tests/api/test_ask_isolation.py`
 - [x] T049 [P] [US1] Offline API test: invalid/empty question → 422 `validation_error` Problem Details in `services/backend/tests/api/test_ask_validation.py` citing [data-model.md](./data-model.md) `Question.text`
 
 ### Implementation for User Story 1
@@ -151,7 +151,7 @@ Workspace layout from [plan.md](./plan.md): `packages/domain`, `services/backend
 - [x] T065 [P] [US3] Offline unit test: zip path-traversal rejected in `services/backend/tests/unit/test_archive_safety.py`
 - [x] T066 [P] [US3] Offline API test: upload returns 202 queued; oversized → 413; unsafe → 400 `unsafe_upload` in `services/backend/tests/api/test_upload_accept.py`
 - [ ] T067 [P] [US3] Db test: `SKIP LOCKED` claim does not double-process in `services/backend/tests/db/test_job_queue.py`
-- [ ] T068 [P] [US3] Db test: atomic document version swap leaves no mixed passages in `services/backend/tests/db/test_document_replace.py` citing [data-model.md](./data-model.md) `Document.version`, `Passage.document_version`
+- [ ] T068 [P] [US3] Db test: atomic document version swap leaves no mixed chunks in `services/backend/tests/db/test_document_replace.py` citing [data-model.md](./data-model.md) `Document.version`, `Chunk.document_version`
 
 ### Implementation for User Story 3
 

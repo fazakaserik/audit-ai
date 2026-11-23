@@ -66,6 +66,7 @@ async def post_ask(
         bound,
         chat=container.chat_model,
         embedder=container.embedder,
+        storage=container.document_storage,
         settings=container.settings,
         engagement_id=engagement_id,
         question=question,
@@ -101,6 +102,7 @@ async def post_ask_stream(
             bound,
             chat=container.chat_model,
             embedder=container.embedder,
+            storage=container.document_storage,
             settings=container.settings,
             engagement_id=engagement_id,
             question=question,
@@ -144,9 +146,23 @@ async def post_ask_stream(
                             "detail": str(exc),
                         }
                     )
-            elif event_type in {"stage", "sources", "thinking_delta", "thinking_done"}:
+            elif event_type in {
+                "stage",
+                "sources",
+                "thinking_delta",
+                "thinking_done",
+                "tool_call",
+                "tool_result",
+            }:
                 yield _sse(event)
             else:
-                yield _sse({"type": "error", "status": 500, "code": "internal_error", "detail": "unknown event"})
+                yield _sse(
+                    {
+                        "type": "error",
+                        "status": 500,
+                        "code": "internal_error",
+                        "detail": "unknown event",
+                    }
+                )
 
     return StreamingResponse(event_gen(), media_type="text/event-stream")

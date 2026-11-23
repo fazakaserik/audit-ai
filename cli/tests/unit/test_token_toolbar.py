@@ -27,7 +27,7 @@ def test_token_toolbar_placeholder_then_populated() -> None:
         citations=(
             CitationResponse(
                 marker=1,
-                passage_id=uuid4(),
+                chunk_id=uuid4(),
                 document_id=uuid4(),
                 document_path="docs/a.md",
                 page=1,

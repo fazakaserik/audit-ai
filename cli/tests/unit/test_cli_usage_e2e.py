@@ -15,7 +15,7 @@ from cli.repl import ReplState, _token_toolbar
 from domain.common import utc_now
 from domain.document import DocumentId
 from domain.engagement import Engagement, EngagementId
-from domain.passage import Passage, PassageId
+from domain.chunk import Chunk, ChunkId
 from support.fakes import (
     FakeChatModel,
     FakeEmbedder,
@@ -39,28 +39,28 @@ async def test_cli_toolbar_updates_from_ask_response() -> None:
         )
     )
 
-    passage_text = "Payment is due within thirty days."
+    chunk_text = "Payment is due within thirty days."
     doc_id = DocumentId(uuid.uuid4())
-    passage = Passage(
-        id=PassageId(uuid.uuid4()),
+    chunk = Chunk(
+        id=ChunkId(uuid.uuid4()),
         document_id=doc_id,
         document_version=1,
         ordinal=0,
         page=1,
         heading_path=(),
-        text=passage_text,
+        text=chunk_text,
         token_count=8,
         created_at=now,
     )
     embedder = FakeEmbedder()
-    embedded = await embedder.embed((passage_text,))
+    embedded = await embedder.embed((chunk_text,))
     vector_index = InMemoryVectorIndex()
-    await vector_index.upsert_passages(
+    await vector_index.upsert_chunks(
         engagement_id=engagement_id,
         document_id=doc_id,
         document_path="contracts/contoso.pdf",
         document_version=1,
-        passages=(passage,),
+        chunks=(chunk,),
         embeddings=(embedded.vectors[0],),
         embedding_model=embedder.model_name,
     )

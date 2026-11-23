@@ -8,19 +8,19 @@ from uuid import UUID
 from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.adapters.postgres.models import DocumentRow, PassageRow
-from backend.application.ports import RetrievalScope, ScoredPassage
+from backend.adapters.postgres.models import DocumentRow, ChunkRow
+from backend.application.ports import RetrievalScope, ScoredChunk
 from domain.document import DocumentId, DocumentPath
 from domain.engagement import EngagementId
-from domain.passage import Passage, PassageId
+from domain.chunk import Chunk, ChunkId
 
 _RRF_K = 60
 
 
-def _passage_from_row(row: PassageRow) -> Passage:
+def _chunk_from_row(row: ChunkRow) -> Chunk:
     heading = tuple(row.heading_path) if row.heading_path else ()
-    return Passage(
-        id=PassageId(row.id),
+    return Chunk(
+        id=ChunkId(row.id),
         document_id=DocumentId(row.document_id),
         document_version=row.document_version,
         ordinal=row.ordinal,
@@ -39,24 +39,24 @@ def _rrf_merge(
     k: int = _RRF_K,
 ) -> list[UUID]:
     scores: dict[UUID, float] = {}
-    for rank, passage_id in enumerate(vector_ids, start=1):
-        scores[passage_id] = scores.get(passage_id, 0.0) + 1.0 / (k + rank)
-    for rank, passage_id in enumerate(fts_ids, start=1):
-        scores[passage_id] = scores.get(passage_id, 0.0) + 1.0 / (k + rank)
+    for rank, chunk_id in enumerate(vector_ids, start=1):
+        scores[chunk_id] = scores.get(chunk_id, 0.0) + 1.0 / (k + rank)
+    for rank, chunk_id in enumerate(fts_ids, start=1):
+        scores[chunk_id] = scores.get(chunk_id, 0.0) + 1.0 / (k + rank)
     return sorted(scores.keys(), key=lambda pid: scores[pid], reverse=True)
 
 
-def _scoped_passage_filters(
+def _scoped_chunk_filters(
     scope: RetrievalScope,
     *,
     embedding_model: str,
 ) -> list[object]:
     filters: list[object] = [
         DocumentRow.engagement_id == scope.engagement_id,
-        DocumentRow.version == PassageRow.document_version,
+        DocumentRow.version == ChunkRow.document_version,
         DocumentRow.searchable.is_(True),
-        PassageRow.embedding_model == embedding_model,
-        PassageRow.embedding.is_not(None),
+        ChunkRow.embedding_model == embedding_model,
+        ChunkRow.embedding.is_not(None),
     ]
     if scope.folder_prefix is not None and scope.folder_prefix != "":
         filters.append(DocumentRow.path.like(f"{scope.folder_prefix}%"))
@@ -67,19 +67,19 @@ class PostgresVectorIndex:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
-    async def upsert_passages(
+    async def upsert_chunks(
         self,
         *,
         engagement_id: EngagementId,
         document_id: DocumentId,
         document_path: DocumentPath,
         document_version: int,
-        passages: Sequence[Passage],
+        chunks: Sequence[Chunk],
         embeddings: Sequence[Sequence[float]],
         embedding_model: str,
     ) -> None:
-        if len(passages) != len(embeddings):
-            msg = "passages and embeddings must have the same length"
+        if len(chunks) != len(embeddings):
+            msg = "chunks and embeddings must have the same length"
             raise ValueError(msg)
 
         doc_stmt = select(DocumentRow.id).where(
@@ -96,29 +96,29 @@ class PostgresVectorIndex:
             raise ValueError(msg)
 
         await self._session.execute(
-            delete(PassageRow).where(PassageRow.document_id == document_id)
+            delete(ChunkRow).where(ChunkRow.document_id == document_id)
         )
 
-        for passage, embedding in zip(passages, embeddings, strict=True):
-            if passage.document_id != document_id:
-                msg = "passage.document_id must match document_id"
+        for chunk, embedding in zip(chunks, embeddings, strict=True):
+            if chunk.document_id != document_id:
+                msg = "chunk.document_id must match document_id"
                 raise ValueError(msg)
-            if passage.document_version != document_version:
-                msg = "passage.document_version must match document_version"
+            if chunk.document_version != document_version:
+                msg = "chunk.document_version must match document_version"
                 raise ValueError(msg)
             self._session.add(
-                PassageRow(
-                    id=passage.id,
-                    document_id=passage.document_id,
-                    document_version=passage.document_version,
-                    ordinal=passage.ordinal,
-                    page=passage.page,
-                    heading_path=list(passage.heading_path),
-                    text=passage.text,
-                    token_count=passage.token_count,
+                ChunkRow(
+                    id=chunk.id,
+                    document_id=chunk.document_id,
+                    document_version=chunk.document_version,
+                    ordinal=chunk.ordinal,
+                    page=chunk.page,
+                    heading_path=list(chunk.heading_path),
+                    text=chunk.text,
+                    token_count=chunk.token_count,
                     embedding=list(embedding),
                     embedding_model=embedding_model,
-                    created_at=passage.created_at,
+                    created_at=chunk.created_at,
                 )
             )
         await self._session.flush()
@@ -131,22 +131,22 @@ class PostgresVectorIndex:
         *,
         embedding_model: str,
         min_score: float,
-    ) -> list[ScoredPassage]:
-        filters = _scoped_passage_filters(scope, embedding_model=embedding_model)
+    ) -> list[ScoredChunk]:
+        filters = _scoped_chunk_filters(scope, embedding_model=embedding_model)
         embedding_list = list(query_embedding)
-        distance = PassageRow.embedding.cosine_distance(embedding_list)
+        distance = ChunkRow.embedding.cosine_distance(embedding_list)
         similarity = (1.0 - distance).label("similarity")
 
-        vector_stmt: Select[tuple[PassageRow, str, float]] = (
-            select(PassageRow, DocumentRow.path, similarity)
-            .join(DocumentRow, DocumentRow.id == PassageRow.document_id)
+        vector_stmt: Select[tuple[ChunkRow, str, float]] = (
+            select(ChunkRow, DocumentRow.path, similarity)
+            .join(DocumentRow, DocumentRow.id == ChunkRow.document_id)
             .where(*filters)
             .order_by(distance.asc())
             .limit(max(scope.top_k * 4, scope.top_k))
         )
         vector_rows = (await self._session.execute(vector_stmt)).all()
 
-        vector_survivors: list[tuple[PassageRow, str, float]] = []
+        vector_survivors: list[tuple[ChunkRow, str, float]] = []
         for row, path, score in vector_rows:
             if float(score) >= min_score:
                 vector_survivors.append((row, path, float(score)))
@@ -169,14 +169,14 @@ class PostgresVectorIndex:
         )
 
         fused_ids = _rrf_merge(vector_ranked_ids, fts_ranked_ids)[: scope.top_k]
-        results: list[ScoredPassage] = []
-        for passage_id in fused_ids:
-            row = row_by_id[passage_id]
+        results: list[ScoredChunk] = []
+        for chunk_id in fused_ids:
+            row = row_by_id[chunk_id]
             results.append(
-                ScoredPassage(
-                    passage=_passage_from_row(row),
-                    document_path=path_by_id[passage_id],
-                    score=score_by_id[passage_id],
+                ScoredChunk(
+                    chunk=_chunk_from_row(row),
+                    document_path=path_by_id[chunk_id],
+                    score=score_by_id[chunk_id],
                 )
             )
         return results
@@ -193,17 +193,17 @@ class PostgresVectorIndex:
         if not query.strip() or not allowed_ids:
             return []
 
-        filters = _scoped_passage_filters(scope, embedding_model=embedding_model)
+        filters = _scoped_chunk_filters(scope, embedding_model=embedding_model)
         ts_query = func.websearch_to_tsquery("english", query)
-        rank = func.ts_rank_cd(PassageRow.search_vector, ts_query)
+        rank = func.ts_rank_cd(ChunkRow.search_vector, ts_query)
 
         stmt = (
-            select(PassageRow.id)
-            .join(DocumentRow, DocumentRow.id == PassageRow.document_id)
+            select(ChunkRow.id)
+            .join(DocumentRow, DocumentRow.id == ChunkRow.document_id)
             .where(
                 *filters,
-                PassageRow.id.in_(allowed_ids),
-                PassageRow.search_vector.op("@@")(ts_query),
+                ChunkRow.id.in_(allowed_ids),
+                ChunkRow.search_vector.op("@@")(ts_query),
             )
             .order_by(rank.desc())
             .limit(limit)

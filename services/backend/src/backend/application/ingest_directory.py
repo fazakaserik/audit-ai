@@ -19,14 +19,14 @@ from domain.common import new_uuid, utc_now
 from domain.document import Document, DocumentId, DocumentPath
 from domain.engagement import Engagement, EngagementId
 from domain.errors import ValidationError
-from domain.passage import Passage, PassageId
+from domain.chunk import Chunk, ChunkId
 
 
 @dataclass(frozen=True, slots=True)
 class IngestDirectoryResult:
     engagement_id: EngagementId
     documents_indexed: int
-    passages_indexed: int
+    chunks_indexed: int
     skipped: tuple[str, ...]
 
 
@@ -58,7 +58,7 @@ async def ingest_directory(
 
     skipped: list[str] = []
     docs_indexed = 0
-    passages_indexed = 0
+    chunks_indexed = 0
 
     for path in sorted(source_dir.rglob("*")):
         if not path.is_file():
@@ -96,9 +96,9 @@ async def ingest_directory(
         )
         await documents.upsert(document)
 
-        passages = [
-            Passage(
-                id=PassageId(new_uuid()),
+        chunks = [
+            Chunk(
+                id=ChunkId(new_uuid()),
                 document_id=document_id,
                 document_version=version,
                 ordinal=chunk.ordinal,
@@ -110,22 +110,22 @@ async def ingest_directory(
             )
             for chunk in chunks
         ]
-        embedded = await embedder.embed([p.text for p in passages])
-        await vector_index.upsert_passages(
+        embedded = await embedder.embed([p.text for p in chunks])
+        await vector_index.upsert_chunks(
             engagement_id=engagement_id,
             document_id=document_id,
             document_path=document_path,
             document_version=version,
-            passages=passages,
+            chunks=chunks,
             embeddings=embedded.vectors,
             embedding_model=embedder.model_name,
         )
         docs_indexed += 1
-        passages_indexed += len(passages)
+        chunks_indexed += len(chunks)
 
     return IngestDirectoryResult(
         engagement_id=engagement_id,
         documents_indexed=docs_indexed,
-        passages_indexed=passages_indexed,
+        chunks_indexed=chunks_indexed,
         skipped=tuple(skipped),
     )

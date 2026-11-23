@@ -12,15 +12,15 @@
 
 ### User Story 1 - Ask a grounded question and get a cited answer (Priority: P1)
 
-An auditor working on a client engagement asks a natural-language question (for example "What is the payment term in the Contoso supply agreement?"). The system answers using only the documents of that engagement and lists, for every answer, which documents and which passages (with page where applicable) the answer is based on.
+An auditor working on a client engagement asks a natural-language question (for example "What is the payment term in the Contoso supply agreement?"). The system answers using only the documents of that engagement and lists, for every answer, which documents and which chunks (with page where applicable) the answer is based on.
 
 **Why this priority**: This is the core value: it replaces a round trip of "auditor asks client, client searches, client replies" with an instant, verifiable answer. Without it, nothing else matters.
 
-**Independent Test**: Load the bundled sample engagement, ask a question whose answer is stated in one sample document, and verify that the answer is correct and that the cited source points to that document and passage.
+**Independent Test**: Load the bundled sample engagement, ask a question whose answer is stated in one sample document, and verify that the answer is correct and that the cited source points to that document and chunk.
 
 **Acceptance Scenarios**:
 
-1. **Given** an engagement with indexed documents that contain the answer, **When** the auditor asks a question, **Then** the response has status "answered", contains an answer, and contains at least one citation identifying the document path, the passage text, and the page (for paginated documents).
+1. **Given** an engagement with indexed documents that contain the answer, **When** the auditor asks a question, **Then** the response has status "answered", contains an answer, and contains at least one citation identifying the document path, the chunk text, and the page (for paginated documents).
 2. **Given** an engagement with indexed documents, **When** the auditor restricts the question to a folder (for example "contracts/"), **Then** only documents inside that folder are used and cited.
 3. **Given** two engagements with different documents, **When** the auditor asks a question in engagement A, **Then** no document from engagement B is ever used or cited.
 4. **Given** a question whose answer would require knowledge not present in the documents (for example general accounting standards), **When** the auditor asks it, **Then** the system does not answer from general knowledge and instead reports insufficient evidence (see User Story 2).
@@ -29,7 +29,7 @@ An auditor working on a client engagement asks a natural-language question (for 
 
 ### User Story 2 - Insufficient evidence produces suggested client questions (Priority: P1)
 
-When the engagement documents do not contain enough information to answer, the system explicitly says so instead of guessing, and drafts 1 to 3 concrete questions or document requests the auditor can send to the client. The suggestions take into account the auditor's role (for example "IT auditor", "financial auditor") and topic of interest (for example "revenue recognition") when provided, and any partially relevant passages that were found.
+When the engagement documents do not contain enough information to answer, the system explicitly says so instead of guessing, and drafts 1 to 3 concrete questions or document requests the auditor can send to the client. The suggestions take into account the auditor's role (for example "IT auditor", "financial auditor") and topic of interest (for example "revenue recognition") when provided, and any partially relevant chunks that were found.
 
 **Why this priority**: Refusing to hallucinate is mandatory for audit work, and turning a refusal into an actionable client request is the differentiating business value of the product. It also defines the required "no relevant result" behavior.
 
@@ -38,7 +38,7 @@ When the engagement documents do not contain enough information to answer, the s
 **Acceptance Scenarios**:
 
 1. **Given** an engagement where no document is relevant to the question, **When** the auditor asks it, **Then** the response has status "insufficient_evidence", contains no factual answer, contains no citations, and contains 1 to 3 suggested client questions.
-2. **Given** partially relevant documents (for example a policy that mentions a topic but not the asked detail), **When** the auditor asks, **Then** the response has status "insufficient_evidence", cites the partially relevant passages, and the suggested questions ask specifically for the missing detail.
+2. **Given** partially relevant documents (for example a policy that mentions a topic but not the asked detail), **When** the auditor asks, **Then** the response has status "insufficient_evidence", cites the partially relevant chunks, and the suggested questions ask specifically for the missing detail.
 3. **Given** the auditor provides a role and a topic, **When** evidence is insufficient, **Then** the suggested questions are phrased for that role and topic.
 4. **Given** an engagement that has no documents at all, **When** the auditor asks a question, **Then** the response has status "insufficient_evidence" and the suggestions ask the client to provide relevant documents.
 
@@ -143,7 +143,7 @@ The auditor uses an interactive terminal application, similar in feel to modern 
 - Model provider times out: a distinct "model timeout" error is returned within the configured time limit plus a small margin; no partial answer is returned.
 - Model provider fails (unreachable, rate limited, invalid key, malformed output): a distinct "model unavailable" error; details of credentials are never exposed.
 - Search store unavailable: a distinct "dependency unavailable" error.
-- Model output cites a source that was not among the retrieved passages: that citation is discarded; if no valid citation remains, the result is treated as insufficient evidence.
+- Model output cites a source that was not among the retrieved chunks: that citation is discarded; if no valid citation remains, the result is treated as insufficient evidence.
 - Upload exceeds size or file-count limits, or the zip is corrupted: rejected as a whole at submission with a specific error.
 - Document with no extractable text (for example a scanned image-only PDF): stored and listable, but reported in the upload status as "not searchable" with a reason.
 - Status requested for an unknown upload identifier, or for an upload that belongs to another engagement: "not found".
@@ -180,21 +180,21 @@ The auditor uses an interactive terminal application, similar in feel to modern 
 **Question answering**
 
 - **FR-013**: System MUST accept a question for an engagement with optional folder scope, auditor role, and topic of interest.
-- **FR-014**: System MUST answer only from passages retrieved from the engagement's documents and MUST NOT use the model's general knowledge to supply facts.
-- **FR-014a**: Passage retrieval MUST match both by meaning and by exact terms, so that questions containing identifiers such as invoice numbers, contract ids, amounts or names find the passages that contain those exact terms.
+- **FR-014**: System MUST answer only from chunks retrieved from the engagement's documents and MUST NOT use the model's general knowledge to supply facts.
+- **FR-014a**: Chunk retrieval MUST match both by meaning and by exact terms, so that questions containing identifiers such as invoice numbers, contract ids, amounts or names find the chunks that contain those exact terms.
 - **FR-015**: Every response MUST carry an explicit outcome: "answered" or "insufficient_evidence".
-- **FR-016**: An "answered" response MUST include at least one citation; each citation MUST identify the document path, the passage text, the page number when the document is paginated, and a relevance score.
+- **FR-016**: An "answered" response MUST include at least one citation; each citation MUST identify the document path, the chunk text, the page number when the document is paginated, and a relevance score.
 - **FR-016a**: The answer text MUST mark each claim with a numbered reference (for example "[1]") that corresponds to an entry in the citation list; references that point to no citation MUST be removed, and an answer left with no valid reference MUST be treated as insufficient evidence.
-- **FR-017**: Citations MUST only reference passages that were actually retrieved for that request.
-- **FR-018**: An "insufficient_evidence" response MUST include 1 to 3 suggested client questions or document requests, MAY include citations of partially relevant passages, and MUST NOT include a factual answer.
+- **FR-017**: Citations MUST only reference chunks that were actually retrieved for that request.
+- **FR-018**: An "insufficient_evidence" response MUST include 1 to 3 suggested client questions or document requests, MAY include citations of partially relevant chunks, and MUST NOT include a factual answer.
 - **FR-019**: Suggested client questions MUST reflect the provided role and topic when given.
-- **FR-020**: If no retrieved passage meets the configured relevance threshold, the system MUST return "insufficient_evidence" without attempting to generate an answer.
+- **FR-020**: If the ask agent finishes with no in-threshold evidence chunks (for example every `search_relevant_chunks` call returned nothing useful), the system MUST return "insufficient_evidence" without generating a factual answer.
 
 **Sessions**
 
 - **FR-031**: System MUST let a caller list the sessions of an engagement (newest activity first) and retrieve a session with all its turns.
 - **FR-032**: Every question MUST be stored as a turn of a session, together with its complete response. A question MAY name an existing session; if it does not, a new session MUST be created. Every response (both outcomes) MUST contain the session identifier and the turn identifier.
-- **FR-033**: When a question is asked within a session, the system MUST use a bounded number of recent turns (configurable, default 5) only to interpret the question (resolving references such as "it" or "that contract"); evidence for the answer MUST still come only from passages retrieved for the current turn.
+- **FR-033**: When a question is asked within a session, the system MUST use a bounded number of recent turns (configurable, default 5) only to interpret the question (resolving references such as "it" or "that contract"); evidence for the answer MUST still come only from chunks retrieved for the current turn.
 - **FR-034**: A session MUST belong to exactly one engagement and MUST NOT be usable with another engagement.
 - **FR-035**: A session title MUST be derived automatically from its first question.
 
@@ -216,7 +216,7 @@ The auditor uses an interactive terminal application, similar in feel to modern 
 
 - **FR-027**: System MUST support a cloud mode using a paid model provider and a local mode using a free model running on the operator's machine, for both answer generation and search embeddings.
 - **FR-028**: Switching modes MUST require only configuration changes, never code changes.
-- **FR-029**: Model call time limit, number of retrieved passages, relevance threshold, maximum concurrent model calls, and upload limits MUST be configurable, with documented defaults.
+- **FR-029**: Model call time limit, number of retrieved chunks, relevance threshold, maximum concurrent model calls, and upload limits MUST be configurable, with documented defaults.
 - **FR-030**: Switching the embedding model MUST NOT corrupt or mix existing search data; the system MUST keep data for different embedding models separate and document that re-loading is required.
 
 ### Key Entities
@@ -224,10 +224,10 @@ The auditor uses an interactive terminal application, similar in feel to modern 
 - **Engagement**: One audit of one client for one period. Human-readable identifier, display name, creation and last-update time. Owns uploads, documents and sessions.
 - **Upload**: One submission of files or an archive to a target folder. Engagement, target folder, status, submission and completion time, per-file outcomes. Processed in the background.
 - **Document**: An uploaded file within an engagement. Engagement, folder path (unique within engagement), file name, type, size, content fingerprint, upload time, searchability status.
-- **Passage**: A searchable piece of a document's text. Document, position, page (if paginated), text.
+- **Chunk**: A searchable piece of a document's text. Document, position, page (if paginated), text.
 - **Question**: An auditor's query. Engagement, text, optional folder scope, optional role, optional topic.
 - **Answer**: Outcome (answered / insufficient evidence), answer text (if answered), citations, suggested client questions, session identifier, turn identifier, request identifier.
-- **Citation**: Reference from an answer to a passage. Document path, page, passage text, relevance score.
+- **Citation**: Reference from an answer to a chunk. Document path, page, chunk text, relevance score.
 - **Suggested Client Question**: A draft question or document request for the client, optionally linked to the topic it addresses.
 - **Session**: A saved conversation of one auditor about one engagement. Identifier, engagement, title, creation time, last activity time. Owns turns.
 - **Turn**: One question and its complete response within a session, in order. Question (with scope, role, topic), the interpreted standalone question, the response, timestamp.
@@ -240,7 +240,7 @@ The auditor uses an interactive terminal application, similar in feel to modern 
 - **SC-002**: In local mode with no paid credentials, 100% of the documented example requests complete successfully.
 - **SC-003**: For a documented set of at least 6 sample questions whose answers exist in the sample documents, every answer includes a citation pointing to the document that actually contains the answer.
 - **SC-004**: For a documented set of at least 3 sample questions not covered by the sample documents, 100% return "insufficient_evidence" with at least one suggested client question and no fabricated answer.
-- **SC-005**: 0 occurrences of a citation or passage from another engagement in automated isolation tests.
+- **SC-005**: 0 occurrences of a citation or chunk from another engagement in automated isolation tests.
 - **SC-006**: Every documented error category is covered by an automated test that asserts the consistent error shape, and the automated test suite runs with no network access and no paid credentials.
 - **SC-007**: In cloud mode, 90% of questions on the sample engagement are answered in under 10 seconds.
 - **SC-008**: Switching between cloud and local mode requires changing only configuration values (verified by the documented procedure).

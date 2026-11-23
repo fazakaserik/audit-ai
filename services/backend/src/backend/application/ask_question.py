@@ -9,12 +9,12 @@ from backend.application.ports import (
     AskResult,
     AskSessionBound,
     ChatModel,
+    DocumentStorage,
     Embedder,
     SessionRepository,
 )
 from backend.config import Settings
-from backend.rag.graph import run_ask_graph
-from backend.rag.nodes import AskGraphDeps
+from backend.rag.graph import AskGraphDeps, run_ask_graph
 from backend.rag.progress import CollectingAskProgress
 from domain.answer import Answer, Question
 from domain.common import new_uuid, utc_now
@@ -122,6 +122,7 @@ async def ask_question(
     *,
     chat: ChatModel,
     embedder: Embedder,
+    storage: DocumentStorage,
     settings: Settings,
     engagement_id: EngagementId,
     question: Question,
@@ -138,6 +139,9 @@ async def ask_question(
         chat=chat,
         embedder=embedder,
         vector_index=bound.vector_index,
+        engagements=bound.engagements,
+        documents=bound.documents,
+        storage=storage,
         settings=settings,
         progress=progress,
     )
@@ -165,6 +169,7 @@ async def ask_question_stream(
     *,
     chat: ChatModel,
     embedder: Embedder,
+    storage: DocumentStorage,
     settings: Settings,
     engagement_id: EngagementId,
     question: Question,
@@ -191,6 +196,9 @@ async def ask_question_stream(
                 chat=chat,
                 embedder=embedder,
                 vector_index=bound.vector_index,
+                engagements=bound.engagements,
+                documents=bound.documents,
+                storage=storage,
                 settings=settings,
                 progress=progress,
             )

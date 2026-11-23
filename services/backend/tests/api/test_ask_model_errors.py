@@ -6,7 +6,7 @@ from domain.engagement import EngagementId
 from domain.errors import ModelTimeoutError, ModelUnavailableError
 from support.ask_api import (
     build_ask_app,
-    index_passage,
+    index_chunk,
     post_ask,
     seed_engagement,
 )
@@ -24,7 +24,7 @@ async def test_model_timeout_returns_504() -> None:
     await seed_engagement(engagements, engagement_id)
     embedder = FakeEmbedder()
     vector_index = InMemoryVectorIndex()
-    await index_passage(
+    await index_chunk(
         vector_index,
         embedder,
         engagement_id=engagement_id,
@@ -49,7 +49,7 @@ async def test_model_unavailable_returns_502() -> None:
     await seed_engagement(engagements, engagement_id)
     embedder = FakeEmbedder()
     vector_index = InMemoryVectorIndex()
-    await index_passage(
+    await index_chunk(
         vector_index,
         embedder,
         engagement_id=engagement_id,

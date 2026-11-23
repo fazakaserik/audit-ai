@@ -8,8 +8,7 @@ from backend.rag.citations import filter_and_build_citations
 from backend.rag.prompts import AnswerGenerationResult
 
 if TYPE_CHECKING:
-    from backend.rag.graph import run_ask_graph
-    from backend.rag.nodes import AskGraphDeps
+    from backend.rag.graph import AskGraphDeps, run_ask_graph
 
 __all__ = [
     "AnswerGenerationResult",
@@ -25,7 +24,7 @@ def __getattr__(name: str) -> object:
 
         return run_ask_graph
     if name == "AskGraphDeps":
-        from backend.rag.nodes import AskGraphDeps
+        from backend.rag.graph import AskGraphDeps
 
         return AskGraphDeps
     msg = f"module {__name__!r} has no attribute {name!r}"

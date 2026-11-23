@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-from backend.application.ports import ScoredPassage
+from backend.application.ports import ScoredChunk
 from backend.rag.prompts import AnswerGenerationResult
 from domain.answer import Answer, Citation, InsufficientReason, Question
 from domain.document import FolderPath
@@ -18,7 +18,7 @@ class AskState(TypedDict, total=False):
     folder_scope: FolderPath | None
     prior_turns: tuple[Turn, ...]
     standalone_question: str
-    scored_passages: list[ScoredPassage]
+    scored_chunks: list[ScoredChunk]
     generation: AnswerGenerationResult | None
     insufficient_reason: InsufficientReason | None
     partial_citations: tuple[Citation, ...]

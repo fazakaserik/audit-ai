@@ -6,14 +6,14 @@ from domain.engagement import EngagementId
 from support.ask_api import (
     answered_chat,
     build_ask_app,
-    index_passage,
+    index_chunk,
     post_ask,
     seed_engagement,
 )
 from support.fakes import FakeEmbedder, InMemoryEngagementRepository, InMemoryVectorIndex
 
 
-async def test_ask_does_not_see_other_engagement_passages() -> None:
+async def test_ask_does_not_see_other_engagement_chunks() -> None:
     target: EngagementId = "northwind-fy2025"
     other: EngagementId = "adventureworks-fy2024"
     engagements = InMemoryEngagementRepository()
@@ -22,7 +22,7 @@ async def test_ask_does_not_see_other_engagement_passages() -> None:
 
     embedder = FakeEmbedder()
     vector_index = InMemoryVectorIndex()
-    await index_passage(
+    await index_chunk(
         vector_index,
         embedder,
         engagement_id=other,
@@ -44,4 +44,4 @@ async def test_ask_does_not_see_other_engagement_passages() -> None:
     assert response.status_code == 200
     body = response.json()
     assert body["status"] == "insufficient_evidence"
-    assert body["reason"] == "no_relevant_passages"
+    assert body["reason"] == "no_relevant_chunks"
