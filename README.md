@@ -7,6 +7,8 @@ cited answers — or suggested client questions when evidence is missing.
 OpenAI or free local Ollama). The CLI and TUI are optional clients over the same API; they are
 not required to evaluate the backend.
 
+See [specs/001-audit-assistant-rag/](specs/001-audit-assistant-rag/) for the full specification.
+
 ## Workspace
 
 | Path               | Package   | Role                                                                                          |
