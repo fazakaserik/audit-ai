@@ -1,0 +1,11 @@
+:8000 {
+	reverse_proxy api:8000 {
+		lb_policy round_robin
+		health_uri /health/live
+		health_interval 10s
+		transport http {
+			read_timeout 300s
+			write_timeout 300s
+		}
+	}
+}

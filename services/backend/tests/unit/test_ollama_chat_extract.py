@@ -1,0 +1,40 @@
+"""Unit tests for Ollama structured payload extraction (thinking fallback)."""
+
+from __future__ import annotations
+
+import pytest
+
+from backend.domain.errors import ModelUnavailableError
+from backend.infrastructure.ollama_chat import _extract_json_text
+
+
+def test_extract_prefers_content() -> None:
+    text = _extract_json_text(
+        content='{"can_answer": true, "answer_text": "ok", "markers_used": [1]}',
+        thinking='{"can_answer": false}',
+    )
+    assert '"can_answer": true' in text
+
+
+def test_extract_falls_back_to_thinking_json() -> None:
+    text = _extract_json_text(
+        content="",
+        thinking='{"can_answer": false, "answer_text": "", "markers_used": []}',
+    )
+    assert '"can_answer": false' in text
+
+
+def test_extract_json_embedded_in_thinking_prose() -> None:
+    thinking = (
+        "Reasoning steps...\n"
+        'Final: {"can_answer": true, "answer_text": "Meal limit is 75 USD [1]", '
+        '"markers_used": [1]}\n'
+        "done"
+    )
+    text = _extract_json_text(content=None, thinking=thinking)
+    assert '"answer_text"' in text
+
+
+def test_extract_raises_when_no_json() -> None:
+    with pytest.raises(ModelUnavailableError, match="empty content"):
+        _extract_json_text(content="", thinking="no json here")

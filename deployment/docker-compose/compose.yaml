@@ -1,0 +1,147 @@
+name: auditor-ai
+
+x-app: &app
+  build:
+    context: ../..
+    dockerfile: services/backend/Dockerfile
+  image: auditor-ai-app:local
+  env_file:
+    - .env
+  environment:
+    DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-audit}:${POSTGRES_PASSWORD:-audit}@postgres:5432/${POSTGRES_DB:-audit}
+    DOCUMENT_STORAGE_PATH: /data/storage
+    OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-audit}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-audit}
+      POSTGRES_DB: ${POSTGRES_DB:-audit}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    <<: *app
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-audit}:${POSTGRES_PASSWORD:-audit}@postgres:5432/${POSTGRES_DB:-audit}
+      DOCUMENT_STORAGE_PATH: /data/storage
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      # No model calls; keep provider defaults from env_file without requiring GPU.
+    command:
+      [
+        "uv",
+        "run",
+        "--package",
+        "backend",
+        "alembic",
+        "-c",
+        "services/backend/alembic.ini",
+        "upgrade",
+        "head",
+      ]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Scaled to 2 by just compose-up / compose-dev-up (--scale api=2).
+  api:
+    <<: *app
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-audit}:${POSTGRES_PASSWORD:-audit}@postgres:5432/${POSTGRES_DB:-audit}
+      DOCUMENT_STORAGE_PATH: /data/storage
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    volumes:
+      - document_storage:/data/storage
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=5)",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  # Scaled to 2 by just compose-up / compose-dev-up (--scale upload-processor=2).
+  upload-processor:
+    <<: *app
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-audit}:${POSTGRES_PASSWORD:-audit}@postgres:5432/${POSTGRES_DB:-audit}
+      DOCUMENT_STORAGE_PATH: /data/storage
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+    command: ["audit-worker"]
+    volumes:
+      - document_storage:/data/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  load-balancer:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    depends_on:
+      api:
+        condition: service_healthy
+
+  # Optional in-compose Ollama. Prefer host Ollama for GPU day-to-day.
+  ollama:
+    profiles: ["local"]
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  ollama-pull:
+    profiles: ["local"]
+    image: ollama/ollama:latest
+    depends_on:
+      - ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama pull qwen3.5:4b
+        ollama pull nomic-embed-text
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    restart: "no"
+
+volumes:
+  postgres_data:
+  document_storage:
+  ollama_data:
