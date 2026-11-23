@@ -23,6 +23,5 @@ def session_label(item: SessionSummaryResponse) -> Text:
 
 def upload_label(item: UploadSummaryResponse) -> Text:
     return Text(
-        f"{item.target_folder}  ({item.id})  · {item.status.value}, "
-        f"{item.created_at.isoformat()}"
+        f"{item.target_folder}  ({item.id})  · {item.status.value}, {item.created_at.isoformat()}"
     )

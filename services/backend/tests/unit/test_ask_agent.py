@@ -342,9 +342,7 @@ async def test_agent_current_time_answers_without_chunks() -> None:
         tool_turns=[
             ToolTurnResult(
                 content=None,
-                tool_calls=(
-                    ToolCall(id="t_time", name="get_current_time", arguments="{}"),
-                ),
+                tool_calls=(ToolCall(id="t_time", name="get_current_time", arguments="{}"),),
                 usage=LlmUsage(),
             ),
             ToolTurnResult(content=None, tool_calls=(), usage=LlmUsage()),
