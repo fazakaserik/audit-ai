@@ -108,10 +108,12 @@ compose-dev-clean:
     {{compose_dev}} down -v --remove-orphans
 
 seed:
-    uv run python scripts/seed_samples.py
+    uv run --package cli python scripts/seed_samples.py
 
 cli:
-    uv run aiditor --help
+    uv run --package cli aiditor --help
 
 tui:
-    uv run python -m tui
+    # --package tui: root uv run does not install workspace members, and
+    # `python -m tui` would otherwise bind the repo's ./tui/ folder (no __main__).
+    uv run --package tui aiditor-tui

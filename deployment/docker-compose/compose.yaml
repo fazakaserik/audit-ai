@@ -1,10 +1,10 @@
-name: auditor-ai
+name: aiditor
 
 x-app: &app
   build:
     context: ../..
     dockerfile: services/backend/Dockerfile
-  image: auditor-ai-app:local
+  image: aiditor-app:local
   env_file:
     - .env
   environment:

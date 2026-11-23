@@ -1,7 +1,7 @@
 # Dev override: publish internal service ports on the host.
 # Usage: docker compose -f compose.yaml -f compose.dev.yaml up -d
 
-name: auditor-ai-dev
+name: aiditor-dev
 
 services:
   postgres:
