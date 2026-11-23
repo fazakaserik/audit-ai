@@ -6,9 +6,13 @@ import asyncio
 from collections.abc import AsyncIterator, Sequence
 
 from backend.application.agents.progress import CollectingAskProgress
-from backend.application.api.contracts.v1.mapping import answer_to_response
-from backend.application.api.contracts.v1.responses import AskResponse
-from backend.application.dto import AskResult
+from backend.application.dto import (
+    AskResult,
+    AskStreamError,
+    AskStreamEvent,
+    AskStreamFinal,
+    AskStreamThinkingDone,
+)
 from backend.application.llm.chat_model import ChatModel
 from backend.application.llm.embedder import Embedder
 from backend.application.repositories.document import DocumentRepository
@@ -18,7 +22,7 @@ from backend.application.storage.document_storage import DocumentStorage
 from backend.application.storage.vector_index import VectorIndex
 from backend.config import Settings
 from backend.domain.answer import Answer, Question
-from backend.domain.common import RequestId, new_uuid, utc_now
+from backend.domain.common import new_uuid, utc_now
 from backend.domain.engagement import EngagementId
 from backend.domain.errors import NotFoundError
 from backend.domain.session import LlmUsage, Session, SessionId, Turn, TurnId
@@ -44,17 +48,6 @@ def _thinking_from_progress(
     text = "".join(progress.thinking_chunks).strip() or None
     seconds = round(progress.thinking_seconds, 1) if progress.thinking_seconds > 0 else None
     return text, seconds
-
-
-def _to_ask_response(result: AskResult, *, request_id: RequestId) -> AskResponse:
-    return answer_to_response(
-        result.answer,
-        session_id=result.session_id,
-        turn_id=result.turn_id,
-        request_id=request_id,
-        usage=result.usage,
-        session_total_tokens=result.session_total_tokens,
-    )
 
 
 class AskService:
@@ -160,14 +153,14 @@ class AskService:
             progress=progress,
         )
 
-    async def ask_question(
+    async def _run_ask(
         self,
         *,
         engagement_id: EngagementId,
         question: Question,
         session_id: SessionId | None,
-        request_id: RequestId,
-    ) -> AskResponse:
+        progress: CollectingAskProgress,
+    ) -> AskResult:
         from backend.application.agents.research_agent.graph import run_graph
 
         session, prior_turns = await self._prepare_session(
@@ -175,7 +168,6 @@ class AskService:
             question=question,
             session_id=session_id,
         )
-        progress = CollectingAskProgress()
         graph_result = await run_graph(
             engagement_id=engagement_id,
             question=question,
@@ -183,7 +175,7 @@ class AskService:
             prior_turns=prior_turns,
             deps=self._graph_deps(progress),
         )
-        result = await self._persist_turn(
+        return await self._persist_turn(
             session=session,
             question=question,
             answer=graph_result.answer,
@@ -192,7 +184,21 @@ class AskService:
             prior_turns=prior_turns,
             progress=progress,
         )
-        return _to_ask_response(result, request_id=request_id)
+
+    async def ask_question(
+        self,
+        *,
+        engagement_id: EngagementId,
+        question: Question,
+        session_id: SessionId | None,
+    ) -> AskResult:
+        progress = CollectingAskProgress()
+        return await self._run_ask(
+            engagement_id=engagement_id,
+            question=question,
+            session_id=session_id,
+            progress=progress,
+        )
 
     async def ask_question_stream(
         self,
@@ -200,12 +206,9 @@ class AskService:
         engagement_id: EngagementId,
         question: Question,
         session_id: SessionId | None,
-        request_id: RequestId,
-    ) -> AsyncIterator[dict[str, object]]:
-        """Yield progress event dicts, then a final AskResponse (or error)."""
-        from backend.application.agents.research_agent.graph import run_graph
-
-        queue: asyncio.Queue[dict[str, object] | None] = asyncio.Queue()
+    ) -> AsyncIterator[AskStreamEvent]:
+        """Yield progress events, then AskStreamFinal or AskStreamError."""
+        queue: asyncio.Queue[AskStreamEvent | None] = asyncio.Queue()
 
         async def emit(event: dict[str, object]) -> None:
             await queue.put(event)
@@ -215,42 +218,21 @@ class AskService:
 
         async def run() -> None:
             try:
-                session, prior_turns = await self._prepare_session(
+                result = await self._run_ask(
                     engagement_id=engagement_id,
                     question=question,
                     session_id=session_id,
-                )
-                graph_result = await run_graph(
-                    engagement_id=engagement_id,
-                    question=question,
-                    folder_scope=question.folder_scope,
-                    prior_turns=prior_turns,
-                    deps=self._graph_deps(progress),
-                )
-                if progress.thinking_seconds > 0 or progress.thinking_chunks:
-                    await emit(
-                        {
-                            "type": "thinking_done",
-                            "duration_seconds": round(progress.thinking_seconds, 1),
-                        }
-                    )
-                result = await self._persist_turn(
-                    session=session,
-                    question=question,
-                    answer=graph_result.answer,
-                    standalone_question=graph_result.standalone_question,
-                    usage=graph_result.usage,
-                    prior_turns=prior_turns,
                     progress=progress,
                 )
-                await emit(
-                    {
-                        "type": "final",
-                        "response": _to_ask_response(result, request_id=request_id),
-                    }
-                )
+                if progress.thinking_seconds > 0 or progress.thinking_chunks:
+                    await queue.put(
+                        AskStreamThinkingDone(
+                            duration_seconds=round(progress.thinking_seconds, 1),
+                        )
+                    )
+                await queue.put(AskStreamFinal(result=result))
             except Exception as exc:
-                await emit({"type": "error", "error": exc})
+                await queue.put(AskStreamError(error=exc))
             finally:
                 await queue.put(None)
 

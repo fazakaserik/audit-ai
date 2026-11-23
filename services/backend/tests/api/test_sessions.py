@@ -12,6 +12,7 @@ from support.fakes import (
     FakeEmbedder,
     InMemoryEngagementRepository,
     InMemoryVectorIndex,
+    repeat_agent_search_tool_turns,
 )
 
 
@@ -29,6 +30,7 @@ async def test_ask_creates_session_and_follow_up_continues() -> None:
         text="Payment is due within thirty days of invoice.",
     )
     chat = FakeChatModel(
+        tool_turns=repeat_agent_search_tool_turns(2),
         responses=[
             AnswerGenerationResult(
                 can_answer=True,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from textual.app import ComposeResult
 from textual.screen import Screen
@@ -20,7 +20,7 @@ class ChromeScreen(Screen[None]):
 
     @property
     def aiditor(self) -> AiditorApp:
-        return self.app  # type: ignore[return-value]
+        return cast(AiditorApp, self.app)
 
     def compose(self) -> ComposeResult:
         yield BrandHeader(self.aiditor.state, id="brand-header")

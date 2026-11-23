@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from backend.application.agents.research_agent.agent import AgentDeps, run_agent
+from backend.application.agents.research_agent.graph import GraphDeps, run_graph
 from backend.application.agents.research_agent.prompts import (
     AnswerGenerationResult,
     build_agent_messages,
@@ -24,6 +24,7 @@ from support.fakes import (
     InMemoryDocumentStorage,
     InMemoryEngagementRepository,
     InMemoryVectorIndex,
+    agent_search_tool_turns,
 )
 
 
@@ -89,6 +90,7 @@ async def test_follow_up_ask_still_retrieves_fresh_evidence() -> None:
         embedding_model=embedder.model_name,
     )
     chat = FakeChatModel(
+        tool_turns=agent_search_tool_turns(),
         response=AnswerGenerationResult(
             can_answer=True,
             answer_text="Thirty days [1].",
@@ -116,12 +118,12 @@ async def test_follow_up_ask_still_retrieves_fresh_evidence() -> None:
         ),
         created_at=utc_now(),
     )
-    result = await run_agent(
+    result = await run_graph(
         engagement_id=engagement_id,
         question=Question(text="payment terms?"),
         folder_scope=None,
         prior_turns=(prior,),
-        deps=AgentDeps(
+        deps=GraphDeps(
             chat=chat,
             embedder=embedder,
             vector_index=vector_index,

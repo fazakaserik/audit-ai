@@ -4,14 +4,16 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import Literal, TypeVar
 
 from pydantic import BaseModel
 
 from backend.domain.answer import Answer
 from backend.domain.chunk import Chunk
-from backend.domain.document import ContentType, DocumentPath, FolderPath
-from backend.domain.engagement import EngagementId
-from backend.domain.session import LlmUsage, SessionId, TurnId
+from backend.domain.document import ContentType, Document, DocumentPath, FolderPath
+from backend.domain.engagement import Engagement, EngagementId
+from backend.domain.session import LlmUsage, Session, SessionId, Turn, TurnId
+from backend.domain.upload import Upload, UploadId, UploadItem
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +88,73 @@ class RetrievalScope:
     engagement_id: EngagementId
     folder_prefix: FolderPath | None = None
     top_k: int = 8
+
+
+T = TypeVar("T")
+
+
+@dataclass(frozen=True, slots=True)
+class Page[T]:
+    """Offset-based pagination (application layer, not HTTP contracts)."""
+
+    items: tuple[T, ...]
+    total: int
+    limit: int
+    offset: int
+
+
+@dataclass(frozen=True, slots=True)
+class EngagementWithDocumentCount:
+    engagement: Engagement
+    document_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class DocumentListing:
+    items: tuple[Document, ...]
+    folders: tuple[str, ...]
+    total: int
+    limit: int
+    offset: int
+
+
+@dataclass(frozen=True, slots=True)
+class UploadAccepted:
+    upload_id: UploadId
+
+
+@dataclass(frozen=True, slots=True)
+class SessionDetail:
+    session: Session
+    turns: tuple[Turn, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class UploadDetail:
+    upload: Upload
+    items: tuple[UploadItem, ...]
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AskStreamFinal:
+    result: AskResult
+    type: Literal["final"] = "final"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AskStreamError:
+    error: BaseException
+    type: Literal["error"] = "error"
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
+class AskStreamThinkingDone:
+    duration_seconds: float
+    type: Literal["thinking_done"] = "thinking_done"
+
+
+AskProgressEvent = dict[str, object]
+AskStreamEvent = AskProgressEvent | AskStreamFinal | AskStreamError | AskStreamThinkingDone
 
 
 @dataclass(frozen=True, slots=True)

@@ -20,6 +20,7 @@ from support.fakes import (
     FakeEmbedder,
     InMemoryEngagementRepository,
     InMemoryVectorIndex,
+    agent_search_tool_turns,
 )
 from support.test_container import build_fakes_bound, build_test_container
 
@@ -76,6 +77,7 @@ async def test_post_ask_stream_progress_and_final() -> None:
     )
 
     chat = FakeChatModel(
+        tool_turns=agent_search_tool_turns(),
         response=AnswerGenerationResult(
             can_answer=True,
             answer_text="Meal limit is 75 USD per day [1].",

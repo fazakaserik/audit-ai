@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import uuid
+from typing import cast
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from pydantic_core import ErrorDetails
 
 from backend.domain.common import RequestId
 from backend.domain.errors import DomainError, ErrorCode
@@ -82,13 +84,16 @@ def register_exception_handlers(app: FastAPI) -> None:
         request: Request,
         exc: RequestValidationError,
     ) -> JSONResponse:
-        errors = [
-            FieldError(
-                field=".".join(str(p) for p in err.get("loc", ())),
-                message=str(err.get("msg", "invalid")),
+        errors: list[FieldError] = []
+        for entry in cast(list[ErrorDetails], exc.errors()):
+            loc_parts = entry.get("loc", ())
+            msg_raw = entry.get("msg", "invalid")
+            errors.append(
+                FieldError(
+                    field=".".join(str(part) for part in loc_parts),
+                    message=str(msg_raw),
+                )
             )
-            for err in exc.errors()
-        ]
         problem = ProblemDetails.of(
             code=ErrorCode.VALIDATION_ERROR,
             title=_TITLE[ErrorCode.VALIDATION_ERROR],

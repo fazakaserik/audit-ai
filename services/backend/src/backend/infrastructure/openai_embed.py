@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
-from typing import Any, cast
 
 from openai import (
     APIConnectionError,
@@ -20,7 +19,7 @@ from backend.application.dto import EmbedResult
 from backend.domain.errors import ModelTimeoutError, ModelUnavailableError
 from backend.domain.session import LlmUsage
 from backend.infrastructure._embedding_dims import dimensions_for
-from backend.infrastructure._retry import MAX_ATTEMPTS, RETRY_WAIT
+from backend.infrastructure.llm.retry import MAX_ATTEMPTS, RETRY_WAIT
 
 
 def _is_transient(exc: BaseException) -> bool:
@@ -81,7 +80,7 @@ class OpenAIEmbedder:
     async def _embed_once(self, texts: Sequence[str]) -> EmbedResult:
         response = await self._client.embeddings.create(
             model=self._model,
-            input=cast(Any, list(texts)),
+            input=list(texts),
             timeout=self._timeout_seconds,
         )
         vectors: list[list[float]] = []

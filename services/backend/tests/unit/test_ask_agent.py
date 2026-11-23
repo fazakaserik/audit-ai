@@ -6,7 +6,7 @@ import json
 import uuid
 from datetime import UTC, datetime
 
-from backend.application.agents.research_agent.agent import AgentDeps, run_agent
+from backend.application.agents.research_agent.graph import GraphDeps, run_graph
 from backend.application.agents.research_agent.prompts import AnswerGenerationResult
 from backend.application.dto import (
     ToolCall,
@@ -25,6 +25,7 @@ from support.fakes import (
     InMemoryDocumentStorage,
     InMemoryEngagementRepository,
     InMemoryVectorIndex,
+    agent_search_tool_turns,
 )
 
 
@@ -78,8 +79,8 @@ def _deps(
     documents: InMemoryDocumentRepository | None = None,
     storage: InMemoryDocumentStorage | None = None,
     settings: Settings | None = None,
-) -> AgentDeps:
-    return AgentDeps(
+) -> GraphDeps:
+    return GraphDeps(
         chat=chat,
         embedder=embedder or FakeEmbedder(),
         vector_index=vector_index or InMemoryVectorIndex(),
@@ -102,6 +103,7 @@ async def test_agent_search_then_answer_with_citations() -> None:
         text="Payment is due within thirty days.",
     )
     chat = FakeChatModel(
+        tool_turns=agent_search_tool_turns(),
         response=AnswerGenerationResult(
             can_answer=True,
             answer_text="Thirty days [1].",
@@ -109,7 +111,7 @@ async def test_agent_search_then_answer_with_citations() -> None:
         ),
         usage=LlmUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
     )
-    result = await run_agent(
+    result = await run_graph(
         engagement_id=engagement_id,
         question=Question(text="What are the payment terms?"),
         folder_scope=None,
@@ -125,13 +127,14 @@ async def test_agent_search_then_answer_with_citations() -> None:
 
 async def test_agent_empty_search_is_insufficient() -> None:
     chat = FakeChatModel(
+        tool_turns=agent_search_tool_turns(),
         response=AnswerGenerationResult(
             can_answer=True,
             answer_text="should not run",
             markers_used=(1,),
         ),
     )
-    result = await run_agent(
+    result = await run_graph(
         engagement_id=EngagementId("northwind-fy2025"),
         question=Question(text="Anything?"),
         folder_scope=None,
@@ -177,7 +180,7 @@ async def test_agent_model_chosen_query_not_raw_question() -> None:
             markers_used=(1,),
         ),
     )
-    result = await run_agent(
+    result = await run_graph(
         engagement_id=engagement_id,
         question=Question(text="what about the money stuff?"),
         folder_scope=None,
@@ -221,7 +224,7 @@ async def test_agent_max_rounds_stops_tool_loop() -> None:
         path="a.pdf",
         text="ok text",
     )
-    result = await run_agent(
+    result = await run_graph(
         engagement_id=engagement_id,
         question=Question(text="q"),
         folder_scope=None,
@@ -316,7 +319,7 @@ async def test_agent_list_then_read_then_search() -> None:
             markers_used=(1,),
         ),
     )
-    result = await run_agent(
+    result = await run_graph(
         engagement_id=engagement_id,
         question=Question(text="payment terms?"),
         folder_scope=None,

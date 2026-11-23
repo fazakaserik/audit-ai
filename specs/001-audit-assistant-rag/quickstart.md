@@ -20,7 +20,7 @@ just up          # backend + postgres (schema upgrades on API startup)
 ```
 
 ```bash
-docker compose -f deployment/docker-compose/docker-compose.yml up -d
+docker compose -f deployment/docker-compose/compose.yaml up -d
 ```
 
 Check:

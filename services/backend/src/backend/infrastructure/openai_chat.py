@@ -14,6 +14,7 @@ from openai import (
     InternalServerError,
     RateLimitError,
 )
+from openai.types.chat import ChatCompletion, ParsedChatCompletion
 from pydantic import BaseModel
 from tenacity import retry, retry_if_exception, stop_after_attempt
 
@@ -27,7 +28,8 @@ from backend.application.dto import (
 )
 from backend.domain.errors import ModelTimeoutError, ModelUnavailableError
 from backend.domain.session import LlmUsage
-from backend.infrastructure._retry import MAX_ATTEMPTS, RETRY_WAIT
+from backend.infrastructure.llm.retry import MAX_ATTEMPTS, RETRY_WAIT
+from backend.infrastructure.llm.tools import to_vendor_function_tools
 
 TModel = TypeVar("TModel", bound=BaseModel)
 
@@ -69,20 +71,6 @@ def _to_openai_messages(messages: Sequence[ChatMessage]) -> list[dict[str, objec
             item["name"] = message.name
         vendor.append(item)
     return vendor
-
-
-def _to_openai_tools(tools: Sequence[ToolSpec]) -> list[dict[str, object]]:
-    return [
-        {
-            "type": "function",
-            "function": {
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": tool.parameters,
-            },
-        }
-        for tool in tools
-    ]
 
 
 class OpenAIChatModel:
@@ -161,15 +149,17 @@ class OpenAIChatModel:
         schema: type[TModel],
     ) -> StructuredResult[TModel]:
         vendor_messages = _to_openai_messages(messages)
-        completion = await self._client.chat.completions.parse(
+        completion_raw = await self._client.chat.completions.parse(
             model=self._model,
-            messages=cast(Any, vendor_messages),  # pyright: ignore[reportExplicitAny, reportAny] — OpenAI SDK message union
+            messages=cast(Any, vendor_messages),
             response_format=schema,
             timeout=self._timeout_seconds,
         )
-        parsed = completion.choices[0].message.parsed
+        completion = cast(ParsedChatCompletion[TModel], completion_raw)
+        message = completion.choices[0].message
+        parsed = message.parsed
         if parsed is None:
-            refusal = completion.choices[0].message.refusal
+            refusal = message.refusal
             detail = refusal if isinstance(refusal, str) and refusal else "empty structured output"
             raise ModelUnavailableError(f"OpenAI chat returned no parsed content: {detail}")
         return StructuredResult(value=parsed, usage=_usage_from_openai(completion.usage))
@@ -185,12 +175,13 @@ class OpenAIChatModel:
         messages: Sequence[ChatMessage],
         tools: Sequence[ToolSpec],
     ) -> ToolTurnResult:
-        completion = await self._client.chat.completions.create(
+        completion_raw = await self._client.chat.completions.create(
             model=self._model,
-            messages=cast(Any, _to_openai_messages(messages)),  # pyright: ignore[reportExplicitAny, reportAny] — OpenAI SDK message union
-            tools=cast(Any, _to_openai_tools(tools)),  # pyright: ignore[reportExplicitAny, reportAny] — OpenAI SDK tools union
+            messages=cast(Any, _to_openai_messages(messages)),
+            tools=cast(Any, to_vendor_function_tools(tools)),
             timeout=self._timeout_seconds,
         )
+        completion = cast(ChatCompletion, completion_raw)
         message = completion.choices[0].message
         tool_calls: list[ToolCall] = []
         for call in message.tool_calls or []:

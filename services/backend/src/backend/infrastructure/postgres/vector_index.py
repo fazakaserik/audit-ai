@@ -5,8 +5,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy import Select, delete, func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from backend.application.dto import (
     RetrievalScope,
@@ -53,8 +54,8 @@ def _scoped_chunk_filters(
     scope: RetrievalScope,
     *,
     embedding_model: str,
-) -> list[object]:
-    filters: list[object] = [
+) -> list[ColumnElement[bool]]:
+    filters: list[ColumnElement[bool]] = [
         DocumentRow.engagement_id == scope.engagement_id,
         DocumentRow.version == ChunkRow.document_version,
         DocumentRow.searchable.is_(True),
@@ -138,7 +139,7 @@ class PostgresVectorIndex:
         distance = ChunkRow.embedding.cosine_distance(embedding_list)
         similarity = (1.0 - distance).label("similarity")
 
-        vector_stmt: Select[tuple[ChunkRow, str, float]] = (
+        vector_stmt = (
             select(ChunkRow, DocumentRow.path, similarity)
             .join(DocumentRow, DocumentRow.id == ChunkRow.document_id)
             .where(*filters)
@@ -148,9 +149,11 @@ class PostgresVectorIndex:
         vector_rows = (await self._session.execute(vector_stmt)).all()
 
         vector_survivors: list[tuple[ChunkRow, str, float]] = []
-        for row, path, score in vector_rows:
-            if float(score) >= min_score:
-                vector_survivors.append((row, path, float(score)))
+        for db_row in vector_rows:
+            row, path, score_raw = db_row.tuple()
+            score = float(score_raw)
+            if score >= min_score:
+                vector_survivors.append((row, path, score))
 
         if not vector_survivors:
             return []

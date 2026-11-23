@@ -7,10 +7,15 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Path, Query
 
+from backend.application.api.contracts.v1.mapping import (
+    to_contract_page,
+    upload_detail_to_response,
+    upload_to_summary,
+)
 from backend.application.api.contracts.v1.page import Page
 from backend.application.api.contracts.v1.responses import UploadResponse, UploadSummaryResponse
 from backend.application.api.dependencies import get_bound
-from backend.bootstrap import SessionBound
+from backend.application.wiring import SessionBound
 from backend.domain.engagement import EngagementId
 from backend.domain.upload import UploadId
 
@@ -38,11 +43,12 @@ async def get_uploads_list(
     ] = 0,
 ) -> Page[UploadSummaryResponse]:
     """List upload jobs for an engagement, newest first."""
-    return await bound.uploads.list_uploads(
+    page = await bound.uploads.list_uploads(
         engagement_id=engagement_id,
         limit=limit,
         offset=offset,
     )
+    return to_contract_page(page, upload_to_summary)
 
 
 @router.get(
@@ -62,7 +68,8 @@ async def get_upload_status(
     bound: Annotated[SessionBound, Depends(get_bound)],
 ) -> UploadResponse:
     """Return upload status and per-file outcomes."""
-    return await bound.uploads.get_upload(
+    detail = await bound.uploads.get_upload(
         engagement_id=engagement_id,
         upload_id=UploadId(upload_id),
     )
+    return upload_detail_to_response(detail)

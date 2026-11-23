@@ -6,8 +6,8 @@ import asyncio
 import json
 import re
 import time
-from collections.abc import Sequence
-from typing import Any, TypeVar, cast
+from collections.abc import AsyncIterator, Sequence
+from typing import TypeVar, cast
 
 import httpx
 from ollama import AsyncClient, ResponseError
@@ -25,7 +25,9 @@ from backend.application.dto import (
 )
 from backend.domain.errors import ModelTimeoutError, ModelUnavailableError
 from backend.domain.session import LlmUsage
-from backend.infrastructure._retry import MAX_ATTEMPTS, RETRY_WAIT
+from backend.infrastructure.llm.retry import MAX_ATTEMPTS, RETRY_WAIT
+from backend.infrastructure.llm.tools import to_vendor_function_tools
+from backend.infrastructure.ollama_protocols import ollama_chat_client
 
 
 def _usage_from_ollama(response: object) -> LlmUsage:
@@ -103,18 +105,8 @@ def _to_ollama_messages(messages: Sequence[ChatMessage]) -> list[dict[str, objec
     return vendor
 
 
-def _to_ollama_tools(tools: Sequence[ToolSpec]) -> list[dict[str, object]]:
-    return [
-        {
-            "type": "function",
-            "function": {
-                "name": tool.name,
-                "description": tool.description,
-                "parameters": tool.parameters,
-            },
-        }
-        for tool in tools
-    ]
+def _optional_attr(instance: object, name: str) -> object | None:
+    return cast(object | None, getattr(instance, name, None))
 
 
 def _mapping_get(obj: object, key: str) -> object | None:
@@ -240,24 +232,28 @@ class OllamaChatModel:
             thinking_chars = 0
             usage = LlmUsage()
             budget_exhausted = False
-            stream = await self._client.chat(  # pyright: ignore[reportUnknownMemberType] — ollama SDK overload
-                model=self._model,
-                messages=cast(Any, vendor_messages),  # pyright: ignore[reportExplicitAny, reportAny] — ollama SDK
-                format=cast(Any, format_schema),  # pyright: ignore[reportExplicitAny, reportAny] — ollama SDK
-                think=True,
-                stream=True,
-                options={"temperature": 0},
+            chat = ollama_chat_client(self._client)
+            stream = cast(
+                AsyncIterator[object],
+                await chat.chat(
+                    model=self._model,
+                    messages=vendor_messages,
+                    format=format_schema,
+                    think=True,
+                    stream=True,
+                    options={"temperature": 0},
+                ),
             )
             async for chunk in stream:
                 if getattr(chunk, "done", False):
                     usage = _usage_from_ollama(chunk)
-                message = chunk.message
+                message = getattr(chunk, "message", None)
                 delta_thinking = getattr(message, "thinking", None)
                 if isinstance(delta_thinking, str) and delta_thinking:
                     thinking_parts.append(delta_thinking)
                     thinking_chars += len(delta_thinking)
                     await thinking.on_delta(delta_thinking)
-                delta_content = message.content
+                delta_content = getattr(message, "content", None)
                 if isinstance(delta_content, str) and delta_content:
                     content_parts.append(delta_content)
                 elapsed = time.perf_counter() - started
@@ -280,17 +276,25 @@ class OllamaChatModel:
                 raise IncompleteStructuredOutputError(str(exc)) from exc
             return StructuredResult(value=schema.model_validate_json(payload), usage=usage)
 
-        response = await self._client.chat(  # pyright: ignore[reportUnknownMemberType] — ollama SDK overload
+        chat = ollama_chat_client(self._client)
+        response = await chat.chat(
             model=self._model,
-            messages=cast(Any, vendor_messages),  # pyright: ignore[reportExplicitAny, reportAny] — ollama SDK
-            format=cast(Any, format_schema),  # pyright: ignore[reportExplicitAny, reportAny] — ollama SDK
+            messages=vendor_messages,
+            format=format_schema,
             think=use_think,
             options={"temperature": 0},
         )
-        payload = _extract_json_text(
-            content=response.message.content,
-            thinking=getattr(response.message, "thinking", None),
+        response_obj = cast(object, response)
+        response_message = getattr(response_obj, "message", None)
+        raw_content = (
+            getattr(response_message, "content", None) if response_message is not None else None
         )
+        content = raw_content if isinstance(raw_content, str) else None
+        raw_thinking = (
+            getattr(response_message, "thinking", None) if response_message is not None else None
+        )
+        thinking_text = raw_thinking if isinstance(raw_thinking, str) else None
+        payload = _extract_json_text(content=content, thinking=thinking_text)
         return StructuredResult(
             value=schema.model_validate_json(payload),
             usage=_usage_from_ollama(response),
@@ -301,17 +305,24 @@ class OllamaChatModel:
         vendor_messages: list[dict[str, object]],
         ollama_tools: list[dict[str, object]],
     ) -> ToolTurnResult:
-        response = await self._client.chat(  # pyright: ignore[reportUnknownMemberType] — ollama SDK overload
+        chat = ollama_chat_client(self._client)
+        response = await chat.chat(
             model=self._model,
-            messages=cast(Any, vendor_messages),  # pyright: ignore[reportExplicitAny, reportAny] — ollama SDK
-            tools=cast(Any, ollama_tools),  # pyright: ignore[reportExplicitAny, reportAny] — ollama SDK
+            messages=vendor_messages,
+            tools=ollama_tools,
             think=False,
             options={"temperature": 0},
         )
-        content = response.message.content if isinstance(response.message.content, str) else None
+        response_obj = cast(object, response)
+        message_obj = getattr(response_obj, "message", None)
+        raw_content = getattr(message_obj, "content", None) if message_obj is not None else None
+        content = raw_content if isinstance(raw_content, str) else None
+        raw_tool_calls = (
+            getattr(message_obj, "tool_calls", None) if message_obj is not None else None
+        )
         return ToolTurnResult(
             content=content,
-            tool_calls=_parse_tool_calls(getattr(response.message, "tool_calls", None)),
+            tool_calls=_parse_tool_calls(raw_tool_calls),
             usage=_usage_from_ollama(response),
         )
 
@@ -330,7 +341,7 @@ class OllamaChatModel:
     ) -> ToolTurnResult:
         await self._ensure_thinking_capability()
         vendor_messages = _to_ollama_messages(messages)
-        ollama_tools = _to_ollama_tools(tools)
+        ollama_tools = to_vendor_function_tools(tools)
         use_think = self._supports_thinking and thinking is not None
 
         if not use_think or thinking is None:
@@ -341,26 +352,30 @@ class OllamaChatModel:
         thinking_chars = 0
         usage = LlmUsage()
         raw_calls: object | None = None
-        stream = await self._client.chat(  # pyright: ignore[reportUnknownMemberType] — ollama SDK overload
-            model=self._model,
-            messages=cast(Any, vendor_messages),  # pyright: ignore[reportExplicitAny, reportAny] — ollama SDK
-            tools=cast(Any, ollama_tools),  # pyright: ignore[reportExplicitAny, reportAny] — ollama SDK
-            think=True,
-            stream=True,
-            options={"temperature": 0},
+        chat = ollama_chat_client(self._client)
+        stream = cast(
+            AsyncIterator[object],
+            await chat.chat(
+                model=self._model,
+                messages=vendor_messages,
+                tools=ollama_tools,
+                think=True,
+                stream=True,
+                options={"temperature": 0},
+            ),
         )
         async for chunk in stream:
             if getattr(chunk, "done", False):
                 usage = _usage_from_ollama(chunk)
-            message = chunk.message
+            message = getattr(chunk, "message", None)
             chunk_calls = getattr(message, "tool_calls", None)
-            if chunk_calls:
-                raw_calls = chunk_calls
+            if chunk_calls is not None:
+                raw_calls = cast(object, chunk_calls)
             delta_thinking = getattr(message, "thinking", None)
             if isinstance(delta_thinking, str) and delta_thinking:
                 thinking_chars += len(delta_thinking)
                 await thinking.on_delta(delta_thinking)
-            delta_content = message.content
+            delta_content = getattr(message, "content", None)
             if isinstance(delta_content, str) and delta_content:
                 content_parts.append(delta_content)
             elapsed = time.perf_counter() - started

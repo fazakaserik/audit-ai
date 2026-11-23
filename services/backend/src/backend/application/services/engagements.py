@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from backend.application.api.contracts.v1.mapping import engagement_to_response
-from backend.application.api.contracts.v1.page import Page
-from backend.application.api.contracts.v1.responses import EngagementResponse
+from backend.application.dto import EngagementWithDocumentCount, Page
 from backend.application.repositories.engagement import EngagementRepository
 from backend.domain.common import utc_now
 from backend.domain.engagement import Engagement, EngagementId
@@ -20,7 +18,7 @@ class EngagementService:
         *,
         engagement_id: EngagementId,
         name: str,
-    ) -> EngagementResponse:
+    ) -> EngagementWithDocumentCount:
         now = utc_now()
         engagement = Engagement(
             id=engagement_id,
@@ -29,26 +27,27 @@ class EngagementService:
             updated_at=now,
         )
         created = await self._engagements.create(engagement)
-        return engagement_to_response(created, document_count=0)
+        return EngagementWithDocumentCount(engagement=created, document_count=0)
 
     async def list(
         self,
         *,
         limit: int,
         offset: int,
-    ) -> Page[EngagementResponse]:
+    ) -> Page[EngagementWithDocumentCount]:
         limit = min(max(limit, 1), 200)
         offset = max(offset, 0)
         items, total = await self._engagements.list(limit=limit, offset=offset)
-        responses: list[EngagementResponse] = []
-        for eng in items:
-            count = await self._engagements.count_documents(eng.id)
-            responses.append(engagement_to_response(eng, document_count=count))
-        return Page(items=tuple(responses), total=total, limit=limit, offset=offset)
+        counts = await self._engagements.count_documents_for_engagements([e.id for e in items])
+        views = tuple(
+            EngagementWithDocumentCount(engagement=eng, document_count=counts.get(eng.id, 0))
+            for eng in items
+        )
+        return Page(items=views, total=total, limit=limit, offset=offset)
 
-    async def get(self, *, engagement_id: EngagementId) -> EngagementResponse:
+    async def get(self, *, engagement_id: EngagementId) -> EngagementWithDocumentCount:
         eng = await self._engagements.get(engagement_id)
         if eng is None:
             raise NotFoundError(f"engagement not found: {engagement_id}")
         count = await self._engagements.count_documents(eng.id)
-        return engagement_to_response(eng, document_count=count)
+        return EngagementWithDocumentCount(engagement=eng, document_count=count)

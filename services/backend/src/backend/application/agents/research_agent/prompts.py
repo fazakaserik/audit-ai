@@ -70,17 +70,6 @@ class AnswerGenerationResult(BaseModel):
     client_questions: Annotated[tuple[str, ...], Field(max_length=3)] = ()
 
 
-class SuggestedQuestionsResult(BaseModel):
-    """Optional structured client-question suggestions from the model."""
-
-    model_config = _CFG
-
-    questions: Annotated[
-        tuple[str, ...],
-        Field(min_length=1, max_length=3),
-    ]
-
-
 _AGENT_SYSTEM = """\
 You are an audit assistant with tools for searching and browsing engagement documents.
 

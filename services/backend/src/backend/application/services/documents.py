@@ -5,11 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from backend.application.api.contracts.v1.mapping import document_to_response
-from backend.application.api.contracts.v1.responses import (
-    DocumentListingResponse,
-    UploadAcceptedResponse,
-)
+from backend.application.dto import DocumentListing, UploadAccepted
 from backend.application.parsing.archive_extractor import ArchiveExtractor
 from backend.application.repositories.document import DocumentRepository
 from backend.application.repositories.engagement import EngagementRepository
@@ -17,7 +13,7 @@ from backend.application.repositories.upload import UploadRepository
 from backend.application.storage.document_storage import DocumentStorage
 from backend.application.storage.job_queue import JobQueue
 from backend.config import Settings
-from backend.domain.common import RequestId, new_uuid, utc_now
+from backend.domain.common import new_uuid, utc_now
 from backend.domain.document import (
     ContentType,
     DocumentPath,
@@ -145,7 +141,7 @@ class DocumentService:
         depth: int | None,
         limit: int,
         offset: int,
-    ) -> DocumentListingResponse:
+    ) -> DocumentListing:
         engagement = await self._engagements.get(engagement_id)
         if engagement is None:
             raise NotFoundError(f"engagement not found: {engagement_id}")
@@ -157,8 +153,8 @@ class DocumentService:
             limit=limit,
             offset=offset,
         )
-        return DocumentListingResponse(
-            items=tuple(document_to_response(doc) for doc in items),
+        return DocumentListing(
+            items=tuple(items),
             folders=folders,
             total=total,
             limit=limit,
@@ -191,8 +187,7 @@ class DocumentService:
         engagement_id: EngagementId,
         target_folder: str,
         files: Sequence[IncomingUploadFile],
-        request_id: RequestId,
-    ) -> UploadAcceptedResponse:
+    ) -> UploadAccepted:
         engagement = await self._engagements.get(engagement_id)
         if engagement is None:
             raise NotFoundError(f"engagement not found: {engagement_id}")
@@ -235,4 +230,4 @@ class DocumentService:
         await self._uploads.create(upload, items)
         await self._jobs.enqueue_items(items)
 
-        return UploadAcceptedResponse(upload_id=upload.id, request_id=request_id)
+        return UploadAccepted(upload_id=upload.id)

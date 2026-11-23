@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Sequence
-from typing import Any, cast
 
 import httpx
 from ollama import AsyncClient, ResponseError
@@ -14,7 +13,7 @@ from backend.application.dto import EmbedResult
 from backend.domain.errors import ModelTimeoutError, ModelUnavailableError
 from backend.domain.session import LlmUsage
 from backend.infrastructure._embedding_dims import dimensions_for
-from backend.infrastructure._retry import MAX_ATTEMPTS, RETRY_WAIT
+from backend.infrastructure.llm.retry import MAX_ATTEMPTS, RETRY_WAIT
 
 
 def _is_transient(exc: BaseException) -> bool:
@@ -67,7 +66,7 @@ class OllamaEmbedder:
     async def _embed_once(self, texts: Sequence[str]) -> EmbedResult:
         response = await self._client.embed(
             model=self._model,
-            input=cast(Any, list(texts)),
+            input=list(texts),
         )
         vectors = [[float(value) for value in vector] for vector in response.embeddings]
         prompt = getattr(response, "prompt_eval_count", None)

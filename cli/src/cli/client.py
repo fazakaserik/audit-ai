@@ -9,7 +9,7 @@ import time
 import zipfile
 from collections.abc import Iterator
 from pathlib import Path
-from typing import TypeVar
+from typing import TypeVar, cast
 from urllib.parse import quote
 from uuid import UUID
 
@@ -60,6 +60,17 @@ class CliApiError(Exception):
         self.detail = detail
         self.status = status
         self.request_id = request_id
+
+
+def _parse_json_object_dict(text: str) -> dict[str, object] | None:
+    try:
+        loaded = cast(object, json.loads(text))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(loaded, dict):
+        return None
+    as_dict = cast(dict[object, object], loaded)
+    return {str(key): value for key, value in as_dict.items()}
 
 
 def _problem_to_cli_error(response: httpx.Response) -> CliApiError:
@@ -268,17 +279,25 @@ class AuditApiClient:
                     event_lines = []
                     if not data_lines:
                         continue
-                    payload = json.loads("\n".join(data_lines))
-                    if not isinstance(payload, dict):
+                    payload = _parse_json_object_dict("\n".join(data_lines))
+                    if payload is None:
                         continue
-                    if payload.get("type") == "error":
+                    event_type = payload.get("type")
+                    if event_type == "error":
+                        code_value = payload.get("code", "internal_error")
+                        detail_value = payload.get("detail", "stream error")
+                        status_value = payload.get("status", 500)
                         raise CliApiError(
-                            code=ErrorCode(str(payload.get("code", "internal_error"))),
-                            detail=str(payload.get("detail", "stream error")),
-                            status=int(payload.get("status", 500)),
+                            code=ErrorCode(str(code_value)),
+                            detail=str(detail_value),
+                            status=(
+                                status_value
+                                if isinstance(status_value, int)
+                                else int(str(status_value))
+                            ),
                             request_id=None,
                         )
-                    if payload.get("type") == "final":
+                    if event_type == "final":
                         raw_final = payload.get("response")
                         root = AskResponseRoot.model_validate_json(json.dumps(raw_final))
                         yield {"type": "final", "response": root.root}

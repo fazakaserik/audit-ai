@@ -24,7 +24,7 @@ Build a backend-only, document-grounded auditor assistant as a uv monorepo. Clie
 
 **Performance Goals**: Cloud mode: 90% of sample-engagement questions answered under 10 seconds (SC-007). Upload acceptance under 1 second for uploads within limits. Seed-to-first-answer under 15 minutes for a reviewer (SC-001).
 
-**Constraints**: Offline default test suite (no network, no paid keys, no Docker). Answers MUST NOT use model general knowledge. Engagement isolation enforced in data access. No auth/users. No OCR. No streaming. Secret-free config samples. basedpyright strict + import-linter + ruff must pass (`just check`).
+**Constraints**: Offline default test suite (no network, no paid keys, no Docker). Answers MUST NOT use model general knowledge. Engagement isolation enforced in data access. No auth/users. No OCR. Secret-free config samples. basedpyright strict + import-linter + ruff must pass (`just check`).
 
 **Scale/Scope**: Demo / interview prototype: 1–few engagements, hundreds of documents, tens of thousands of chunks. Single backend service; optional second worker container from the same image; shared Postgres with SKIP LOCKED jobs.
 
@@ -38,7 +38,7 @@ _GATE: Must pass before Phase 0 research. Re-check after Phase 1 design._
 | II. Enforced Layering                        | PASS   | three workspace members; ports in `backend.application`; vendors only in adapters; CLI uses `backend.application.api.contracts` over HTTP           |
 | III. Tested Behaviour, Offline by Default    | PASS   | required paths listed in research; fakes behind the same ports; `db` and `integration` markers opt-in                                               |
 | IV. Consistent Errors and Safe Observability | PASS   | RFC 9457 Problem Details + stable `ErrorCode` enum; single mapper in `backend.application.api`; structlog JSON; no document content/secrets in logs |
-| V. Simplicity Over Breadth                   | PASS   | single backend (not split api/core/worker packages); scope matches spec P1→P3; auth/OCR/frontend/streaming stay as next steps                       |
+| V. Simplicity Over Breadth                   | PASS   | single backend (not split api/core/worker packages); scope matches spec P1→P3; auth/OCR/frontend stay as next steps                                 |
 | Product & Security                           | PASS   | grounded answers with citation post-filter; engagement filters in SQL; zip path traversal rejected; OpenAI and Ollama modes by config               |
 | Workflow & Quality Gates                     | PASS   | `just check` = ruff + basedpyright + import-linter + offline tests; Alembic-only schema changes under `services/backend`                            |
 
@@ -82,7 +82,7 @@ audit-ai/
 ├── justfile / pyproject.toml / uv.lock / importlinter.ini / README.md
 ```
 
-**Structure Decision**: Two-member uv workspace (`backend`, `cli`) as decided in [research.md](./research.md). Domain lives under `backend.domain`. Tests are colocated next to each package (`*/tests`). Alembic migrations are owned by `services/backend`.
+**Structure Decision**: Three-member uv workspace (`backend`, `cli`, `tui`) as decided in [research.md](./research.md). Domain lives under `backend.domain`. Tests are colocated next to each package (`*/tests`). Alembic migrations are owned by `services/backend`.
 
 ## Complexity Tracking
 
@@ -105,4 +105,4 @@ audit-ai/
 
 ## Post-design Constitution Check
 
-Re-evaluated after Phase 1 artifacts: **PASS**. Contracts use discriminated unions and Problem Details; data model keeps embeddings/job leases out of the domain; quickstart exercises offline-capable seeding and both answer outcomes; no new ports without dual implementations; no auth/OCR/streaming introduced.
+Re-evaluated after Phase 1 artifacts: **PASS**. Contracts use discriminated unions and Problem Details; data model keeps embeddings/job leases out of the domain; quickstart exercises offline-capable seeding and both answer outcomes; no new ports without dual implementations; ask streaming via SSE; no auth/OCR introduced.

@@ -13,7 +13,11 @@ from textual.widgets.option_list import Option
 from cli.client import CliApiError
 from tui.labels import session_label
 from tui.screens.base import ChromeScreen
-from tui.widgets.option_helpers import highlight_first_enabled
+from tui.widgets.option_helpers import (
+    begin_picker_load,
+    finish_picker_load,
+    show_picker_error,
+)
 
 _NEW_SESSION_ID = "new-session"
 
@@ -43,26 +47,22 @@ class SessionsScreen(ChromeScreen):
 
     def _load(self) -> None:
         option_list = self.query_one("#picker-list", OptionList)
-        option_list.clear_options()
+        begin_picker_load(option_list)
         engagement_id = self.aiditor.state.engagement_id
         if engagement_id is None:
             option_list.add_option(Option("No engagement selected.", disabled=True))
             return
-        option_list.add_option(Option("Start new session", id=_NEW_SESSION_ID))
+        options: list[Option] = [Option("Start new session", id=_NEW_SESSION_ID)]
         try:
             page = self.aiditor.api_client.list_sessions(engagement_id, limit=50, offset=0)
         except CliApiError as exc:
-            option_list.add_option(Option(f"Error: {exc.detail}", disabled=True))
-            return
-        if not page.items:
-            option_list.add_option(
-                Option("No prior sessions — choose Start new session.", disabled=True)
-            )
+            show_picker_error(option_list, f"Error: {exc.detail}")
             return
         for item in page.items:
-            option_list.add_option(Option(session_label(item), id=f"sess:{item.id}"))
-        highlight_first_enabled(option_list)
-        option_list.focus()
+            options.append(Option(session_label(item), id=f"sess:{item.id}"))
+        if len(options) == 1:
+            options.append(Option("No prior sessions — choose Start new session.", disabled=True))
+        finish_picker_load(option_list, options)
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         option_id = event.option.id

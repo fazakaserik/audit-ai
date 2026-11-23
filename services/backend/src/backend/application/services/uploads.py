@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from backend.application.api.contracts.v1.mapping import upload_to_response, upload_to_summary
-from backend.application.api.contracts.v1.page import Page
-from backend.application.api.contracts.v1.responses import UploadResponse, UploadSummaryResponse
+from backend.application.dto import Page, UploadDetail
 from backend.application.repositories.engagement import EngagementRepository
 from backend.application.repositories.upload import UploadRepository
 from backend.domain.engagement import EngagementId
@@ -36,14 +34,14 @@ class UploadService:
         engagement_id: EngagementId,
         limit: int,
         offset: int,
-    ) -> Page[UploadSummaryResponse]:
+    ) -> Page[Upload]:
         engagement = await self._engagements.get(engagement_id)
         if engagement is None:
             raise NotFoundError(f"engagement not found: {engagement_id}")
 
         items, total = await self._uploads.list(engagement_id, limit=limit, offset=offset)
         return Page(
-            items=tuple(upload_to_summary(item) for item in items),
+            items=tuple(items),
             total=total,
             limit=limit,
             offset=offset,
@@ -54,9 +52,9 @@ class UploadService:
         *,
         engagement_id: EngagementId,
         upload_id: UploadId,
-    ) -> UploadResponse:
+    ) -> UploadDetail:
         loaded = await self._uploads.get(engagement_id, upload_id)
         if loaded is None:
             raise NotFoundError(f"upload not found: {upload_id}")
         upload, items = loaded
-        return upload_to_response(upload, list(items))
+        return UploadDetail(upload=upload, items=tuple(items))

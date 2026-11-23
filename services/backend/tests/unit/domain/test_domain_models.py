@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime
 
 import pytest
 from pydantic import TypeAdapter, ValidationError
@@ -77,8 +76,3 @@ def test_insufficient_requires_suggestions() -> None:
         ),
     )
     assert result.status == "insufficient_evidence"
-
-
-def test_timestamps_are_timezone_aware() -> None:
-    now = datetime.now(UTC)
-    assert now.tzinfo is not None

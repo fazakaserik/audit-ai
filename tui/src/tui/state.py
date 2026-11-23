@@ -91,11 +91,6 @@ def format_token_stats(state: AppState) -> str:
     return f"ctx {ctx} · last {last} · session {session}"
 
 
-def format_status_bar(state: AppState) -> str:
-    """Bottom bar: session on the left, token stats on the right."""
-    return f" {format_session_label(state)}  ·  {format_token_stats(state)} "
-
-
 def format_compact_header(state: AppState) -> str:
     """Top compact bar: engagement + token stats (replaces AIditor title in chat)."""
     return f" {format_engagement_label(state)}  ·  {format_token_stats(state)} "

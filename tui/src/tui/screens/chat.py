@@ -17,14 +17,15 @@ from textual.worker import Worker, WorkerState
 
 from cli.client import CliApiError
 from tui.chat_render import (
-    ask_response_renderable,
     document_bytes_renderable,
     error_panel,
+    replay_session_detail,
     speaker_label,
 )
 from tui.screens.base import ChromeScreen
 from tui.slash import HELP_TEXT, SlashAction, parse_slash
 from tui.streaming import ThinkingAppend, ThinkingFinished, ThinkingStarted, run_ask_stream
+from tui.textual_typing import worker_from_event
 from tui.widgets.chat_input import ChatInput
 from tui.widgets.thinking import (
     THINKING_LIVE_ID,
@@ -67,6 +68,15 @@ class ChatScreen(ChromeScreen):
 
     def write_renderable(self, content: object) -> None:
         self._append_content(content)
+
+    def append_speaker(self, role: Literal["you", "agent"]) -> None:
+        self._append_speaker(role)
+
+    def mount_line(self, content: RenderableType) -> None:
+        self._mount_line(content)
+
+    def mount_thinking(self, *, body: str, duration_seconds: float | None) -> None:
+        self._mount_widget(make_thinking_collapsible(body, duration_seconds=duration_seconds))
 
     def _chat_log(self) -> VerticalScroll:
         return self.query_one("#chat-log", VerticalScroll)
@@ -150,39 +160,7 @@ class ChatScreen(ChromeScreen):
             self.aiditor.state.last_citations = ()
             self.aiditor.state.clear_usage()
         self.aiditor.refresh_status()
-
-        self._mount_line(
-            Text(
-                f"Session {detail.id} — {detail.title} ({detail.turn_count} turns)",
-                style="bold",
-            )
-        )
-        if detail.turns and not any(
-            turn.thinking_text or (turn.thinking_seconds is not None and turn.thinking_seconds > 0)
-            for turn in detail.turns
-        ):
-            self._mount_line(
-                Text(
-                    "No saved thought process in this session "
-                    "(only asks made after thinking-persist store it — ask again to capture).",
-                    style="dim italic",
-                )
-            )
-        for turn in detail.turns:
-            self._append_speaker("you")
-            self._mount_line(turn.question)
-            self._append_speaker("agent")
-            if turn.thinking_text or (
-                turn.thinking_seconds is not None and turn.thinking_seconds > 0
-            ):
-                body = turn.thinking_text or "(no details)"
-                self._mount_widget(
-                    make_thinking_collapsible(
-                        body,
-                        duration_seconds=turn.thinking_seconds,
-                    )
-                )
-            self._mount_line(ask_response_renderable(turn.answer))
+        replay_session_detail(detail, _SessionReplaySink(self))
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         line = event.value.strip()
@@ -308,7 +286,7 @@ class ChatScreen(ChromeScreen):
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         if event.state not in {WorkerState.SUCCESS, WorkerState.ERROR, WorkerState.CANCELLED}:
             return
-        worker = event.worker  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+        worker = worker_from_event(event)
         name = cast(str | None, worker.name)
         if name in {"ask", "upload"}:
             self._asking = False
@@ -316,13 +294,18 @@ class ChatScreen(ChromeScreen):
             chat_input.disabled = False
             chat_input.focus()
             self.aiditor.refresh_status()
-            upload_result = cast(object | None, worker.result)
-            if (
-                name == "upload"
-                and event.state is WorkerState.SUCCESS
-                and upload_result is not None
-            ):
-                self.write_renderable(upload_result)
+            if event.state is WorkerState.ERROR:
+                error = worker.error
+                if error is not None:
+                    if isinstance(error, CliApiError):
+                        self._mount_line(error_panel(error))
+                    else:
+                        self._mount_line(Text(str(error), style="red"))
+                return
+            if name == "upload" and event.state is WorkerState.SUCCESS:
+                upload_result = cast(object | None, worker.result)
+                if upload_result is not None:
+                    self.write_renderable(upload_result)
 
     def action_back_sessions(self) -> None:
         if self._asking:
@@ -333,3 +316,17 @@ class ChatScreen(ChromeScreen):
         if self._asking:
             return
         self.aiditor.open_engagements()
+
+
+class _SessionReplaySink:
+    def __init__(self, screen: ChatScreen) -> None:
+        self._screen = screen
+
+    def append_speaker(self, role: Literal["you", "agent"]) -> None:
+        self._screen.append_speaker(role)
+
+    def mount_line(self, content: RenderableType) -> None:
+        self._screen.mount_line(content)
+
+    def mount_thinking(self, *, body: str, duration_seconds: float | None) -> None:
+        self._screen.mount_thinking(body=body, duration_seconds=duration_seconds)

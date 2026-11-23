@@ -76,6 +76,6 @@ Requires Python 3.13, [uv](https://docs.astral.sh/uv/), [just](https://github.co
 ## Limitations / next steps
 
 - No authentication or user management
-- Ask flow is a LangGraph `StateGraph` (tool loop → grade → generate → finalize). Strict basedpyright reports type errors on that usage; those come from LangGraph (namespace-package `py.typed` / unbound generics in `StateGraph`), not from this repo. Tracking upstream: [langchain-ai/langgraph#9659](https://github.com/langchain-ai/langgraph/issues/9659).
+- Ask flow is a LangGraph `StateGraph` (tool loop → grade → generate → finalize).
 - Chunk sizes not corpus-tuned; OCR out of scope
 - Cloud mapping: `deployment/cloud/README.md`

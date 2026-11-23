@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -60,3 +62,20 @@ class PostgresEngagementRepository:
             .where(DocumentRow.engagement_id == engagement_id)
         )
         return int((await self._session.execute(stmt)).scalar_one())
+
+    async def count_documents_for_engagements(
+        self,
+        engagement_ids: Sequence[EngagementId],
+    ) -> dict[EngagementId, int]:
+        if not engagement_ids:
+            return {}
+        stmt = (
+            select(DocumentRow.engagement_id, func.count())
+            .where(DocumentRow.engagement_id.in_(engagement_ids))
+            .group_by(DocumentRow.engagement_id)
+        )
+        rows = (await self._session.execute(stmt)).all()
+        counts = {engagement_id: 0 for engagement_id in engagement_ids}
+        for engagement_id, count in rows:
+            counts[engagement_id] = int(count)
+        return counts

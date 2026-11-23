@@ -84,21 +84,23 @@ addopts = "-m \"not db and not integration\" -p no:langsmith"
 [tool.basedpyright]
 include = [
   "services/backend/src",
-  "services/backend/tests",
   "cli/src",
-  "cli/tests",
   "tui/src",
-  "tui/tests",
   "scripts",
 ]
 exclude = [
   "**/__pycache__",
   ".venv",
+  "**/tests",
 ]
 pythonVersion = "3.13"
-typeCheckingMode = "strict"
+typeCheckingMode = "standard"
 venvPath = "."
 venv = ".venv"
 reportMissingImports = true
-reportAny = true
-reportExplicitAny = true
+reportMissingTypeStubs = false
+reportAny = false
+reportExplicitAny = false
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false

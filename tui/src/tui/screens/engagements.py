@@ -13,7 +13,12 @@ from backend.domain.engagement import EngagementId
 from cli.client import CliApiError
 from tui.labels import engagement_label
 from tui.screens.base import ChromeScreen
-from tui.widgets.option_helpers import highlight_first_enabled
+from tui.widgets.option_helpers import (
+    begin_picker_load,
+    finish_picker_load,
+    show_picker_empty,
+    show_picker_error,
+)
 
 
 class EngagementsScreen(ChromeScreen):
@@ -22,6 +27,10 @@ class EngagementsScreen(ChromeScreen):
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("q", "app.quit", "Quit"),
     ]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._names_by_id: dict[str, str] = {}
 
     def compose_main(self) -> ComposeResult:
         yield Label("Select engagement", id="picker-help")
@@ -34,28 +43,29 @@ class EngagementsScreen(ChromeScreen):
 
     def _load(self) -> None:
         option_list = self.query_one("#picker-list", OptionList)
-        option_list.clear_options()
+        begin_picker_load(option_list)
+        self._names_by_id = {}
         try:
             page = self.aiditor.api_client.list_engagements(limit=200, offset=0)
         except CliApiError as exc:
-            option_list.add_option(Option(f"Error: {exc.detail}", id="error", disabled=True))
+            show_picker_error(option_list, f"Error: {exc.detail}")
             return
         if not page.items:
-            option_list.add_option(
-                Option("No engagements yet. Create one via aiditor, then restart.", disabled=True)
+            show_picker_empty(
+                option_list,
+                "No engagements yet. Create one via aiditor, then restart.",
             )
             return
+        options: list[Option] = []
         for item in page.items:
-            option_list.add_option(Option(engagement_label(item), id=f"eng:{item.id}"))
-        highlight_first_enabled(option_list)
-        option_list.focus()
+            self._names_by_id[str(item.id)] = item.name
+            options.append(Option(engagement_label(item), id=f"eng:{item.id}"))
+        finish_picker_load(option_list, options)
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         option_id = event.option.id
         if option_id is None or not option_id.startswith("eng:"):
             return
         engagement_id: EngagementId = option_id.removeprefix("eng:")
-        # Recover display name from the option prompt text before the id paren.
-        prompt = str(event.option.prompt)
-        name = prompt.split("  (", 1)[0].strip() or engagement_id
+        name = self._names_by_id.get(str(engagement_id), str(engagement_id))
         self.aiditor.select_engagement(engagement_id, name)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Protocol
 
 from backend.domain.engagement import Engagement, EngagementId
@@ -20,3 +21,8 @@ class EngagementRepository(Protocol):
     ) -> tuple[list[Engagement], int]: ...
 
     async def count_documents(self, engagement_id: EngagementId) -> int: ...
+
+    async def count_documents_for_engagements(
+        self,
+        engagement_ids: Sequence[EngagementId],
+    ) -> dict[EngagementId, int]: ...

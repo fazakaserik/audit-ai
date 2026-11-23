@@ -111,7 +111,7 @@ class PostgresJobQueue:
         if row is None:
             return
 
-        attempts = row.attempts + 1
+        attempts: int = int(row.attempts) + 1
         row.attempts = attempts
         row.reason = reason
         row.locked_until = None
@@ -122,8 +122,9 @@ class PostgresJobQueue:
             row.status = UploadItemStatus.FAILED.value
             row.next_attempt_at = None
         else:
-            backoff = _BASE_BACKOFF_SECONDS * (2 ** (attempts - 1))
+            exponent = max(attempts - 1, 0)
+            backoff_seconds = float(_BASE_BACKOFF_SECONDS) * (2.0**exponent)
             row.status = UploadItemStatus.PENDING.value
-            row.next_attempt_at = now + timedelta(seconds=backoff)
+            row.next_attempt_at = now + timedelta(seconds=backoff_seconds)
 
         await self._session.flush()

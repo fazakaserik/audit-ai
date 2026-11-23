@@ -8,15 +8,19 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, Path, Query, Request, UploadFile, status
 from fastapi.responses import Response
 
+from backend.application.api.contracts.v1.mapping import (
+    document_listing_to_response,
+    upload_accepted_to_response,
+)
 from backend.application.api.contracts.v1.responses import (
     DocumentListingResponse,
     UploadAcceptedResponse,
 )
 from backend.application.api.dependencies import get_bound
 from backend.application.services.documents import IncomingUploadFile
-from backend.bootstrap import SessionBound
+from backend.application.wiring import SessionBound
 from backend.domain.common import RequestId
-from backend.domain.document import DocumentPath, FolderPath
+from backend.domain.document import DocumentPath, FolderPath, validate_folder_path
 from backend.domain.engagement import EngagementId
 from backend.domain.errors import ValidationError
 
@@ -58,14 +62,17 @@ async def get_documents_list(
 
     Also returns immediate child folder names so clients can browse the tree.
     """
-    folder_prefix = FolderPath(prefix) if prefix is not None and prefix != "" else None
-    return await bound.documents.list_documents(
+    folder_prefix: FolderPath | None = (
+        validate_folder_path(prefix) if prefix is not None and prefix != "" else None
+    )
+    listing = await bound.documents.list_documents(
         engagement_id=engagement_id,
         prefix=folder_prefix,
         depth=depth,
         limit=limit,
         offset=offset,
     )
+    return document_listing_to_response(listing)
 
 
 @router.get(
@@ -125,9 +132,9 @@ async def post_documents_upload(
 
     raw_rid = getattr(request.state, "request_id", None)
     request_id = RequestId(raw_rid) if isinstance(raw_rid, uuid.UUID) else RequestId(uuid.uuid4())
-    return await bound.documents.upload_documents(
+    accepted = await bound.documents.upload_documents(
         engagement_id=engagement_id,
         target_folder=folder,
         files=incoming,
-        request_id=request_id,
     )
+    return upload_accepted_to_response(accepted, request_id=request_id)

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -37,7 +37,7 @@ def create_app(
     configure_logging(json_logs=cfg.log_json, level=cfg.log_level)
 
     @asynccontextmanager
-    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         owned = container is None
         if owned:
             # Alembic's env uses asyncio.run; run off the request loop.

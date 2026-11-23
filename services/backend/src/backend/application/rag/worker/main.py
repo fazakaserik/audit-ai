@@ -27,7 +27,8 @@ async def run_worker_loop(
         while not stop.is_set():
             async with container.session_factory() as session:
                 bound = container.bind(session)
-                item = await bound.jobs.claim_next(wid)
+                worker = bound.worker
+                item = await worker.jobs.claim_next(wid)
                 if item is None:
                     await session.commit()
                     try:
@@ -40,7 +41,7 @@ async def run_worker_loop(
                 log.info("job_claimed", item_id=str(item.id), path=item.document_path)
                 upload = await bound.uploads.get_by_id(item.upload_id)
                 if upload is None:
-                    await bound.jobs.complete(
+                    await worker.jobs.complete(
                         item.id,
                         status="failed",
                         reason="upload record missing",
@@ -53,15 +54,15 @@ async def run_worker_loop(
                     outcome = await process_upload_item(
                         item=item,
                         engagement_id=upload.engagement_id,
-                        documents=bound.document_repository,
+                        documents=worker.document_repository,
                         storage=container.document_storage,
-                        vector_index=bound.vector_index,
+                        vector_index=worker.vector_index,
                         embedder=container.embedder,
-                        uploads=bound.upload_repository,
+                        uploads=worker.upload_repository,
                         document_parser=container.document_parser,
                         document_chunker=container.document_chunker,
                     )
-                    await bound.jobs.complete(
+                    await worker.jobs.complete(
                         item.id,
                         status=outcome.status.value,
                         reason=outcome.reason,
@@ -78,7 +79,7 @@ async def run_worker_loop(
                     )
                 except Exception as exc:
                     log.exception("job_failed", item_id=str(item.id), path=item.document_path)
-                    await bound.jobs.fail_for_retry(item.id, reason=str(exc))
+                    await worker.jobs.fail_for_retry(item.id, reason=str(exc))
                     await bound.uploads.refresh_status(item.upload_id)
                 await session.commit()
     finally:
@@ -97,7 +98,11 @@ async def _run_standalone(settings: Settings) -> None:
         try:
             loop.add_signal_handler(sig, _stop)
         except NotImplementedError:
-            signal.signal(sig, lambda *_a: stop.set())
+
+            def _legacy_stop(_signum: int, _frame: object | None) -> None:
+                stop.set()
+
+            signal.signal(sig, _legacy_stop)
 
     try:
         await run_worker_loop(container, stop=stop)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, cast
 from uuid import UUID
 
 from rich.console import Group
@@ -17,7 +17,12 @@ from textual.widgets.option_list import Option
 from cli.client import CliApiError
 from tui.chat_render import error_panel
 from tui.labels import upload_label
-from tui.widgets.option_helpers import highlight_first_enabled
+from tui.widgets.option_helpers import (
+    begin_picker_load,
+    finish_picker_load,
+    show_picker_empty,
+    show_picker_error,
+)
 
 if TYPE_CHECKING:
     from tui.app import AiditorApp
@@ -36,7 +41,7 @@ class UploadsModal(ModalScreen[None]):
 
     @property
     def aiditor(self) -> AiditorApp:
-        return self.app  # type: ignore[return-value]
+        return cast(AiditorApp, self.app)
 
     def compose(self) -> ComposeResult:
         with Vertical(id="modal-container"):
@@ -53,7 +58,7 @@ class UploadsModal(ModalScreen[None]):
 
     def _load_list(self) -> None:
         option_list = self.query_one("#modal-list", OptionList)
-        option_list.clear_options()
+        begin_picker_load(option_list)
         option_list.display = True
         self.query_one("#modal-detail", Static).update("")
         self.query_one("#modal-title", Label).update("Uploads")
@@ -64,15 +69,13 @@ class UploadsModal(ModalScreen[None]):
         try:
             page = self.aiditor.api_client.list_uploads(engagement_id, limit=50, offset=0)
         except CliApiError as exc:
-            option_list.add_option(Option(f"Error: {exc.detail}", disabled=True))
+            show_picker_error(option_list, f"Error: {exc.detail}")
             return
         if not page.items:
-            option_list.add_option(Option("No uploads yet.", disabled=True))
+            show_picker_empty(option_list, "No uploads yet.")
             return
-        for item in page.items:
-            option_list.add_option(Option(upload_label(item), id=f"up:{item.id}"))
-        highlight_first_enabled(option_list)
-        option_list.focus()
+        options = [Option(upload_label(item), id=f"up:{item.id}") for item in page.items]
+        finish_picker_load(option_list, options)
 
     def _show_detail(self, upload_id: UUID) -> None:
         option_list = self.query_one("#modal-list", OptionList)

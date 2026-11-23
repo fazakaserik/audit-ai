@@ -5,16 +5,16 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Protocol, cast
 from uuid import UUID
 
 from rich.console import RenderableType
 
 from backend.application.api.contracts.v1.responses import AskResponse
 from backend.domain.engagement import EngagementId
-from backend.domain.errors import ErrorCode
+from cli.ask_stream import AskStreamHandlers, consume_ask_stream
 from cli.client import AuditApiClient, CliApiError
-from tui.chat_render import ToolProgressBuffer, ask_response_renderable
+from cli.formatting.tool_progress import ToolProgressCorrelator
+from tui.chat_render import ask_response_renderable
 from tui.state import AppState
 
 
@@ -49,10 +49,6 @@ class _WorkPhase:
         return max(0.0, time.monotonic() - self.started_at)
 
 
-class ChatSink(Protocol):
-    def write(self, content: object) -> None: ...
-
-
 def run_ask_stream(
     client: AuditApiClient,
     state: AppState,
@@ -63,8 +59,7 @@ def run_ask_stream(
     write: Callable[[RenderableType | ThinkingStarted | ThinkingAppend | ThinkingFinished], None],
 ) -> AskResponse | None:
     """Blocking stream consumer for use inside a Textual worker thread."""
-    response: AskResponse | None = None
-    tools = ToolProgressBuffer()
+    tools = ToolProgressCorrelator()
     phase: _WorkPhase | None = None
     need_tool_gap = False
 
@@ -92,63 +87,54 @@ def run_ask_stream(
         phase = None
         need_tool_gap = False
 
+    def on_work_stage() -> None:
+        ensure_phase()
+
+    def on_tool_call(line: str) -> None:
+        nonlocal need_tool_gap
+        ensure_phase()
+        if need_tool_gap:
+            append("\n")
+        append(line + "\n")
+
+    def on_tool_result_lines(lines: list[str]) -> None:
+        nonlocal need_tool_gap
+        ensure_phase()
+        for line in lines:
+            append(line + "\n")
+        need_tool_gap = True
+
+    def on_thinking_delta(text: str) -> None:
+        nonlocal need_tool_gap
+        if need_tool_gap:
+            append("\n")
+            need_tool_gap = False
+        append(text)
+
+    def on_thinking_done(_duration: float) -> None:
+        nonlocal need_tool_gap
+        ensure_phase()
+        need_tool_gap = True
+
+    handlers = AskStreamHandlers(
+        on_work_stage=on_work_stage,
+        on_tool_call=on_tool_call,
+        on_tool_result_lines=on_tool_result_lines,
+        on_thinking_delta=on_thinking_delta,
+        on_thinking_done=on_thinking_done,
+        on_before_final=close_phase,
+    )
+
     try:
-        for event in client.ask_stream(
-            engagement_id,
-            question=question,
-            session_id=session_id,
-        ):
-            event_type = event.get("type")
-            if event_type == "stage":
-                stage = str(event.get("stage", ""))
-                if stage in {"agent", "tool", "retrieve", "grade", "condense"}:
-                    ensure_phase()
-            elif event_type == "sources":
-                sources = event.get("sources")
-                if isinstance(sources, list):
-                    typed_sources: list[dict[str, object]] = []
-                    for raw_item in cast(list[object], sources):
-                        if isinstance(raw_item, dict):
-                            typed_sources.append(cast(dict[str, object], raw_item))
-                    tools.on_sources(typed_sources)
-            elif event_type == "tool_call":
-                ensure_phase()
-                # Separate tool block from prior thought text with a blank line.
-                if need_tool_gap:
-                    append("\n")
-                name = str(event.get("name", "tool"))
-                arguments = str(event.get("arguments", ""))
-                line = tools.on_tool_call(name=name, arguments=arguments)
-                append(line.plain + "\n")
-            elif event_type == "tool_result":
-                ensure_phase()
-                name = str(event.get("name", "tool"))
-                summary = str(event.get("summary", ""))
-                for line in tools.on_tool_result(name=name, summary=summary):
-                    append(line.plain + "\n")
-                need_tool_gap = True
-            elif event_type == "thinking_delta":
-                text = event.get("text")
-                if isinstance(text, str) and text:
-                    if need_tool_gap:
-                        append("\n")
-                        need_tool_gap = False
-                    append(text)
-            elif event_type == "thinking_done":
-                ensure_phase()
-                need_tool_gap = True
-            elif event_type == "final":
-                close_phase()
-                final = event.get("response")
-                if isinstance(final, AskResponse):
-                    response = final
-                else:
-                    raise CliApiError(
-                        code=ErrorCode.INTERNAL_ERROR,
-                        detail="stream final payload missing",
-                        status=500,
-                        request_id=None,
-                    )
+        response = consume_ask_stream(
+            client.ask_stream(
+                engagement_id,
+                question=question,
+                session_id=session_id,
+            ),
+            handlers=handlers,
+            tools=tools,
+        )
     except CliApiError:
         raise
 

@@ -1,8 +1,5 @@
-"""Shared tenacity retry knobs for model/embedding adapters."""
+"""Backward-compatible re-export; prefer ``backend.infrastructure.llm.retry``."""
 
-from __future__ import annotations
+from backend.infrastructure.llm.retry import MAX_ATTEMPTS, RETRY_WAIT
 
-from tenacity import wait_exponential_jitter
-
-MAX_ATTEMPTS = 3
-RETRY_WAIT = wait_exponential_jitter(initial=0.5, max=8.0)
+__all__ = ["MAX_ATTEMPTS", "RETRY_WAIT"]

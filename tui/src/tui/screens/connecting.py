@@ -11,6 +11,7 @@ from textual.widgets import Label, LoadingIndicator, Static
 from textual.worker import Worker, WorkerState
 
 from tui.screens.base import ChromeScreen
+from tui.textual_typing import worker_from_event
 
 
 class ConnectingScreen(ChromeScreen):
@@ -36,7 +37,7 @@ class ConnectingScreen(ChromeScreen):
     def on_worker_state_changed(self, event: Worker.StateChanged) -> None:
         if event.state is not WorkerState.SUCCESS:
             return
-        worker = event.worker  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
+        worker = worker_from_event(event)
         result = cast(bool | None, worker.result)
         ok = result is True
         if not ok:

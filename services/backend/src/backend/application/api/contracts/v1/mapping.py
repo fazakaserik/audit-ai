@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
-from typing import assert_never
+from collections.abc import Callable
 
+from backend.application.api.contracts.v1.page import Page
 from backend.application.api.contracts.v1.responses import (
     AnsweredResponse,
     AskResponse,
     CitationResponse,
+    DocumentListingResponse,
     DocumentResponse,
     EngagementResponse,
     InsufficientEvidenceResponse,
@@ -16,9 +18,21 @@ from backend.application.api.contracts.v1.responses import (
     SessionSummaryResponse,
     SuggestedClientQuestionResponse,
     TurnResponse,
+    UploadAcceptedResponse,
     UploadItemResponse,
     UploadResponse,
     UploadSummaryResponse,
+)
+from backend.application.dto import (
+    AskResult,
+    DocumentListing,
+    EngagementWithDocumentCount,
+    SessionDetail,
+    UploadAccepted,
+    UploadDetail,
+)
+from backend.application.dto import (
+    Page as AppPage,
 )
 from backend.domain.answer import Answer, Answered, AnswerStatus, Citation, InsufficientEvidence
 from backend.domain.common import RequestId
@@ -26,6 +40,60 @@ from backend.domain.document import Document
 from backend.domain.engagement import Engagement
 from backend.domain.session import LlmUsage, Session, SessionId, Turn, TurnId
 from backend.domain.upload import Upload, UploadItem
+
+
+def to_contract_page[T, U](page: AppPage[T], map_item: Callable[[T], U]) -> Page[U]:
+    return Page(
+        items=tuple(map_item(item) for item in page.items),
+        total=page.total,
+        limit=page.limit,
+        offset=page.offset,
+    )
+
+
+def ask_result_to_response(result: AskResult, *, request_id: RequestId) -> AskResponse:
+    return answer_to_response(
+        result.answer,
+        session_id=result.session_id,
+        turn_id=result.turn_id,
+        request_id=request_id,
+        usage=result.usage,
+        session_total_tokens=result.session_total_tokens,
+    )
+
+
+def document_listing_to_response(listing: DocumentListing) -> DocumentListingResponse:
+    return DocumentListingResponse(
+        items=tuple(document_to_response(doc) for doc in listing.items),
+        folders=listing.folders,
+        total=listing.total,
+        limit=listing.limit,
+        offset=listing.offset,
+    )
+
+
+def upload_accepted_to_response(
+    accepted: UploadAccepted,
+    *,
+    request_id: RequestId,
+) -> UploadAcceptedResponse:
+    return UploadAcceptedResponse(upload_id=accepted.upload_id, request_id=request_id)
+
+
+def engagement_view_to_response(view: EngagementWithDocumentCount) -> EngagementResponse:
+    return engagement_to_response(view.engagement, document_count=view.document_count)
+
+
+def upload_detail_to_response(detail: UploadDetail) -> UploadResponse:
+    return upload_to_response(detail.upload, list(detail.items))
+
+
+def session_detail_to_response(
+    detail: SessionDetail,
+    *,
+    request_id: RequestId,
+) -> SessionDetailResponse:
+    return session_to_detail(detail.session, list(detail.turns), request_id=request_id)
 
 
 def usage_to_response(usage: LlmUsage) -> LlmUsageResponse:
@@ -93,8 +161,6 @@ def answer_to_response(
                 usage=usage_response,
                 session_total_tokens=total,
             )
-        case _ as unreachable:
-            assert_never(unreachable)
 
 
 def engagement_to_response(engagement: Engagement, *, document_count: int) -> EngagementResponse:
@@ -227,5 +293,3 @@ def answer_status(answer: Answer) -> AnswerStatus:
             return AnswerStatus.ANSWERED
         case InsufficientEvidence():
             return AnswerStatus.INSUFFICIENT_EVIDENCE
-        case _ as unreachable:
-            assert_never(unreachable)

@@ -9,11 +9,11 @@ from datetime import datetime
 from backend.application.llm.embedder import Embedder
 from backend.application.parsing.document_chunker import DocumentChunker
 from backend.application.parsing.document_parser import DocumentParser
+from backend.application.rag.index_document import index_document_chunks
 from backend.application.repositories.document import DocumentRepository
 from backend.application.repositories.upload import UploadRepository
 from backend.application.storage.document_storage import DocumentStorage
 from backend.application.storage.vector_index import VectorIndex
-from backend.domain.chunk import Chunk, ChunkId
 from backend.domain.common import new_uuid, utc_now
 from backend.domain.document import ContentType, Document, DocumentId, DocumentPath
 from backend.domain.engagement import EngagementId
@@ -103,53 +103,30 @@ async def process_upload_item(
         )
 
     log.info("ingest_chunked", path=path, chunk_count=len(chunks))
-    document = Document(
-        id=document_id,
-        engagement_id=engagement_id,
+    log.info(
+        "ingest_embed_start",
         path=path,
+        chunk_count=len(chunks),
+        model=embedder.model_name,
+    )
+    chunk_count = await index_document_chunks(
+        documents=documents,
+        vector_index=vector_index,
+        embedder=embedder,
+        engagement_id=engagement_id,
+        document_id=document_id,
+        document_path=path,
         content_type=content_type,
         size_bytes=len(data),
         sha256=sha,
         version=version,
-        searchable=True,
-        created_at=prior.created_at if prior is not None else now,
-        updated_at=now,
+        prior=prior,
+        now=now,
+        parsed_chunks=chunks,
     )
-    await documents.upsert(document)
-
-    domain_chunks = [
-        Chunk(
-            id=ChunkId(new_uuid()),
-            document_id=document_id,
-            document_version=version,
-            ordinal=chunk.ordinal,
-            page=chunk.page,
-            heading_path=chunk.heading_path,
-            text=chunk.text,
-            token_count=chunk.token_count,
-            created_at=now,
-        )
-        for chunk in chunks
-    ]
-    log.info(
-        "ingest_embed_start",
-        path=path,
-        chunk_count=len(domain_chunks),
-        model=embedder.model_name,
-    )
-    embedded = await embedder.embed([p.text for p in domain_chunks])
-    log.info("ingest_embed_done", path=path, vector_count=len(embedded.vectors))
-    await vector_index.upsert_chunks(
-        engagement_id=engagement_id,
-        document_id=document_id,
-        document_path=path,
-        document_version=version,
-        chunks=domain_chunks,
-        embeddings=embedded.vectors,
-        embedding_model=embedder.model_name,
-    )
+    log.info("ingest_embed_done", path=path, vector_count=chunk_count)
     await uploads.refresh_status(item.upload_id)
-    log.info("ingest_indexed", path=path, chunk_count=len(domain_chunks), version=version)
+    log.info("ingest_indexed", path=path, chunk_count=chunk_count, version=version)
     return ProcessItemOutcome(status=UploadItemStatus.INDEXED, reason=None)
 
 

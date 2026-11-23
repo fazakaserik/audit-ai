@@ -8,13 +8,18 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Request
 
+from backend.application.api.contracts.v1.mapping import (
+    session_detail_to_response,
+    session_to_summary,
+    to_contract_page,
+)
 from backend.application.api.contracts.v1.page import Page
 from backend.application.api.contracts.v1.responses import (
     SessionDetailResponse,
     SessionSummaryResponse,
 )
 from backend.application.api.dependencies import get_bound
-from backend.bootstrap import SessionBound
+from backend.application.wiring import SessionBound
 from backend.domain.common import RequestId
 from backend.domain.engagement import EngagementId
 from backend.domain.session import SessionId
@@ -29,11 +34,12 @@ async def get_sessions_list(
     limit: int = 50,
     offset: int = 0,
 ) -> Page[SessionSummaryResponse]:
-    return await bound.sessions.list_sessions(
+    page = await bound.sessions.list_sessions(
         engagement_id=engagement_id,
         limit=limit,
         offset=offset,
     )
+    return to_contract_page(page, session_to_summary)
 
 
 @router.get(
@@ -48,8 +54,8 @@ async def get_session_detail(
 ) -> SessionDetailResponse:
     rid = getattr(request.state, "request_id", None)
     request_id = RequestId(rid) if isinstance(rid, UUID) else RequestId(uuid.uuid4())
-    return await bound.sessions.get_session(
+    detail = await bound.sessions.get_session(
         engagement_id=engagement_id,
         session_id=SessionId(session_id),
-        request_id=request_id,
     )
+    return session_detail_to_response(detail, request_id=request_id)

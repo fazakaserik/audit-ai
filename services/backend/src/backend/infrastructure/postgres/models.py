@@ -63,7 +63,9 @@ class UploadRow(Base):
 
 class UploadItemRow(Base):
     __tablename__ = "upload_items"
-    __table_args__ = (Index("ix_upload_items_status_next_attempt", "status", "next_attempt_at"),)
+    __table_args__: tuple[Index, ...] = (
+        Index("ix_upload_items_status_next_attempt", "status", "next_attempt_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
     upload_id: Mapped[uuid.UUID] = mapped_column(
@@ -88,7 +90,7 @@ class UploadItemRow(Base):
 
 class DocumentRow(Base):
     __tablename__ = "documents"
-    __table_args__ = (
+    __table_args__: tuple[UniqueConstraint, ...] = (
         UniqueConstraint("engagement_id", "path", name="uq_documents_engagement_path"),
     )
 
@@ -114,7 +116,7 @@ class DocumentRow(Base):
 
 class ChunkRow(Base):
     __tablename__ = "chunks"
-    __table_args__ = (
+    __table_args__: tuple[Index, ...] = (
         Index("ix_chunks_document_version", "document_id", "document_version"),
         Index("ix_chunks_search_vector", "search_vector", postgresql_using="gin"),
     )
@@ -155,7 +157,9 @@ class ChunkRow(Base):
 
 class SessionRow(Base):
     __tablename__ = "sessions"
-    __table_args__ = (Index("ix_sessions_engagement_updated", "engagement_id", "updated_at"),)
+    __table_args__: tuple[Index, ...] = (
+        Index("ix_sessions_engagement_updated", "engagement_id", "updated_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True)
     engagement_id: Mapped[str] = mapped_column(
@@ -175,7 +179,7 @@ class SessionRow(Base):
 
 class SessionTurnRow(Base):
     __tablename__ = "session_turns"
-    __table_args__ = (
+    __table_args__: tuple[UniqueConstraint, ...] = (
         UniqueConstraint("session_id", "ordinal", name="uq_session_turns_session_ordinal"),
     )
 
@@ -215,7 +219,7 @@ class SessionTurnRow(Base):
 
 class TurnCitationRow(Base):
     __tablename__ = "turn_citations"
-    __table_args__ = (
+    __table_args__: tuple[UniqueConstraint, Index] = (
         UniqueConstraint("turn_id", "kind", "marker", name="uq_turn_citations_turn_kind_marker"),
         Index("ix_turn_citations_turn_id", "turn_id"),
     )
@@ -246,7 +250,7 @@ class TurnCitationRow(Base):
 
 class TurnSuggestedQuestionRow(Base):
     __tablename__ = "turn_suggested_questions"
-    __table_args__ = (
+    __table_args__: tuple[UniqueConstraint, Index] = (
         UniqueConstraint(
             "turn_id",
             "ordinal",

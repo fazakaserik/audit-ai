@@ -11,7 +11,6 @@ default:
 
 sync:
     uv sync --all-packages
-    uv run python scripts/install_native_wheel_sitecustomize.py
 
 check: lint typecheck imports test
 

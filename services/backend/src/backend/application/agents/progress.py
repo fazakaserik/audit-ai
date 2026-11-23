@@ -15,10 +15,6 @@ AskStage = Literal[
     "generate",
     "suggest",
     "finalize",
-    # Legacy stages kept for older clients / transitional tests
-    "condense",
-    "retrieve",
-    "grade",
 ]
 
 

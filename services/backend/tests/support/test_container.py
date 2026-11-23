@@ -15,14 +15,10 @@ from backend.application.repositories.document import DocumentRepository
 from backend.application.repositories.engagement import EngagementRepository
 from backend.application.repositories.session import SessionRepository
 from backend.application.repositories.upload import UploadRepository
-from backend.application.services.ask import AskService
-from backend.application.services.documents import DocumentService
-from backend.application.services.engagements import EngagementService
-from backend.application.services.sessions import SessionService
-from backend.application.services.uploads import UploadService
 from backend.application.storage.document_storage import DocumentStorage
 from backend.application.storage.job_queue import JobQueue
 from backend.application.storage.vector_index import VectorIndex
+from backend.application.wiring import wire_session_bound
 from backend.bootstrap import Container, SessionBound
 from backend.config import Settings
 from backend.infrastructure.parsing.archive import build_archive_extractor
@@ -38,6 +34,7 @@ from support.fakes import (
     InMemoryUploadRepository,
     InMemoryVectorIndex,
     NoopJobQueue,
+    agent_search_tool_turns,
 )
 
 
@@ -69,35 +66,20 @@ def build_fakes_bound(
     document_storage = storage or InMemoryDocumentStorage()
     cfg = settings or Settings(relevance_threshold=0.0, retrieval_top_k=8)
     archive_extractor = archives or build_archive_extractor()
-    chat_model = chat or FakeChatModel()
+    chat_model = chat or FakeChatModel(tool_turns=agent_search_tool_turns())
     emb = embedder or FakeEmbedder()
-    return SessionBound(
-        engagements=EngagementService(eng),
-        documents=DocumentService(
-            eng,
-            docs,
-            ups,
-            storage=document_storage,
-            jobs=job_queue,
-            archives=archive_extractor,
-            settings=cfg,
-        ),
-        uploads=UploadService(eng, ups),
-        sessions=SessionService(eng, sess),
-        ask=AskService(
-            eng,
-            docs,
-            sess,
-            vectors,
-            chat=chat_model,
-            embedder=emb,
-            storage=document_storage,
-            settings=cfg,
-        ),
+    return wire_session_bound(
+        engagements=eng,
+        documents=docs,
+        sessions=sess,
+        uploads=ups,
+        chat=chat_model,
+        embedder=emb,
+        storage=document_storage,
+        archives=archive_extractor,
+        settings=cfg,
         jobs=job_queue,
         vector_index=vectors,
-        document_repository=docs,
-        upload_repository=ups,
     )
 
 

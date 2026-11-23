@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar
+from typing import TYPE_CHECKING, ClassVar, cast
 
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
@@ -14,7 +14,11 @@ from textual.widgets.option_list import Option
 from cli.client import CliApiError
 from tui.chat_render import document_bytes_renderable
 from tui.screens.chat import ChatScreen
-from tui.widgets.option_helpers import highlight_first_enabled
+from tui.widgets.option_helpers import (
+    begin_picker_load,
+    finish_picker_load,
+    show_picker_error,
+)
 
 if TYPE_CHECKING:
     from tui.app import AiditorApp
@@ -35,7 +39,7 @@ class DocumentsModal(ModalScreen[None]):
 
     @property
     def aiditor(self) -> AiditorApp:
-        return self.app  # type: ignore[return-value]
+        return cast(AiditorApp, self.app)
 
     def compose(self) -> ComposeResult:
         with Vertical(id="modal-container"):
@@ -63,7 +67,7 @@ class DocumentsModal(ModalScreen[None]):
 
     def _load(self) -> None:
         option_list = self.query_one("#modal-list", OptionList)
-        option_list.clear_options()
+        begin_picker_load(option_list)
         engagement_id = self.aiditor.state.engagement_id
         if engagement_id is None:
             option_list.add_option(Option("No engagement selected.", disabled=True))
@@ -79,24 +83,24 @@ class DocumentsModal(ModalScreen[None]):
                 offset=0,
             )
         except CliApiError as exc:
-            option_list.add_option(Option(f"Error: {exc.detail}", disabled=True))
+            show_picker_error(option_list, f"Error: {exc.detail}")
             return
+        options: list[Option] = []
         if self._current:
-            option_list.add_option(Option("..", id=_PARENT))
+            options.append(Option("..", id=_PARENT))
         for folder in listing.folders:
-            option_list.add_option(Option(f"[{folder}]", id=f"dir:{folder}"))
+            options.append(Option(f"[{folder}]", id=f"dir:{folder}"))
         for doc in listing.items:
             name = self._basename(doc.path)
-            option_list.add_option(
+            options.append(
                 Option(
                     f"{name}  ({doc.size_bytes} bytes, {doc.content_type.value})",
                     id=f"doc:{doc.path}",
                 )
             )
-        if option_list.option_count == 0:
-            option_list.add_option(Option("(empty)", disabled=True))
-        highlight_first_enabled(option_list)
-        option_list.focus()
+        if not options:
+            options.append(Option("(empty)", disabled=True))
+        finish_picker_load(option_list, options)
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         option_id = event.option.id

@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-from io import StringIO
 from pathlib import Path
 from typing import ClassVar
 from uuid import UUID
 
-from rich.console import Console
-from rich.panel import Panel
 from rich.text import Text
 from textual.app import App
 from textual.binding import Binding, BindingType
@@ -16,8 +13,7 @@ from textual.css.query import NoMatches
 
 from backend.domain.engagement import EngagementId
 from cli.client import AuditApiClient, CliApiError
-from cli.render import render_upload_status
-from tui.chat_render import error_panel
+from tui.chat_render import error_panel, upload_status_panel
 from tui.connecting import wait_for_api
 from tui.screens.base import ChromeScreen
 from tui.screens.chat import ChatScreen
@@ -27,6 +23,7 @@ from tui.screens.engagements import EngagementsScreen
 from tui.screens.sessions import SessionsScreen
 from tui.screens.uploads import UploadsModal
 from tui.state import AppState
+from tui.textual_typing import switch_screen
 from tui.widgets.brand_header import BrandHeader
 from tui.widgets.status_bar import StatusBar
 
@@ -98,7 +95,7 @@ class AiditorApp(App[None]):
 
     def _switch(self, screen: ChromeScreen) -> None:
         """Typed wrapper around Textual switch_screen."""
-        self.switch_screen(screen)  # pyright: ignore[reportUnknownMemberType]
+        switch_screen(self, screen)
 
     def select_engagement(self, engagement_id: EngagementId, name: str) -> None:
         self.state.set_engagement(engagement_id, name)
@@ -142,7 +139,4 @@ class AiditorApp(App[None]):
         except (FileNotFoundError, ValueError, OSError) as exc:
             return Text(str(exc), style="red")
 
-        buffer = StringIO()
-        console = Console(file=buffer, force_terminal=False, width=100, color_system=None)
-        render_upload_status(console, final)
-        return Panel(buffer.getvalue().rstrip(), title="Upload", border_style="cyan")
+        return upload_status_panel(final)

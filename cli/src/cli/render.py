@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import json
-import re
 from typing import Literal, assert_never
 
-from rich.console import Console
+from rich.console import Console, Group, RenderableType
 from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.table import Table
@@ -16,7 +14,6 @@ from backend.application.api.contracts.v1.responses import (
     AskResponse,
     CitationResponse,
     DocumentListingResponse,
-    DocumentResponse,
     EngagementResponse,
     SessionDetailResponse,
     SessionSummaryResponse,
@@ -26,38 +23,18 @@ from backend.application.api.contracts.v1.responses import (
     UploadSummaryResponse,
 )
 from cli.client import CliApiError, unwrap_answer, unwrap_insufficient
-
-_TOOL_LABELS: dict[str, str] = {
-    "search_relevant_chunks": "Search",
-    "read_document": "Read",
-    "list_documents": "List",
-}
-_TOOL_DETAIL_MAX = 72
-_SOURCE_PATHS_MAX = 5
-_RESULT_ARROW_RE = re.compile(r"^.*→\s*")
+from cli.formatting.citations import format_citation_line
+from cli.formatting.copy import INSUFFICIENT_ANSWER_LEAD, NO_SAVED_THOUGHT_PROCESS
+from cli.formatting.errors import format_error_lines
+from cli.formatting.labels import stage_label
+from cli.formatting.tool_progress import ToolProgressCorrelator
+from cli.formatting.tools import source_progress_lines
 
 
 def render_error(console: Console, error: CliApiError) -> None:
-    lines = [
-        f"[bold red]Error[/bold red] ({error.status})",
-        f"code: {error.code.value}",
-        f"detail: {error.detail}",
-    ]
-    if error.request_id is not None:
-        lines.append(f"request_id: {error.request_id}")
-    console.print(Panel("\n".join(lines), title="API error", border_style="red"))
-
-
-def _format_citation_line(citation: CitationResponse) -> Text:
-    location = citation.document_path
-    if citation.page is not None:
-        location = f"{location} (p. {citation.page})"
-    if citation.heading_path:
-        location = f"{location} — {' / '.join(citation.heading_path)}"
-    line = Text()
-    line.append(f"[{citation.marker}] {location}\n", style="bold")
-    line.append(citation.snippet, style="dim")
-    return line
+    console.print(
+        Panel("\n".join(format_error_lines(error)), title="API error", border_style="red")
+    )
 
 
 def render_citations(console: Console, citations: tuple[CitationResponse, ...]) -> None:
@@ -67,7 +44,7 @@ def render_citations(console: Console, citations: tuple[CitationResponse, ...]) 
     for index, citation in enumerate(citations):
         if index:
             body.append("\n\n")
-        body.append_text(_format_citation_line(citation))
+        body.append_text(format_citation_line(citation))
     console.print(Panel(body, title="Citations", border_style="cyan"))
 
 
@@ -78,10 +55,7 @@ def render_insufficient(
     uncertainties: tuple[str, ...] = (),
 ) -> None:
     _ = uncertainties  # kept on the API; questions carry the asks shown to the user
-    console.print(
-        "I have insufficient information to answer confidently. "
-        "Please answer my question below to proceed."
-    )
+    console.print(INSUFFICIENT_ANSWER_LEAD)
     if not questions:
         return
     console.print()
@@ -106,165 +80,31 @@ def render_user_message(console: Console, question: str) -> None:
     console.print(question)
 
 
-_STAGE_LABELS: dict[str, str] = {
-    "agent": "Agent thinking…",
-    "tool": "Running tools…",
-    "generate": "Generate answer…",
-    "suggest": "Suggest client questions…",
-    "finalize": "Finalize answer…",
-    "condense": "Condense question…",
-    "retrieve": "Retrieve chunks…",
-    "grade": "Grade evidence…",
-}
-
-
-def stage_label(stage: str) -> str:
-    return _STAGE_LABELS.get(stage, stage)
-
-
 def render_progress_stage(console: Console, stage: str) -> None:
     console.print(Text(stage_label(stage), style="dim"))
 
 
-def _truncate(text: str, max_len: int) -> str:
-    if len(text) <= max_len:
-        return text
-    if max_len <= 1:
-        return "…"
-    return text[: max_len - 1].rstrip() + "…"
-
-
-def _parse_tool_args(arguments: str) -> dict[str, object]:
-    raw = arguments.strip()
-    if not raw:
-        return {}
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        return {}
-    return parsed if isinstance(parsed, dict) else {}
-
-
-def _tool_detail(name: str, arguments: str) -> str:
-    args = _parse_tool_args(arguments)
-    if name == "search_relevant_chunks":
-        query = args.get("query")
-        if isinstance(query, str) and query.strip():
-            return f"“{_truncate(query.strip(), _TOOL_DETAIL_MAX)}”"
-    elif name == "read_document":
-        path = args.get("path")
-        if isinstance(path, str) and path.strip():
-            return _truncate(path.strip(), _TOOL_DETAIL_MAX)
-    elif name == "list_documents":
-        prefix = args.get("prefix")
-        if isinstance(prefix, str) and prefix.strip():
-            return _truncate(prefix.strip(), _TOOL_DETAIL_MAX)
-        return "/"
-    if args:
-        compact = json.dumps(args, ensure_ascii=False, separators=(",", ":"))
-        return _truncate(compact, _TOOL_DETAIL_MAX)
-    stripped = arguments.strip()
-    return _truncate(stripped, _TOOL_DETAIL_MAX) if stripped else ""
-
-
-def _dedupe_sources_by_path(
-    sources: list[dict[str, object]],
-) -> list[tuple[str, float | None]]:
-    best: dict[str, float | None] = {}
-    order: list[str] = []
-    for item in sources:
-        path = str(item.get("path", "")).strip()
-        if not path:
-            continue
-        score_raw = item.get("score")
-        score: float | None = float(score_raw) if isinstance(score_raw, (int, float)) else None
-        if path not in best:
-            order.append(path)
-            best[path] = score
-            continue
-        previous = best[path]
-        if score is not None and (previous is None or score > previous):
-            best[path] = score
-    ranked = [(path, best[path]) for path in order]
-    ranked.sort(
-        key=lambda row: (-row[1] if row[1] is not None else float("inf"), row[0]),
-    )
-    return ranked
-
-
-def _short_tool_result(name: str, summary: str) -> str:
-    text = summary.strip()
-    if not text:
-        return ""
-    if text.startswith(name):
-        text = _RESULT_ARROW_RE.sub("", text).strip()
-    elif "→" in text:
-        text = text.split("→", 1)[1].strip()
-    return text
-
-
 class ToolProgressView:
-    """Correlate tool_call → sources → tool_result into one compact tree."""
+    """CLI wrapper: print tool progress lines via Rich Console."""
 
     def __init__(self) -> None:
-        self._pending_sources: list[dict[str, object]] = []
+        self._correlator = ToolProgressCorrelator()
 
     def on_tool_call(self, console: Console, *, name: str, arguments: str) -> None:
-        self._pending_sources = []
-        label = _TOOL_LABELS.get(name, name)
-        detail = _tool_detail(name, arguments)
-        line = f"▸ {label}" if not detail else f"▸ {label}  {detail}"
-        console.print(Text(line, style="dim"))
+        console.print(self._correlator.on_tool_call(name=name, arguments=arguments))
 
     def on_sources(self, sources: list[dict[str, object]]) -> None:
-        self._pending_sources = list(sources)
+        self._correlator.on_sources(sources)
 
     def on_tool_result(self, console: Console, *, name: str, summary: str) -> None:
-        sources = self._pending_sources
-        self._pending_sources = []
-        if sources:
-            unique = _dedupe_sources_by_path(sources)
-            hits = len(sources)
-            docs = len(unique)
-            console.print(Text(f"  {hits} hits · {docs} docs", style="dim"))
-            shown = unique[:_SOURCE_PATHS_MAX]
-            for path, score in shown:
-                if score is None:
-                    console.print(Text(f"  · {path}", style="dim"))
-                else:
-                    console.print(Text(f"  · {path}  {score:.2f}", style="dim"))
-            remaining = len(unique) - len(shown)
-            if remaining > 0:
-                console.print(Text(f"  · +{remaining} more", style="dim"))
-            return
-        short = _short_tool_result(name, summary)
-        if short:
-            console.print(Text(f"  {short}", style="dim"))
+        for line in self._correlator.on_tool_result(name=name, summary=summary):
+            console.print(line)
 
 
 def render_progress_sources(console: Console, sources: list[dict[str, object]]) -> None:
     """Legacy one-shot source dump; prefer ToolProgressView during ask streams."""
-    if not sources:
-        console.print(Text("  (no sources)", style="dim"))
-        return
-    unique = _dedupe_sources_by_path(sources)
-    shown = unique[:_SOURCE_PATHS_MAX]
-    for path, score in shown:
-        if score is None:
-            console.print(Text(f"  · {path}", style="dim"))
-        else:
-            console.print(Text(f"  · {path}  {score:.2f}", style="dim"))
-    remaining = len(unique) - len(shown)
-    if remaining > 0:
-        console.print(Text(f"  · +{remaining} more", style="dim"))
-
-
-def render_progress_tool_call(console: Console, *, name: str, arguments: str) -> None:
-    ToolProgressView().on_tool_call(console, name=name, arguments=arguments)
-
-
-def render_progress_tool_result(console: Console, *, name: str, summary: str) -> None:
-    ToolProgressView().on_tool_result(console, name=name, summary=summary)
+    for line in source_progress_lines(sources):
+        console.print(Text(line, style="dim"))
 
 
 def render_thinking_delta(console: Console, text: str, *, at_line_start: bool) -> bool:
@@ -387,16 +227,6 @@ def render_document_listing(
     )
 
 
-def render_documents(console: Console, documents: tuple[DocumentResponse, ...]) -> None:
-    table = Table(title="Documents")
-    table.add_column("Path", style="cyan")
-    table.add_column("Type")
-    table.add_column("Bytes", justify="right")
-    for item in documents:
-        table.add_row(item.path, item.content_type.value, str(item.size_bytes))
-    console.print(table)
-
-
 def render_upload_summaries(
     console: Console,
     uploads: tuple[UploadSummaryResponse, ...],
@@ -443,13 +273,7 @@ def render_session_detail(console: Console, session: SessionDetailResponse) -> N
         turn.thinking_text or (turn.thinking_seconds is not None and turn.thinking_seconds > 0)
         for turn in session.turns
     ):
-        console.print(
-            Text(
-                "No saved thought process in this session "
-                "(only asks made after thinking-persist store it — ask again to capture).",
-                style="dim italic",
-            )
-        )
+        console.print(Text(NO_SAVED_THOUGHT_PROCESS, style="dim italic"))
     for turn in session.turns:
         render_turn(console, turn)
 
@@ -464,24 +288,28 @@ def render_turn(console: Console, turn: TurnResponse) -> None:
     )
 
 
-def render_upload_status(console: Console, upload: UploadResponse) -> None:
-    console.print(
+def upload_status_renderable(upload: UploadResponse) -> RenderableType:
+    parts: list[RenderableType] = [
         Text(
             f"Upload {upload.id} — {upload.status.value} (folder: {upload.target_folder})",
             style="bold",
-        )
-    )
+        ),
+    ]
     if upload.completed_at is not None:
-        console.print(Text(f"completed_at: {upload.completed_at.isoformat()}", style="dim"))
-    if not upload.items:
-        return
-    table = Table(title="Items")
-    table.add_column("Path")
-    table.add_column("Status")
-    table.add_column("Reason")
-    for item in upload.items:
-        table.add_row(item.document_path, item.status.value, item.reason or "")
-    console.print(table)
+        parts.append(Text(f"completed_at: {upload.completed_at.isoformat()}", style="dim"))
+    if upload.items:
+        table = Table(title="Items")
+        table.add_column("Path")
+        table.add_column("Status")
+        table.add_column("Reason")
+        for item in upload.items:
+            table.add_row(item.document_path, item.status.value, item.reason or "")
+        parts.append(table)
+    return Group(*parts)
+
+
+def render_upload_status(console: Console, upload: UploadResponse) -> None:
+    console.print(upload_status_renderable(upload))
 
 
 def render_document_bytes(console: Console, document_path: str, content: bytes) -> None:

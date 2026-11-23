@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import cast
 
 from langgraph.graph import END, START, StateGraph
 
@@ -148,7 +149,7 @@ async def run_graph(
         "generation": None,
         "answer": None,
     }
-    final = await graph.ainvoke(initial)
+    final = cast(State, await graph.ainvoke(initial))
     answer = final.get("answer")
     if answer is None:
         msg = "ask graph finished without an answer"
