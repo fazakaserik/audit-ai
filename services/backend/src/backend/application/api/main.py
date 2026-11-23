@@ -69,7 +69,7 @@ def create_app(
     redoc_url = "/redoc" if cfg.enable_api_docs else None
     openapi_url = "/openapi.json" if cfg.enable_api_docs else None
     app = FastAPI(
-        title="Audit Assistant API",
+        title="AIditor API",
         version="1.0.0",
         lifespan=lifespan,
         docs_url=docs_url,

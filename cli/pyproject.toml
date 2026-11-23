@@ -1,7 +1,7 @@
 [project]
 name = "cli"
 version = "0.1.0"
-description = "Interactive terminal client for Audit Assistant"
+description = "Interactive terminal client for AIditor"
 requires-python = ">=3.13"
 dependencies = [
   "backend",
@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-audit-ai = "cli.main:app"
+aiditor = "cli.main:app"
 
 [tool.uv.sources]
 backend = { workspace = true }

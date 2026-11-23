@@ -1,4 +1,4 @@
-"""Interactive REPL for audit-ai."""
+"""Interactive REPL for aiditor."""
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ from backend.application.api.contracts.v1.responses import (
 )
 from backend.domain.engagement import EngagementId
 from backend.domain.errors import ErrorCode
+from cli.banner import print_banner
 from cli.client import AuditApiClient, CliApiError, unwrap_answer, unwrap_insufficient
 from cli.render import (
     ToolProgressView,
@@ -580,7 +581,7 @@ def run_repl() -> None:
 
     with AuditApiClient.from_env() as client:
         try:
-            console.print("[bold]Audit Assistant[/bold] — interactive mode")
+            print_banner(console)
             _wait_for_api(client, console)
             session: PromptSession[str] = PromptSession(
                 bottom_toolbar=lambda: _token_toolbar(state),

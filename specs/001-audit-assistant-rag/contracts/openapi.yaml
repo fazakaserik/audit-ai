@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: Audit Assistant API
+  title: AIditor API
   version: 1.0.0
   description: |
     Document-grounded Q&A for auditors. Business routes are under `/api/v1`.

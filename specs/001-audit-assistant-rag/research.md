@@ -63,13 +63,13 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 
 ## Terminal client (`cli/`)
 
-- **Decision**: `cli/` is a uv workspace member (import name `cli`, command `audit-ai`). Typer provides the subcommands, prompt_toolkit the interactive input (history, completion, slash commands) and Rich the output (markdown answers, citation panels, spinners). It talks to the service only over HTTP, using httpx.
-- **Behaviour**: `audit-ai` without arguments opens the interactive chat: choose an engagement, then start a new session or resume a recent one. A new session starts implicitly with the first question, and the CLI then keeps sending the returned `session_id`. Slash commands include `/engagement`, `/new`, `/sessions`, `/resume`, `/open <citation>`, `/help` and `/quit`. The non-interactive subcommands are `engagements list|create`, `upload <path> --engagement --folder [--wait]`, `uploads status` and `sessions list`. There are no sample-specific or test-only commands.
+- **Decision**: `cli/` is a uv workspace member (import name `cli`, command `aiditor`). Typer provides the subcommands, prompt_toolkit the interactive input (history, completion, slash commands) and Rich the output (markdown answers, citation panels, spinners). It talks to the service only over HTTP, using httpx.
+- **Behaviour**: `aiditor` without arguments opens the interactive chat: choose an engagement, then start a new session or resume a recent one. A new session starts implicitly with the first question, and the CLI then keeps sending the returned `session_id`. Slash commands include `/engagement`, `/new`, `/sessions`, `/resume`, `/open <citation>`, `/help` and `/quit`. The non-interactive subcommands are `engagements list|create`, `upload <path> --engagement --folder [--wait]`, `uploads status` and `sessions list`. There are no sample-specific or test-only commands.
 - **Rationale**: A real client of the public API proves that the API is complete and typed end to end, and it gives the interview a strong live demo.
 
 ## Sample data and seeding
 
-- **Decision**: AI-generated fictional sample documents live in `docs/samples/ai-generated/<engagement-id>/...`. `docs/samples/real/` is committed and reserved for real documents added by the author, which must be publicly available and non-confidential, with a README listing each document's source and licence. `scripts/seed_samples.py` (run with `uv run`) is the seeding script that creates the engagement(s) and uploads every folder by calling `audit-ai` subcommands with `--wait`. A `just seed` recipe runs it as part of setting up the dev environment.
+- **Decision**: AI-generated fictional sample documents live in `docs/samples/ai-generated/<engagement-id>/...`. `docs/samples/real/` is committed and reserved for real documents added by the author, which must be publicly available and non-confidential, with a README listing each document's source and licence. `scripts/seed_samples.py` (run with `uv run`) is the seeding script that creates the engagement(s) and uploads every folder by calling `aiditor` subcommands with `--wait`. A `just seed` recipe runs it as part of setting up the dev environment.
 - **Rationale**: The CLI stays a clean product tool, and seeding goes through the same real path (HTTP, validation, queue, worker, indexing), which makes it a smoke test too.
 
 ## Testing strategy

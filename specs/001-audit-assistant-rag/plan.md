@@ -6,7 +6,7 @@
 
 ## Summary
 
-Build a backend-only, document-grounded auditor assistant as a uv monorepo. Clients upload documents (files or zip) into an engagement folder tree; auditors ask questions and receive answers grounded only in those documents, with inline numbered citations, or `insufficient_evidence` with suggested client questions. Follow-up questions live in server-side sessions. Upload indexing runs asynchronously in a worker. Cloud (OpenAI) and free local (Ollama) modes switch by configuration. An interactive terminal CLI (`audit-ai`) is the primary demo client. Postgres + pgvector is the single datastore (metadata, jobs, hybrid search). Azure AI Search is the documented cloud search target.
+Build a backend-only, document-grounded auditor assistant as a uv monorepo. Clients upload documents (files or zip) into an engagement folder tree; auditors ask questions and receive answers grounded only in those documents, with inline numbered citations, or `insufficient_evidence` with suggested client questions. Follow-up questions live in server-side sessions. Upload indexing runs asynchronously in a worker. Cloud (OpenAI) and free local (Ollama) modes switch by configuration. An interactive terminal CLI (`aiditor`) is the primary demo client. Postgres + pgvector is the single datastore (metadata, jobs, hybrid search). Azure AI Search is the documented cloud search target.
 
 ## Technical Context
 
@@ -75,7 +75,7 @@ audit-ai/
 │           ├── application/             # ports, use cases, rag, api, worker
 │           ├── infrastructure/          # postgres, llm providers, fs, parsing
 │           ├── config.py / bootstrap.py / logging.py
-├── cli/                                 # audit-ai (HTTP client)
+├── cli/                                 # aiditor (HTTP client)
 ├── services/backend/tests/{unit,api,db,integration,support}/
 ├── cli/tests/
 ├── scripts/ docs/samples/ deployment/

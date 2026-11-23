@@ -33,7 +33,7 @@ Workspace layout from [plan.md](./plan.md): `services/backend (domain layer)`, `
 - [x] T003 [P] Initialize `services/backend/pyproject.toml` package `backend` (legacy task text; now `backend`) with `src/core/__init__.py` and dependency on `domain`
 - [x] T004 [P] Initialize `services/api/pyproject.toml` package `api` with `src/api/__init__.py` and dependencies on `core`, `domain`, FastAPI
 - [x] T005 [P] Initialize `services/worker/pyproject.toml` package `worker` with `src/worker/__init__.py` and dependency on `core`
-- [x] T006 [P] Initialize `cli/pyproject.toml` package `cli` (console script `audit-ai`) with dependency on `domain` only (plus httpx/typer/rich/prompt_toolkit); MUST NOT import backend application/adapters (HTTP + contracts only)
+- [x] T006 [P] Initialize `cli/pyproject.toml` package `cli` (console script `aiditor`) with dependency on `domain` only (plus httpx/typer/rich/prompt_toolkit); MUST NOT import backend application/adapters (HTTP + contracts only)
 - [x] T007 [P] Add `pyrightconfig.json` (basedpyright strict, workspace extraPaths) and `ruff` config in root `pyproject.toml`
 - [x] T008 [P] Add `importlinter.ini` contracts: domain→nothing; application→domain only; vendors only in `core.adapters`; api/worker↛each other; cli→domain only
 - [x] T009 [P] Add root `justfile` recipes: `check`, `test`, `test-db`, `test-integration`, `migrate`, `up`, `seed` wrapping `uv run` / `docker compose`
@@ -235,7 +235,7 @@ Workspace layout from [plan.md](./plan.md): `services/backend (domain layer)`, `
 
 ## Phase 9: User Story 7 — Interactive terminal client (Priority: P3)
 
-**Goal**: `audit-ai` REPL + non-interactive subcommands over HTTP only
+**Goal**: `aiditor` REPL + non-interactive subcommands over HTTP only
 
 **Independent Test**: Ask via REPL, quit, resume session; upload with `--wait`
 
@@ -249,7 +249,7 @@ Workspace layout from [plan.md](./plan.md): `services/backend (domain layer)`, `
 - [x] T096 [P] [US7] Implement Rich renderers (answer, citations footnotes, suggestions, errors) in `cli/src/cli/render.py`
 - [x] T097 [US7] Implement Typer subcommands (`engagements`, `upload`, `uploads status`, `sessions`) in `cli/src/cli/main.py` per contracts/cli.md
 - [x] T098 [US7] Implement prompt_toolkit REPL + slash commands in `cli/src/cli/repl.py` (auto-carry `session_id`)
-- [x] T099 [US7] Point `scripts/seed_samples.py` at `audit-ai` subcommands exclusively
+- [x] T099 [US7] Point `scripts/seed_samples.py` at `aiditor` subcommands exclusively
 
 **Checkpoint**: Full demo without curl; API proven by a real client
 

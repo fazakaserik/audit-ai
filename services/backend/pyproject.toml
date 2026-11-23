@@ -1,7 +1,7 @@
 [project]
 name = "backend"
 version = "0.1.0"
-description = "Audit Assistant backend (HTTP API, business logic, ingestion worker)"
+description = "AIditor backend (HTTP API, business logic, ingestion worker)"
 requires-python = ">=3.13"
 dependencies = [
   "pydantic>=2.10",

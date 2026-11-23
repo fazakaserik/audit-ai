@@ -4,9 +4,38 @@ requires-python = ">=3.13"
 
 [manifest]
 members = [
-    "audit-ai",
+    "aiditor",
     "backend",
     "cli",
+]
+
+[[package]]
+name = "aiditor"
+version = "0.1.0"
+source = { virtual = "." }
+
+[package.dev-dependencies]
+dev = [
+    { name = "basedpyright" },
+    { name = "httpx" },
+    { name = "import-linter" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+    { name = "testcontainers" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "basedpyright", specifier = ">=1.28.0" },
+    { name = "httpx", specifier = ">=0.28" },
+    { name = "import-linter", specifier = ">=2.1" },
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "pytest-asyncio", specifier = ">=0.25" },
+    { name = "ruff", specifier = ">=0.9" },
+    { name = "testcontainers", extras = ["postgres"], specifier = ">=4.9" },
 ]
 
 [[package]]
@@ -105,35 +134,6 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/3a/3c/38104e60cda6131977f95b634d45536ddc1cde53ef8bc765f9056e3e17ee/asyncpg-0.32.0-cp315-cp315t-win32.whl", hash = "sha256:d148cb6a9081ed999ca3cd0d95fb9eaf79bf17d885bba93c83de52273d2fe0af", size = 592437, upload-time = "2026-10-06T20:32:21.668Z" },
     { url = "https://files.pythonhosted.org/packages/95/09/85cba249db0910708826ea428b32a4a05630df993621c369bdb8d42c73c5/asyncpg-0.32.0-cp315-cp315t-win_amd64.whl", hash = "sha256:e101801b4124e905da0732cf2b0d838f682a9ea5273d7cced3d54bdbe744e6f7", size = 672417, upload-time = "2026-10-06T20:32:23.147Z" },
     { url = "https://files.pythonhosted.org/packages/38/11/ec5f7f306dd361aa9558f002cbb6acfa1e9ba32fa59b8f53135fbdfa14f1/asyncpg-0.32.0-cp315-cp315t-win_arm64.whl", hash = "sha256:3bbf08c08e31f43be858255614518e78cdfb343571e557e818e9fe736334f4c8", size = 622767, upload-time = "2026-10-06T20:32:24.64Z" },
-]
-
-[[package]]
-name = "audit-ai"
-version = "0.1.0"
-source = { virtual = "." }
-
-[package.dev-dependencies]
-dev = [
-    { name = "basedpyright" },
-    { name = "httpx" },
-    { name = "import-linter" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "ruff" },
-    { name = "testcontainers" },
-]
-
-[package.metadata]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "basedpyright", specifier = ">=1.28.0" },
-    { name = "httpx", specifier = ">=0.28" },
-    { name = "import-linter", specifier = ">=2.1" },
-    { name = "pytest", specifier = ">=8.3" },
-    { name = "pytest-asyncio", specifier = ">=0.25" },
-    { name = "ruff", specifier = ">=0.9" },
-    { name = "testcontainers", extras = ["postgres"], specifier = ">=4.9" },
 ]
 
 [[package]]

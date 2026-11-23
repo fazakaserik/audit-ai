@@ -33,4 +33,4 @@ async def test_docs_enabled_when_configured() -> None:
         assert (await client.get("/redoc")).status_code == 200
         openapi = await client.get("/openapi.json")
         assert openapi.status_code == 200
-        assert openapi.json()["info"]["title"] == "Audit Assistant API"
+        assert openapi.json()["info"]["title"] == "AIditor API"

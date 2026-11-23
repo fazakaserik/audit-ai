@@ -8,7 +8,7 @@ Sync Impact Report
 - Follow-up TODOs: none
 -->
 
-# Audit Assistant Constitution
+# AIditor Constitution
 
 ## Core Principles
 

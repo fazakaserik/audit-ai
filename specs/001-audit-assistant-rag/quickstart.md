@@ -1,4 +1,4 @@
-# Quickstart: Validate Audit Assistant end-to-end
+# Quickstart: Validate AIditor end-to-end
 
 Prerequisites: Docker, `uv`, `just`, and **host Ollama with GPU** (recommended) or an OpenAI API key.
 
@@ -43,8 +43,8 @@ Uses `scripts/seed_samples.py` → HTTP create engagement + upload folders with 
 ## 3. Ask via CLI
 
 ```bash
-uv run audit-ai
-# or: uv run audit-ai engagements list
+uv run aiditor
+# or: uv run aiditor engagements list
 ```
 
 ### Scenario A — grounded answer
@@ -68,5 +68,5 @@ Ask a question, then a pronoun follow-up in the same REPL session.
 ### Scenario E — upload
 
 ```bash
-uv run audit-ai upload docs/samples/ai-generated/northwind-fy2025/finance --engagement northwind-fy2025 --folder finance --wait
+uv run aiditor upload docs/samples/ai-generated/northwind-fy2025/finance --engagement northwind-fy2025 --folder finance --wait
 ```

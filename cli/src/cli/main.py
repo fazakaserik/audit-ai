@@ -1,4 +1,4 @@
-"""Typer CLI entry for audit-ai."""
+"""Typer CLI entry for aiditor."""
 
 from __future__ import annotations
 
@@ -28,8 +28,8 @@ from cli.repl import run_repl
 console = Console()
 
 app = typer.Typer(
-    name="audit-ai",
-    help="Audit Assistant terminal client",
+    name="aiditor",
+    help="AIditor terminal client",
     no_args_is_help=False,
 )
 
@@ -55,7 +55,7 @@ def _exit_api_error(exc: CliApiError) -> None:
 
 @app.callback(invoke_without_command=True)
 def main(ctx: typer.Context) -> None:
-    """Interactive terminal client for the Audit Assistant API."""
+    """Interactive terminal client for the AIditor API."""
     if ctx.invoked_subcommand is None:
         run_repl()
         raise typer.Exit()
@@ -64,7 +64,7 @@ def main(ctx: typer.Context) -> None:
 @app.command("version")
 def version() -> None:
     """Print CLI version."""
-    typer.echo(f"audit-ai {__version__}")
+    typer.echo(f"aiditor {__version__}")
 
 
 @engagements_app.command("list")

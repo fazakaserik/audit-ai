@@ -1,4 +1,4 @@
-# Audit Assistant
+# AIditor
 
 Document-grounded Q&A for auditors. Upload engagement documents, ask questions, and get
 cited answers — or suggested client questions when evidence is missing.
@@ -10,7 +10,7 @@ See [specs/001-audit-assistant-rag/](specs/001-audit-assistant-rag/) for the ful
 | Path               | Package   | Role                                                                                |
 | ------------------ | --------- | ----------------------------------------------------------------------------------- |
 | `services/backend` | `backend` | Domain, application, infrastructure layers; HTTP API + worker; tests under `tests/` |
-| `cli`              | `cli`     | `audit-ai` terminal client; tests in `cli/tests/`                                   |
+| `cli`              | `cli`     | `aiditor` terminal client; tests in `cli/tests/`                                    |
 
 Compose runs a single `backend` container (HTTP API + in-process upload worker).
 
@@ -36,7 +36,7 @@ cp deployment/docker-compose/.env.example deployment/docker-compose/.env
 uv sync
 just up
 just seed    # HTTP upload of northwind samples (API + worker must be up)
-audit-ai     # interactive REPL
+aiditor      # interactive REPL
 ```
 
 Schema migrations apply automatically when the API starts. To author a new

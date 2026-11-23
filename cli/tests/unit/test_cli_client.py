@@ -1,4 +1,4 @@
-"""Unit tests for the audit-ai HTTP client."""
+"""Unit tests for the aiditor HTTP client."""
 
 from __future__ import annotations
 

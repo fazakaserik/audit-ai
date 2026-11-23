@@ -2,7 +2,7 @@
 
 Status: design only, not implemented. The runnable deployment is `deployment/docker-compose`.
 
-This document describes how the Audit Assistant would run in Azure. The application code stays the same; each infrastructure concern sits behind a port in the service, so moving to the cloud means adding `backend.infrastructure` adapters and configuration, not changing the application logic.
+This document describes how AIditor would run in Azure. The application code stays the same; each infrastructure concern sits behind a port in the service, so moving to the cloud means adding `backend.infrastructure` adapters and configuration, not changing the application logic.
 
 ## Component mapping
 

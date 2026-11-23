@@ -1,4 +1,4 @@
-"""Typed HTTP client for the Audit Assistant API."""
+"""Typed HTTP client for the AIditor API."""
 
 from __future__ import annotations
 
