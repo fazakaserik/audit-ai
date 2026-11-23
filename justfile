@@ -14,9 +14,25 @@ sync:
 
 check: lint typecheck imports test
 
+check-backend: lint-backend typecheck-backend imports test-backend
+check-cli: lint-cli typecheck-cli imports test-cli
+check-tui: lint-tui typecheck-tui imports test-tui
+
 lint:
     uv run ruff check .
     uv run ruff format --check .
+
+lint-backend:
+    uv run ruff check services/backend scripts
+    uv run ruff format --check services/backend scripts
+
+lint-cli:
+    uv run ruff check cli
+    uv run ruff format --check cli
+
+lint-tui:
+    uv run ruff check tui
+    uv run ruff format --check tui
 
 format:
     uv run ruff check --fix .
@@ -25,12 +41,30 @@ format:
 typecheck:
     uv run basedpyright
 
+typecheck-backend:
+    uv run basedpyright services/backend/src scripts
+
+typecheck-cli:
+    uv run basedpyright cli/src
+
+typecheck-tui:
+    uv run basedpyright tui/src
+
 imports:
     # Prefer the console script; fall back when the host blocks the .exe (AppLocker).
     uv run python -c "from importlinter.cli import lint_imports; raise SystemExit(lint_imports(config_filename='importlinter.ini'))"
 
 test:
     uv run python -m pytest
+
+test-backend:
+    uv run python -m pytest services/backend/tests
+
+test-cli:
+    uv run python -m pytest cli/tests
+
+test-tui:
+    uv run python -m pytest tui/tests
 
 test-db:
     uv run python -m pytest -m db
