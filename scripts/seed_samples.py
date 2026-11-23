@@ -1,86 +1,68 @@
-"""Seed northwind sample via HTTP upload (same path as the CLI client)."""
+"""Seed AI-generated sample engagements via HTTP upload (same path as the CLI client)."""
 
 from __future__ import annotations
 
 import sys
-import time
 from pathlib import Path
-from uuid import UUID
 
-from backend.application.api.contracts.v1.responses import UploadResponse
-from backend.domain.engagement import EngagementId
 from backend.domain.errors import ErrorCode
-from backend.domain.upload import UploadItemStatus, UploadStatus
-from cli.client import UPLOAD_POLL_INTERVAL_SECONDS, AuditApiClient, CliApiError
+from cli.client import AuditApiClient, CliApiError
 
 ROOT = Path(__file__).resolve().parents[1]
-SAMPLE_DIR = ROOT / "docs" / "samples" / "ai-generated" / "northwind-fy2025"
-ENGAGEMENT_ID = "northwind-fy2025"
-ENGAGEMENT_NAME = "Northwind FY2025"
+SAMPLES_ROOT = ROOT / "docs" / "samples" / "ai-generated"
 
-_TERMINAL_ITEM = frozenset(
-    {
-        UploadItemStatus.INDEXED,
-        UploadItemStatus.SKIPPED,
-        UploadItemStatus.NOT_SEARCHABLE,
-        UploadItemStatus.FAILED,
-    }
+# Display names for engagement folders under SAMPLES_ROOT (skip README-only files).
+ENGAGEMENTS: tuple[tuple[str, str], ...] = (
+    ("northwind-fy2025", "Northwind FY2025"),
+    ("fabrikam-sox-fy2025", "Fabrikam SOX FY2025"),
+    ("adventureworks-itgc-fy2025", "Adventure Works ITGC FY2025"),
 )
 
 
-def _wait_with_progress(
-    client: AuditApiClient,
-    engagement_id: EngagementId,
-    upload_id: UUID,
-) -> UploadResponse:
-    last_summary = ""
-    while True:
-        status = client.get_upload_status(engagement_id, upload_id)
-        done = sum(1 for item in status.items if item.status in _TERMINAL_ITEM)
-        active = next(
-            (item for item in status.items if item.status not in _TERMINAL_ITEM),
-            None,
+def _ensure_engagement(client: AuditApiClient, engagement_id: str, name: str) -> None:
+    try:
+        client.create_engagement(engagement_id=engagement_id, name=name)
+        print(f"created engagement {engagement_id}")
+    except CliApiError as exc:
+        if exc.code == ErrorCode.CONFLICT or exc.status == 409:
+            print(f"engagement {engagement_id} already present")
+            return
+        existing = {item.id for item in client.list_engagements().items}
+        if engagement_id not in existing:
+            raise
+        print(f"engagement {engagement_id} already present")
+
+
+def _seed_engagement(client: AuditApiClient, engagement_id: str, name: str) -> None:
+    sample_dir = SAMPLES_ROOT / engagement_id
+    if not sample_dir.is_dir():
+        raise SystemExit(f"sample directory missing: {sample_dir}")
+
+    print(f"\n=== {engagement_id} ({name}) ===")
+    _ensure_engagement(client, engagement_id, name)
+
+    folders = sorted(path for path in sample_dir.iterdir() if path.is_dir())
+    if not folders:
+        raise SystemExit(f"no document folders under {sample_dir}")
+
+    for folder in folders:
+        accepted = client.upload_path(
+            engagement_id,
+            folder,
+            folder=folder.name,
         )
-        active_bit = f", working on {active.document_path}" if active is not None else ""
-        summary = f"{status.status.value}: {done}/{len(status.items)} items done{active_bit}"
-        if summary != last_summary:
-            print(f"  … {summary}")
-            last_summary = summary
-        if status.status in (UploadStatus.COMPLETED, UploadStatus.FAILED):
-            return status
-        time.sleep(UPLOAD_POLL_INTERVAL_SECONDS)
+        print(f"queued {folder.name} → {accepted.upload_id}")
 
 
 def main() -> None:
-    if not SAMPLE_DIR.is_dir():
-        raise SystemExit(f"sample directory missing: {SAMPLE_DIR}")
+    if not SAMPLES_ROOT.is_dir():
+        raise SystemExit(f"samples root missing: {SAMPLES_ROOT}")
 
     client = AuditApiClient.from_env()
     try:
-        try:
-            client.create_engagement(engagement_id=ENGAGEMENT_ID, name=ENGAGEMENT_NAME)
-            print(f"created engagement {ENGAGEMENT_ID}")
-        except CliApiError as exc:
-            if exc.code == ErrorCode.CONFLICT or exc.status == 409:
-                print(f"engagement {ENGAGEMENT_ID} already present")
-            else:
-                existing = {item.id for item in client.list_engagements().items}
-                if ENGAGEMENT_ID not in existing:
-                    raise
-                print(f"engagement {ENGAGEMENT_ID} already present")
-
-        for folder in sorted(path for path in SAMPLE_DIR.iterdir() if path.is_dir()):
-            accepted = client.upload_path(
-                ENGAGEMENT_ID,
-                folder,
-                folder=folder.name,
-            )
-            print(f"queued {folder.name} → {accepted.upload_id}")
-            final = _wait_with_progress(client, ENGAGEMENT_ID, accepted.upload_id)
-            print(f"upload {accepted.upload_id} → {final.status}")
-            if final.status.value == "failed":
-                raise SystemExit(f"upload failed: {accepted.upload_id}")
-        print("seed complete")
+        for engagement_id, name in ENGAGEMENTS:
+            _seed_engagement(client, engagement_id, name)
+        print("\nseed queued (processing continues in the background)")
     except CliApiError as exc:
         print(f"API error {exc.status} {exc.code}: {exc.detail}", file=sys.stderr)
         raise SystemExit(1) from exc

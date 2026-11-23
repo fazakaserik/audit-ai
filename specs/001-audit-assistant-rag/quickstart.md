@@ -45,8 +45,8 @@ Interactive OpenAPI (default `ENABLE_API_DOCS=true`): http://localhost:8000/docs
 just seed
 ```
 
-Uses `scripts/seed_samples.py` → HTTP create engagement + upload folders with wait.
-Engagement id: `northwind-fy2025`.
+Uses `scripts/seed_samples.py` → HTTP create engagements + queue folder uploads (processing continues in the background).
+Seeds `northwind-fy2025`, `fabrikam-sox-fy2025`, and `adventureworks-itgc-fy2025` (see [docs/samples/ai-generated/README.md](../../docs/samples/ai-generated/README.md)).
 
 ## 3. Ask over HTTP (primary demo path)
 
@@ -80,7 +80,7 @@ Expect `kind: "insufficient_evidence"` plus suggested client questions.
 
 Follow-up in a session: pass `session_id` from the previous response into the next ask body.
 
-More prompts: [docs/samples/ai-generated/northwind-fy2025/README.md](../../docs/samples/ai-generated/northwind-fy2025/README.md).
+More prompts: [docs/samples/ai-generated/README.md](../../docs/samples/ai-generated/README.md).
 
 ## 4. Optional: TUI / CLI
 

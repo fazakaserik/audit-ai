@@ -88,9 +88,9 @@ OPENAI_API_KEY=sk-...
 
 ```bash
 cp deployment/docker-compose/.env.example deployment/docker-compose/.env
-uv sync
+just sync         # uv sync --all-packages (backend + cli + tui)
 just compose-up   # migrate → 2× api + 2× upload-processor + load-balancer + postgres
-just seed         # creates engagement northwind-fy2025 and indexes sample docs
+just seed         # creates sample engagements and indexes AI-generated docs
 ```
 
 For day-to-day coding against published DB ports and readable logs, use `just compose-dev-up` instead.
@@ -125,7 +125,7 @@ curl -s -X POST http://localhost:8000/api/v1/engagements/northwind-fy2025/ask \
   -d "{\"question\": \"What is the SOC 2 Type II opinion date for Contoso?\"}"
 ```
 
-More sample prompts: [docs/samples/ai-generated/northwind-fy2025/README.md](docs/samples/ai-generated/northwind-fy2025/README.md).  
+Sample engagements and prompts: [docs/samples/ai-generated/README.md](docs/samples/ai-generated/README.md).  
 End-to-end scenarios: [specs/001-audit-assistant-rag/quickstart.md](specs/001-audit-assistant-rag/quickstart.md).
 
 ### Optional clients
