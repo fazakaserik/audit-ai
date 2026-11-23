@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from backend.application.dto import DocumentListing, UploadAccepted
 from backend.application.parsing.archive_extractor import ArchiveExtractor
+from backend.application.parsing.document_parser import DocumentParser
 from backend.application.repositories.document import DocumentRepository
 from backend.application.repositories.engagement import EngagementRepository
 from backend.application.repositories.upload import UploadRepository
@@ -41,6 +42,17 @@ _CONTENT_TYPE_TO_MEDIA: dict[ContentType, str] = {
     ContentType.MARKDOWN: "text/markdown",
     ContentType.TEXT: "text/plain",
     ContentType.PDF: "application/pdf",
+    ContentType.DOCX: (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    ),
+    ContentType.XLSX: (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    ),
+    ContentType.PPTX: (
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    ),
+    ContentType.HTML: "text/html",
+    ContentType.CSV: "text/csv",
 }
 
 
@@ -124,6 +136,7 @@ class DocumentService:
         jobs: JobQueue,
         archives: ArchiveExtractor,
         settings: Settings,
+        document_parser: DocumentParser,
     ) -> None:
         self._engagements = engagements
         self._documents = documents
@@ -132,6 +145,7 @@ class DocumentService:
         self._jobs = jobs
         self._archives = archives
         self._settings = settings
+        self._document_parser = document_parser
 
     async def list_documents(
         self,
@@ -166,6 +180,7 @@ class DocumentService:
         *,
         engagement_id: EngagementId,
         path: DocumentPath,
+        as_markdown: bool = False,
     ) -> DocumentContent:
         engagement = await self._engagements.get(engagement_id)
         if engagement is None:
@@ -176,6 +191,12 @@ class DocumentService:
             raise NotFoundError(f"document not found: {path}")
 
         data = await self._storage.get(engagement_id, path)
+        if as_markdown:
+            markdown = self._document_parser.to_markdown(data, path=path)
+            return DocumentContent(
+                data=markdown.encode("utf-8"),
+                media_type="text/markdown; charset=utf-8",
+            )
         return DocumentContent(
             data=data,
             media_type=media_type_for_content_type(document.content_type),

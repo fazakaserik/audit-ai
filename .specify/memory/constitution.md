@@ -46,7 +46,7 @@ blocks the build is the cheapest reviewer, and it keeps refactors safe across pa
   - Application services, Protocols, DTOs, RAG retrieve/process_item, and the ask agent MUST NOT
     import `backend.infrastructure` or `backend.bootstrap` (HTTP/worker entrypoints may wire via
     bootstrap).
-  - Vendor SDKs (`openai`, `ollama`, `sqlalchemy`, `pgvector`, `asyncpg`, `pypdf`, `tenacity`)
+  - Vendor SDKs (`openai`, `ollama`, `sqlalchemy`, `pgvector`, `asyncpg`, `pypdf`, `markitdown`, `tenacity`)
     are imported only in `backend.infrastructure`.
   - HTTP surface, services, infrastructure, RAG, agent, and the worker entrypoint live in the
     single `backend` package (`services/backend`). Alembic migrations are owned by `backend`.

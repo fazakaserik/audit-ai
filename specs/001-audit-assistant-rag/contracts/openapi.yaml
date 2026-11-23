@@ -214,7 +214,10 @@ paths:
       tags: [documents]
       operationId: getDocumentContent
       summary: Download a document
-      description: Return the raw bytes for one document.
+      description: >
+        Return the raw bytes for one document. Send `Accept: text/markdown` to
+        receive a Markdown conversion suitable for terminal viewing (PDFs and
+        Office files included).
       parameters:
         - $ref: "#/components/parameters/EngagementId"
         - name: document_path
@@ -225,14 +228,23 @@ paths:
           style: path
           explode: false
           description: Full relative document path
+        - name: Accept
+          in: header
+          required: false
+          schema:
+            type: string
+          description: Use text/markdown for a Markdown conversion
       responses:
         "200":
-          description: Raw file
+          description: Raw file, or Markdown when Accept is text/markdown
           content:
             application/octet-stream:
               schema:
                 type: string
                 format: binary
+            text/markdown:
+              schema:
+                type: string
         "404":
           $ref: "#/components/responses/Problem"
     delete:
@@ -531,7 +543,7 @@ components:
           type: string
         content_type:
           type: string
-          enum: [markdown, text, pdf]
+          enum: [markdown, text, pdf, docx, xlsx, pptx, html, csv]
         size_bytes:
           type: integer
           minimum: 0

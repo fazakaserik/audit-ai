@@ -5,7 +5,18 @@ from __future__ import annotations
 import uuid
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, Path, Query, Request, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    Path,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from fastapi.responses import Response
 
 from backend.application.api.contracts.v1.mapping import (
@@ -25,6 +36,16 @@ from backend.domain.engagement import EngagementId
 from backend.domain.errors import ValidationError
 
 router = APIRouter(prefix="/api/v1/engagements", tags=["documents", "uploads"])
+
+
+def _accepts_markdown(accept: str | None) -> bool:
+    if accept is None or not accept.strip():
+        return False
+    for part in accept.split(","):
+        media = part.split(";", 1)[0].strip().lower()
+        if media == "text/markdown":
+            return True
+    return False
 
 
 @router.get(
@@ -89,11 +110,16 @@ async def get_document_content(
         Path(description="Full relative document path"),
     ],
     bound: Annotated[SessionBound, Depends(get_bound)],
+    accept: Annotated[
+        str | None,
+        Header(description="Use text/markdown to receive a Markdown conversion"),
+    ] = None,
 ) -> Response:
-    """Return the raw bytes for one document."""
+    """Return the raw bytes for one document, or Markdown when Accept prefers it."""
     content = await bound.documents.get_document_content(
         engagement_id=engagement_id,
         path=document_path,
+        as_markdown=_accepts_markdown(accept),
     )
     return Response(content=content.data, media_type=content.media_type)
 

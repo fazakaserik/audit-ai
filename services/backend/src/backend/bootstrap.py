@@ -65,6 +65,7 @@ class Container:
             settings=self.settings,
             jobs=jobs,
             vector_index=vector_index,
+            document_parser=self.document_parser,
         )
 
 

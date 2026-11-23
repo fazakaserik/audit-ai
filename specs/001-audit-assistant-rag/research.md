@@ -21,7 +21,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 ## Domain model (draft for data-model.md)
 
 - **Style**: Every model is a pydantic model with `ConfigDict(frozen=True, strict=True, extra="forbid")`. Value objects are `Annotated` types with validators. Ids are `NewType`s over `uuid.UUID` (UUIDv4), so different id kinds cannot be swapped by accident. Mutable records carry `created_at` and `updated_at`, immutable records only `created_at`. All timestamps are timezone-aware UTC (`AwareDatetime`).
-- **Value types**: `EngagementId` (slug `^[a-z0-9][a-z0-9-]{1,62}$`); `FolderPath` and `DocumentPath` (relative POSIX paths that reject `..`, absolute paths, backslashes, control characters and empty segments); `ContentType` (`markdown | text | pdf`); `Question` (`text`, `folder_scope`, `auditor_role`, `topic`); `Citation` (`chunk_id`, `document_id`, `document_path`, `page`, `heading_path`, `snippet`, `score`); `SuggestedClientQuestion` (`question`, `rationale`); `Answer = Answered | InsufficientEvidence`, where `InsufficientEvidence.reason` is `no_relevant_chunks | model_judged_insufficient`.
+- **Value types**: `EngagementId` (slug `^[a-z0-9][a-z0-9-]{1,62}$`); `FolderPath` and `DocumentPath` (relative POSIX paths that reject `..`, absolute paths, backslashes, control characters and empty segments); `ContentType` (`markdown | text | pdf | docx | xlsx | pptx | html | csv`); `Question` (`text`, `folder_scope`, `auditor_role`, `topic`); `Citation` (`chunk_id`, `document_id`, `document_path`, `page`, `heading_path`, `snippet`, `score`); `SuggestedClientQuestion` (`question`, `rationale`); `Answer = Answered | InsufficientEvidence`, where `InsufficientEvidence.reason` is `no_relevant_chunks | model_judged_insufficient`.
 - **Entities**:
 
 | Model        | Fields                                                                                                                             | Timestamps       |
@@ -72,7 +72,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 
 ## Sample data and seeding
 
-- **Decision**: AI-generated fictional sample documents live in `docs/samples/ai-generated/<engagement-id>/...`. `docs/samples/real/` is committed and reserved for real documents added by the author, which must be publicly available and non-confidential, with a README listing each document's source and licence. `scripts/seed_samples.py` (run with `uv run`) is the seeding script that creates the engagement(s) and uploads every folder by calling `aiditor` subcommands with `--wait`. A `just seed` recipe runs it as part of setting up the dev environment.
+- **Decision**: AI-generated fictional sample documents live in `docs/samples/ai-generated/<engagement-id>/...`. `docs/samples/real/` is committed and reserved for real documents added by the author, which must be publicly available and non-confidential, with a README listing each document's source and licence. `scripts/seed_samples.py` (run with `uv run`) is the seeding script that creates the engagement(s) and queues every folder upload via the same HTTP path as the CLI (without waiting for indexing). A `just seed` recipe runs it as part of setting up the dev environment.
 - **Rationale**: The CLI stays a clean product tool, and seeding goes through the same real path (HTTP, validation, queue, worker, indexing), which makes it a smoke test too.
 
 ## Testing strategy

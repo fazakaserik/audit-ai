@@ -442,10 +442,18 @@ class AuditApiClient:
         adapter: TypeAdapter[DocumentListingResponse] = TypeAdapter(DocumentListingResponse)
         return self._get_json(response, adapter)
 
-    def get_document_content(self, engagement_id: EngagementId, document_path: str) -> bytes:
+    def get_document_content(
+        self,
+        engagement_id: EngagementId,
+        document_path: str,
+        *,
+        as_markdown: bool = False,
+    ) -> bytes:
         encoded = quote(document_path, safe="")
+        headers = {"Accept": "text/markdown"} if as_markdown else None
         response = self._client.get(
             f"/api/v1/engagements/{engagement_id}/documents/{encoded}",
+            headers=headers,
         )
         self._raise_for_response(response)
         return response.content

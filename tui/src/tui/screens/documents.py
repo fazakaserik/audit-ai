@@ -136,7 +136,11 @@ class DocumentsModal(ModalScreen[None]):
         if engagement_id is None:
             return
         try:
-            content = self.aiditor.api_client.get_document_content(engagement_id, path)
+            content = self.aiditor.api_client.get_document_content(
+                engagement_id,
+                path,
+                as_markdown=True,
+            )
         except CliApiError as exc:
             self.aiditor.notify(str(exc.detail), severity="error")
             return

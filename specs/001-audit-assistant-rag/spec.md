@@ -166,7 +166,7 @@ The auditor uses an interactive terminal application, similar in feel to modern 
 
 - **FR-004**: System MUST accept upload of one or more individual files to a target folder path within an engagement.
 - **FR-005**: System MUST accept upload of a single zip archive to a target folder path and preserve the archive's internal folder structure beneath that path.
-- **FR-006**: System MUST support at least plain text, Markdown, and PDF documents; other types MUST be reported as skipped with a reason.
+- **FR-006**: System MUST support at least plain text, Markdown, PDF, DOCX, XLSX, PPTX, HTML, and CSV documents; other types MUST be reported as skipped with a reason.
 - **FR-007**: System MUST reject the entire upload at submission time, storing and queuing nothing, if any archive entry would resolve outside the target folder, the archive is corrupted, or configured limits (total size, file count, single file size) are exceeded.
 - **FR-008**: Uploading to an existing document path MUST replace that document and its searchable content once processing completes; the replacement MUST be atomic, so answers use either the complete old version or the complete new version.
 - **FR-009**: System MUST acknowledge a valid upload immediately with an upload identifier and process it in the background.
@@ -257,7 +257,7 @@ The auditor uses an interactive terminal application, similar in feel to modern 
 - Real sample documents are committed to the public repository only if publicly available; their sources and licences are recorded next to them.
 - Engagements are created explicitly before documents can be uploaded; folders are implicit (they exist when a document is stored under them).
 - Uploads are processed in the background and sized for small document sets (default limits: 50 MB per upload, 200 files per archive, 20 MB per file). The client checks progress by polling the upload status; push notifications (webhooks) are out of scope.
-- AI-generated fictional sample documents live in a dedicated samples folder; a separate folder is reserved for real documents added by the author, which must be publicly available, non-confidential documents. The seeding script uploads them through the same background processing path and waits until processing completes.
+- AI-generated fictional sample documents live in a dedicated samples folder; a separate folder is reserved for real documents added by the author, which must be publicly available, non-confidential documents. The seeding script uploads them through the same background processing path (queue only; indexing continues asynchronously).
 - Scanned image-only documents are not made searchable (no OCR) in this version.
 - Answers are returned complete, not streamed token by token.
 - Document deletion and version history are out of scope; replacing a document by uploading to the same path is supported.

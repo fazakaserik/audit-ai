@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from backend.application.llm.chat_model import ChatModel
 from backend.application.llm.embedder import Embedder
 from backend.application.parsing.archive_extractor import ArchiveExtractor
+from backend.application.parsing.document_parser import DocumentParser
 from backend.application.repositories.document import DocumentRepository
 from backend.application.repositories.engagement import EngagementRepository
 from backend.application.repositories.session import SessionRepository
@@ -78,6 +79,7 @@ def wire_session_bound(
     settings: Settings,
     jobs: JobQueue,
     vector_index: VectorIndex,
+    document_parser: DocumentParser,
 ) -> SessionBound:
     worker = WorkerDeps(
         jobs=jobs,
@@ -95,6 +97,7 @@ def wire_session_bound(
             jobs=worker.jobs,
             archives=archives,
             settings=settings,
+            document_parser=document_parser,
         ),
         uploads=UploadService(engagements, uploads),
         sessions=SessionService(engagements, sessions),

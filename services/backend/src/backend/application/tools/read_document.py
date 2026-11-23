@@ -21,6 +21,15 @@ _DOCUMENT_PATH = TypeAdapter(DocumentPath)
 
 _CFG = ConfigDict(frozen=True, strict=True, extra="forbid")
 
+_BINARY_CONTENT_TYPES: frozenset[ContentType] = frozenset(
+    {
+        ContentType.PDF,
+        ContentType.DOCX,
+        ContentType.XLSX,
+        ContentType.PPTX,
+    },
+)
+
 
 class ReadDocumentArgs(BaseModel):
     model_config = _CFG
@@ -31,8 +40,9 @@ class ReadDocumentArgs(BaseModel):
 class ReadDocumentTool:
     name = "read_document"
     description = (
-        "Read the full text of a markdown or plain-text document into evidence. "
-        "For PDFs, prefer search_relevant_chunks with targeted queries instead."
+        "Read the full text of a markdown, plain-text, HTML, or CSV document "
+        "into evidence. For PDFs and Office files (DOCX, XLSX, PPTX), prefer "
+        "search_relevant_chunks with targeted queries instead."
     )
     args_model = ReadDocumentArgs
 
@@ -63,13 +73,14 @@ class ReadDocumentTool:
             )
 
         content_type = document.content_type
-        if content_type == ContentType.PDF:
+        if content_type in _BINARY_CONTENT_TYPES:
+            label = content_type.value.upper()
             return ToolResult(
                 content=(
-                    f"{path} is a PDF. Do not dump binary content. "
+                    f"{path} is a {label} file. Do not dump binary content. "
                     "Call search_relevant_chunks with identifiers or phrases from the question."
                 ),
-                summary=f"read_document(path={path!r}) → pdf (use search)",
+                summary=f"read_document(path={path!r}) → {content_type.value} (use search)",
             )
 
         try:

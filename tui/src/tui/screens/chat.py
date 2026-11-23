@@ -245,7 +245,9 @@ class ChatScreen(ChromeScreen):
             return
         try:
             content = self.aiditor.api_client.get_document_content(
-                engagement_id, citation.document_path
+                engagement_id,
+                citation.document_path,
+                as_markdown=True,
             )
         except CliApiError as exc:
             self._mount_line(error_panel(exc))
