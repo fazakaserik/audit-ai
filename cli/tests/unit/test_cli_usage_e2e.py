@@ -10,7 +10,7 @@ import pytest
 from backend.application.api.contracts.v1.responses import AskResponseRoot
 from backend.application.api.dependencies import get_bound
 from backend.application.api.main import create_app
-from backend.application.rag.prompts import AnswerGenerationResult
+from backend.application.agents.research_agent.prompts import AnswerGenerationResult
 from backend.domain.chunk import Chunk, ChunkId
 from backend.domain.common import utc_now
 from backend.domain.document import DocumentId

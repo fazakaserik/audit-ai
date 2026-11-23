@@ -5,16 +5,14 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Sequence
 
-from backend.application.ports import (
-    AskResult,
-    AskSessionBound,
-    ChatModel,
-    DocumentStorage,
-    Embedder,
-    SessionRepository,
-)
-from backend.application.rag.graph import AskGraphDeps, run_ask_graph
-from backend.application.rag.progress import CollectingAskProgress
+from backend.application.agents.progress import CollectingAskProgress
+from backend.application.agents.research_agent.graph import GraphDeps, run_graph
+from backend.application.dto import AskResult
+from backend.application.llm.chat_model import ChatModel
+from backend.application.llm.embedder import Embedder
+from backend.application.repositories.ask_session_bound import AskSessionBound
+from backend.application.repositories.session import SessionRepository
+from backend.application.storage.document_storage import DocumentStorage
 from backend.config import Settings
 from backend.domain.answer import Answer, Question
 from backend.domain.common import new_uuid, utc_now
@@ -135,7 +133,7 @@ async def ask_question(
         session_id=session_id,
     )
     progress = CollectingAskProgress()
-    deps = AskGraphDeps(
+    deps = GraphDeps(
         chat=chat,
         embedder=embedder,
         vector_index=bound.vector_index,
@@ -145,7 +143,7 @@ async def ask_question(
         settings=settings,
         progress=progress,
     )
-    graph_result = await run_ask_graph(
+    graph_result = await run_graph(
         engagement_id=engagement_id,
         question=question,
         folder_scope=question.folder_scope,
@@ -192,7 +190,7 @@ async def ask_question_stream(
                 question=question,
                 session_id=session_id,
             )
-            deps = AskGraphDeps(
+            deps = GraphDeps(
                 chat=chat,
                 embedder=embedder,
                 vector_index=bound.vector_index,
@@ -202,7 +200,7 @@ async def ask_question_stream(
                 settings=settings,
                 progress=progress,
             )
-            graph_result = await run_ask_graph(
+            graph_result = await run_graph(
                 engagement_id=engagement_id,
                 question=question,
                 folder_scope=question.folder_scope,

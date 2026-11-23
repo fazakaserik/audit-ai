@@ -75,14 +75,18 @@ def render_insufficient(
     console: Console,
     *,
     questions: tuple[SuggestedClientQuestionResponse, ...],
+    uncertainties: tuple[str, ...] = (),
 ) -> None:
-    console.print("I have insufficient information to answer confidently.")
+    _ = uncertainties  # kept on the API; questions carry the asks shown to the user
+    console.print(
+        "I have insufficient information to answer confidently. "
+        "Please answer my question below to proceed."
+    )
     if not questions:
         return
     console.print()
-    console.print("May I ask you to give me more:")
-    for item in questions:
-        console.print(f"- {item.question}")
+    for index, item in enumerate(questions, start=1):
+        console.print(f"Q{index}: {item.question}")
 
 
 def render_speaker(console: Console, role: Literal["you", "agent"]) -> None:
@@ -304,6 +308,7 @@ def render_ask_response(console: Console, response: AskResponse) -> None:
         render_insufficient(
             console,
             questions=insufficient.suggested_client_questions,
+            uncertainties=insufficient.uncertainties,
         )
         if insufficient.partial_citations:
             render_citations(console, insufficient.partial_citations)

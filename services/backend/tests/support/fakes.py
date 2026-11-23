@@ -11,7 +11,7 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from backend.application.ports import (
+from backend.application.dto import (
     ChatMessage,
     EmbedResult,
     IncompleteStructuredOutputError,

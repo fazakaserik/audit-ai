@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from backend.application.ports import EngagementRepository
+from backend.application.repositories.engagement import EngagementRepository
 from backend.domain.common import utc_now
 from backend.domain.engagement import Engagement, EngagementId
 

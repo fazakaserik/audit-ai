@@ -5,8 +5,11 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from backend.application.rag.agent import AskAgentDeps, run_ask_agent
-from backend.application.rag.prompts import AnswerGenerationResult, build_agent_messages
+from backend.application.agents.research_agent.agent import AgentDeps, run_agent
+from backend.application.agents.research_agent.prompts import (
+    AnswerGenerationResult,
+    build_agent_messages,
+)
 from backend.config import Settings
 from backend.domain.answer import Answered, Citation, Question
 from backend.domain.chunk import Chunk, ChunkId
@@ -113,12 +116,12 @@ async def test_follow_up_ask_still_retrieves_fresh_evidence() -> None:
         ),
         created_at=utc_now(),
     )
-    result = await run_ask_agent(
+    result = await run_agent(
         engagement_id=engagement_id,
         question=Question(text="payment terms?"),
         folder_scope=None,
         prior_turns=(prior,),
-        deps=AskAgentDeps(
+        deps=AgentDeps(
             chat=chat,
             embedder=embedder,
             vector_index=vector_index,

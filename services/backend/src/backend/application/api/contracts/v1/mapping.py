@@ -79,6 +79,7 @@ def answer_to_response(
                 status="insufficient_evidence",
                 reason=answer.reason,
                 partial_citations=tuple(citation_to_response(c) for c in answer.partial_citations),
+                uncertainties=answer.uncertainties,
                 suggested_client_questions=tuple(
                     SuggestedClientQuestionResponse(
                         question=q.question,

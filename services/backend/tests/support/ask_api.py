@@ -8,10 +8,12 @@ from datetime import UTC, datetime
 import httpx
 from fastapi import FastAPI
 
+from backend.application.agents.research_agent.prompts import AnswerGenerationResult
 from backend.application.api.dependencies import get_bound
 from backend.application.api.main import create_app
-from backend.application.ports import ChatModel, Embedder, VectorIndex
-from backend.application.rag.prompts import AnswerGenerationResult
+from backend.application.llm.chat_model import ChatModel
+from backend.application.llm.embedder import Embedder
+from backend.application.storage.vector_index import VectorIndex
 from backend.domain.chunk import Chunk, ChunkId
 from backend.domain.common import utc_now
 from backend.domain.document import DocumentId

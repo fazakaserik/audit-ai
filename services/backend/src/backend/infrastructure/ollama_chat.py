@@ -14,7 +14,7 @@ from ollama import AsyncClient, ResponseError
 from pydantic import BaseModel, ValidationError
 from tenacity import retry, retry_if_exception, stop_after_attempt
 
-from backend.application.ports import (
+from backend.application.dto import (
     ChatMessage,
     IncompleteStructuredOutputError,
     StructuredResult,

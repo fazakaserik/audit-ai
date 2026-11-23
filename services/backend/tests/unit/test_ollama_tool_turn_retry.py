@@ -8,7 +8,11 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from backend.application.ports import ChatMessage, ThinkingCallbacks, ToolSpec
+from backend.application.dto import (
+    ChatMessage,
+    ThinkingCallbacks,
+    ToolSpec,
+)
 from backend.infrastructure.ollama_chat import OllamaChatModel
 
 

@@ -5,8 +5,8 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from backend.application.ports import ScoredChunk
-from backend.application.rag.citations import filter_and_build_citations
+from backend.application.agents.research_agent.citations import filter_and_build_citations
+from backend.application.dto import ScoredChunk
 from backend.domain.chunk import Chunk, ChunkId
 from backend.domain.document import DocumentId, DocumentPath
 

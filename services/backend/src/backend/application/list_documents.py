@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from backend.application.ports import DocumentRepository, EngagementRepository
+from backend.application.repositories.document import DocumentRepository
+from backend.application.repositories.engagement import EngagementRepository
 from backend.domain.document import Document, FolderPath
 from backend.domain.engagement import EngagementId
 from backend.domain.errors import NotFoundError

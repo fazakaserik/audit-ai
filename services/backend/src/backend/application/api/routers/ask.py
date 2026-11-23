@@ -17,7 +17,7 @@ from backend.application.api.contracts.v1.responses import AskResponse
 from backend.application.api.dependencies import get_bound, get_container
 from backend.application.api.problem_handlers import http_status_for
 from backend.application.ask_question import ask_question, ask_question_stream
-from backend.application.ports import AskResult
+from backend.application.dto import AskResult
 from backend.bootstrap import Container, SessionBound
 from backend.domain.answer import Question
 from backend.domain.common import RequestId

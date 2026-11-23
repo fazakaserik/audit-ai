@@ -726,6 +726,13 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Citation"
+        uncertainties:
+          type: array
+          maxItems: 5
+          items:
+            type: string
+          description: Concrete gaps or ambiguities that blocked a grounded answer
+          default: []
         suggested_client_questions:
           type: array
           minItems: 1

@@ -7,7 +7,7 @@ import os
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from backend.application.ports import ChatMessage
+from backend.application.dto import ChatMessage
 from backend.infrastructure.ollama_chat import OllamaChatModel
 from backend.infrastructure.ollama_embed import OllamaEmbedder
 

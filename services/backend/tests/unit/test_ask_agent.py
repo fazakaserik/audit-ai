@@ -6,9 +6,12 @@ import json
 import uuid
 from datetime import UTC, datetime
 
-from backend.application.ports import ToolCall, ToolTurnResult
-from backend.application.rag.agent import AskAgentDeps, run_ask_agent
-from backend.application.rag.prompts import AnswerGenerationResult
+from backend.application.agents.research_agent.agent import AgentDeps, run_agent
+from backend.application.agents.research_agent.prompts import AnswerGenerationResult
+from backend.application.dto import (
+    ToolCall,
+    ToolTurnResult,
+)
 from backend.config import Settings
 from backend.domain.answer import AnswerStatus, InsufficientReason, Question
 from backend.domain.chunk import Chunk, ChunkId
@@ -75,8 +78,8 @@ def _deps(
     documents: InMemoryDocumentRepository | None = None,
     storage: InMemoryDocumentStorage | None = None,
     settings: Settings | None = None,
-) -> AskAgentDeps:
-    return AskAgentDeps(
+) -> AgentDeps:
+    return AgentDeps(
         chat=chat,
         embedder=embedder or FakeEmbedder(),
         vector_index=vector_index or InMemoryVectorIndex(),
@@ -106,7 +109,7 @@ async def test_agent_search_then_answer_with_citations() -> None:
         ),
         usage=LlmUsage(prompt_tokens=1, completion_tokens=1, total_tokens=2),
     )
-    result = await run_ask_agent(
+    result = await run_agent(
         engagement_id=engagement_id,
         question=Question(text="What are the payment terms?"),
         folder_scope=None,
@@ -128,7 +131,7 @@ async def test_agent_empty_search_is_insufficient() -> None:
             markers_used=(1,),
         ),
     )
-    result = await run_ask_agent(
+    result = await run_agent(
         engagement_id=EngagementId("northwind-fy2025"),
         question=Question(text="Anything?"),
         folder_scope=None,
@@ -174,7 +177,7 @@ async def test_agent_model_chosen_query_not_raw_question() -> None:
             markers_used=(1,),
         ),
     )
-    result = await run_ask_agent(
+    result = await run_agent(
         engagement_id=engagement_id,
         question=Question(text="what about the money stuff?"),
         folder_scope=None,
@@ -218,7 +221,7 @@ async def test_agent_max_rounds_stops_tool_loop() -> None:
         path="a.pdf",
         text="ok text",
     )
-    result = await run_ask_agent(
+    result = await run_agent(
         engagement_id=engagement_id,
         question=Question(text="q"),
         folder_scope=None,
@@ -313,7 +316,7 @@ async def test_agent_list_then_read_then_search() -> None:
             markers_used=(1,),
         ),
     )
-    result = await run_ask_agent(
+    result = await run_agent(
         engagement_id=engagement_id,
         question=Question(text="payment terms?"),
         folder_scope=None,

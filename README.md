@@ -7,10 +7,10 @@ See [specs/001-audit-assistant-rag/](specs/001-audit-assistant-rag/) for the ful
 
 ## Workspace
 
-| Path               | Package   | Role                                                                                  |
-| ------------------ | --------- | ------------------------------------------------------------------------------------- |
+| Path               | Package   | Role                                                                                |
+| ------------------ | --------- | ----------------------------------------------------------------------------------- |
 | `services/backend` | `backend` | Domain, application, infrastructure layers; HTTP API + worker; tests under `tests/` |
-| `cli`              | `cli`     | `audit-ai` terminal client; tests in `cli/tests/`                                     |
+| `cli`              | `cli`     | `audit-ai` terminal client; tests in `cli/tests/`                                   |
 
 Compose runs a single `backend` container (HTTP API + in-process upload worker).
 
@@ -66,13 +66,13 @@ Requires Python 3.13, [uv](https://docs.astral.sh/uv/), [just](https://github.co
 ## Architecture
 
 - **`backend.domain`** — frozen pydantic feature models
-- **`backend.application`** — ports, use cases, RAG, HTTP API, worker entrypoints
+- **`backend.application`** — Protocols (`llm`, `parsing`, `repositories`, `storage`), use cases, RAG, HTTP API, worker entrypoints
 - **`backend.infrastructure`** — Postgres/pgvector, OpenAI, Ollama, local FS, parsing
 - **`cli`** — HTTP-only client using `backend.domain` + `backend.application.api.contracts.v1`
 
 ## Limitations / next steps
 
 - No authentication or user management
-- Ask graph is an explicit node runner (LangGraph `StateGraph` optional where native wheels allow)
+- Ask flow is a LangGraph `StateGraph` (tool loop → grade → generate → finalize); Windows AppLocker hosts use pure-Python shims for blocked native wheels
 - Chunk sizes not corpus-tuned; OCR out of scope
 - Cloud mapping: `deployment/cloud/README.md`

@@ -7,7 +7,7 @@ import re
 import stat
 import zipfile
 
-from backend.application.ports.parsing import ArchiveExtractor
+from backend.application.parsing.archive_extractor import ArchiveExtractor
 from backend.domain.document import normalize_posix_path
 from backend.domain.errors import UnsafeUploadError, ValidationError
 

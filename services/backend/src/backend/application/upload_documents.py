@@ -5,17 +5,19 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from backend.application.ports import (
-    ArchiveExtractor,
-    DocumentStorage,
-    EngagementRepository,
-    JobQueue,
-    UploadRepository,
-)
+from backend.application.parsing.archive_extractor import ArchiveExtractor
+from backend.application.repositories.engagement import EngagementRepository
+from backend.application.repositories.upload import UploadRepository
+from backend.application.storage.document_storage import DocumentStorage
+from backend.application.storage.job_queue import JobQueue
 from backend.config import Settings
 from backend.domain.common import new_uuid, utc_now
-from backend.domain.document import DocumentPath, FolderPath
-from backend.domain.document import validate_document_path, validate_folder_path
+from backend.domain.document import (
+    DocumentPath,
+    FolderPath,
+    validate_document_path,
+    validate_folder_path,
+)
 from backend.domain.engagement import EngagementId
 from backend.domain.errors import (
     NotFoundError,

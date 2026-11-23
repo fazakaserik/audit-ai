@@ -6,15 +6,13 @@ import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
-from backend.application.ports import (
-    DocumentChunker,
-    DocumentParser,
-    DocumentRepository,
-    DocumentStorage,
-    Embedder,
-    EngagementRepository,
-    VectorIndex,
-)
+from backend.application.llm.embedder import Embedder
+from backend.application.parsing.document_chunker import DocumentChunker
+from backend.application.parsing.document_parser import DocumentParser
+from backend.application.repositories.document import DocumentRepository
+from backend.application.repositories.engagement import EngagementRepository
+from backend.application.storage.document_storage import DocumentStorage
+from backend.application.storage.vector_index import VectorIndex
 from backend.domain.chunk import Chunk, ChunkId
 from backend.domain.common import new_uuid, utc_now
 from backend.domain.document import Document, DocumentId, DocumentPath

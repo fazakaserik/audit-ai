@@ -73,6 +73,7 @@ class InsufficientEvidence(BaseModel):
     status: Literal[AnswerStatus.INSUFFICIENT_EVIDENCE] = AnswerStatus.INSUFFICIENT_EVIDENCE
     reason: InsufficientReason
     partial_citations: tuple[Citation, ...] = ()
+    uncertainties: Annotated[tuple[str, ...], Field(max_length=5)] = ()
     suggested_client_questions: Annotated[
         tuple[SuggestedClientQuestion, ...],
         Field(min_length=1, max_length=3),

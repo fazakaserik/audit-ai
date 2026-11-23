@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from backend.application.ports import EngagementRepository, UploadRepository
+from backend.application.repositories.engagement import EngagementRepository
+from backend.application.repositories.upload import UploadRepository
 from backend.domain.engagement import EngagementId
 from backend.domain.errors import NotFoundError
 from backend.domain.upload import Upload

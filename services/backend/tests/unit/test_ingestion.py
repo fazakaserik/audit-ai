@@ -12,7 +12,7 @@ from backend.application.dto import ParsedDocument, ParsedSection
 from backend.domain.document import ContentType
 from backend.domain.errors import UnsafeUploadError
 from backend.infrastructure.parsing.chunking import chunk_document
-from backend.infrastructure.parsing.parsers import detect_content_type, parse_bytes
+from backend.infrastructure.parsing.parsers.default import detect_content_type, parse_bytes
 
 
 def test_detect_content_type_by_extension() -> None:

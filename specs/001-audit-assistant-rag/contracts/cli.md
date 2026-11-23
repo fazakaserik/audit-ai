@@ -52,7 +52,7 @@ On start:
 - Progress spinner while waiting on ask/upload.
 - Answer body as Markdown (Rich).
 - Citations as a numbered footnote panel matching `[n]` markers.
-- Insufficient evidence: conversational decline + bulleted detail requests from suggested client questions.
+- Insufficient evidence: decline line asking the user to answer follow-up questions, then numbered full questions (`Q1: …`, `Q2: …`) from suggested client questions.
 - Errors: `code`, `detail`, `request_id` from Problem Details; REPL stays open.
 
 ## Configuration

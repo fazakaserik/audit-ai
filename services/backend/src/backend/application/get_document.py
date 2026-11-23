@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from backend.application.ports import (
-    DocumentRepository,
-    DocumentStorage,
-    EngagementRepository,
-)
+from backend.application.repositories.document import DocumentRepository
+from backend.application.repositories.engagement import EngagementRepository
+from backend.application.storage.document_storage import DocumentStorage
 from backend.domain.document import ContentType, Document, DocumentPath
 from backend.domain.engagement import EngagementId
 from backend.domain.errors import NotFoundError

@@ -1,7 +1,7 @@
 <!--
 Sync Impact Report
 - Version change: 1.2.0 -> 1.3.0
-- Modified principles: I (Any confined to infrastructure), II. Enforced Layering (domain inside backend; adapters renamed infrastructure; application owns api/rag/worker)
+- Modified principles: I (Any confined to infrastructure), II. Enforced Layering (domain inside backend; adapters renamed infrastructure; application owns api/rag/agent)
 - Added principles: none
 - Added sections: none
 - Removed sections: none
@@ -37,30 +37,31 @@ blocks the build is the cheapest reviewer, and it keeps refactors safe across pa
 - Workspace packages: `backend`, `cli`.
 - Backend layers (under `services/backend/src/backend`):
   - `backend.domain` — frozen pydantic entities and domain errors
-  - `backend.application` — ports, DTOs, use cases, RAG, HTTP API, worker entrypoints
+  - `backend.application` — Protocols (`llm`, `parsing`, `repositories`, `storage`), DTOs, use cases, RAG (retrieve + ingestion worker), ask agent, HTTP API
   - `backend.infrastructure` — vendor adapters (Postgres, LLM providers, FS, parsing)
   - Composition root at package root: `bootstrap.py`, `config.py`, `logging.py`
 - Dependency rules MUST be declared as import-linter contracts and MUST pass in CI:
   - `backend.domain` imports nothing from the rest of the project; its only third-party
     dependency is pydantic.
-  - Application use cases, ports, DTOs, RAG, and ingestion orchestration MUST NOT import
-    `backend.infrastructure` or `backend.bootstrap` (HTTP/worker entrypoints may wire via
+  - Application use cases, Protocols, DTOs, RAG retrieve/process_item, and the ask agent MUST NOT
+    import `backend.infrastructure` or `backend.bootstrap` (HTTP/worker entrypoints may wire via
     bootstrap).
   - Vendor SDKs (`openai`, `ollama`, `sqlalchemy`, `pgvector`, `asyncpg`, `pypdf`, `tenacity`)
     are imported only in `backend.infrastructure`.
-  - HTTP surface, use cases, infrastructure, RAG/ingestion, and the worker entrypoint live in the
+  - HTTP surface, use cases, infrastructure, RAG, agent, and the worker entrypoint live in the
     single `backend` package (`services/backend`). Alembic migrations are owned by `backend`.
   - `cli` MAY import `backend.domain` and `backend.application.api.contracts` and MUST NOT import
-    use cases, ports, RAG, ingestion, worker, infrastructure, bootstrap, config, or logging.
+    use cases, Protocols, RAG, agent, infrastructure, bootstrap, config, or logging.
     It communicates with the running system over HTTP.
 - Domain entities live as one module per model under `backend.domain` (e.g. `backend.domain.engagement`).
   Related types for a model stay in that file; folders are used only when models are tightly coupled.
   Shared primitives live at the domain root (`errors`, `problem`, `common`, `providers`). Public
   HTTP contracts live in `backend.application.api.contracts`, with explicit mapping from domain
   entities at the API edge.
-- External services MUST be reached through ports (`Protocol` classes in
-  `backend.application.ports`) and wired in a single composition root. Switching providers MUST
-  require configuration changes only.
+- External services MUST be reached through Protocols (`backend.application.llm`,
+  `backend.application.parsing`, `backend.application.repositories`, `backend.application.storage`)
+  and wired in a single composition root. Switching providers MUST require configuration changes
+  only.
 - Compose MAY run a second container of the same backend image for the worker command; that is
   an operational choice, not a separate package.
 

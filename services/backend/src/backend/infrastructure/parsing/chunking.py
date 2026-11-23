@@ -5,7 +5,7 @@ from __future__ import annotations
 import tiktoken
 
 from backend.application.dto import ParsedChunk, ParsedDocument, ParsedSection
-from backend.application.ports.parsing import DocumentChunker
+from backend.application.parsing.document_chunker import DocumentChunker
 
 _DEFAULT_ENCODING = "cl100k_base"
 

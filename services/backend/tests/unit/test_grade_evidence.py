@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from backend.application.rag.agent import AskAgentDeps, run_ask_agent
-from backend.application.rag.prompts import AnswerGenerationResult
+from backend.application.agents.research_agent.agent import AgentDeps, run_agent
+from backend.application.agents.research_agent.prompts import AnswerGenerationResult
 from backend.config import Settings
 from backend.domain.answer import AnswerStatus, InsufficientReason, Question
 from backend.domain.engagement import EngagementId
@@ -25,12 +25,12 @@ async def test_empty_index_is_insufficient_without_generation() -> None:
             markers_used=(1,),
         ),
     )
-    result = await run_ask_agent(
+    result = await run_agent(
         engagement_id=EngagementId("northwind-fy2025"),
         question=Question(text="What is the payment term?"),
         folder_scope=None,
         prior_turns=(),
-        deps=AskAgentDeps(
+        deps=AgentDeps(
             chat=chat,
             embedder=FakeEmbedder(),
             vector_index=InMemoryVectorIndex(),

@@ -8,9 +8,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from backend.application.ports import ToolCall
-from backend.application.rag.tools import dispatch_tool
-from backend.application.rag.tools.base import ToolContext, parse_optional_folder_prefix
+from backend.application.dto import ToolCall
+from backend.application.tools import dispatch_tool
+from backend.application.tools.base import ToolContext, parse_optional_folder_prefix
 from backend.config import Settings
 from backend.domain.document import ContentType, Document, DocumentId, DocumentPath
 from backend.domain.engagement import Engagement, EngagementId
@@ -96,3 +96,27 @@ async def test_list_documents_coerces_string_depth_and_limit() -> None:
     assert "validation error" not in result.summary
     assert "folders:" in result.content
     assert "finance" in result.content
+
+
+async def test_get_current_time_returns_host_local() -> None:
+    engagement_id = EngagementId("northwind-fy2025")
+    now = datetime.now(UTC)
+    engagements = InMemoryEngagementRepository()
+    await engagements.create(Engagement(id=engagement_id, name="N", created_at=now, updated_at=now))
+    documents = InMemoryDocumentRepository()
+    storage = InMemoryDocumentStorage()
+
+    result = await dispatch_tool(
+        _ctx(
+            engagement_id=engagement_id,
+            engagements=engagements,
+            documents=documents,
+            storage=storage,
+        ),
+        ToolCall(id="t1", name="get_current_time", arguments="{}"),
+    )
+    assert "validation error" not in result.summary
+    assert result.content.startswith("current_time=")
+    assert "timezone=" in result.content
+    assert "weekday=" in result.content
+    assert "get_current_time →" in result.summary

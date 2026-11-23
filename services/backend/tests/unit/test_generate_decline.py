@@ -9,14 +9,14 @@ from typing import TypeVar
 
 from pydantic import BaseModel
 
-from backend.application.ports import (
+from backend.application.agents.research_agent.agent import AgentDeps, run_agent
+from backend.application.agents.research_agent.prompts import AnswerGenerationResult
+from backend.application.dto import (
     ChatMessage,
     IncompleteStructuredOutputError,
     StructuredResult,
     ThinkingCallbacks,
 )
-from backend.application.rag.agent import AskAgentDeps, run_ask_agent
-from backend.application.rag.prompts import AnswerGenerationResult
 from backend.config import Settings
 from backend.domain.answer import AnswerStatus, InsufficientReason, Question
 from backend.domain.chunk import Chunk, ChunkId
@@ -65,8 +65,8 @@ async def _seed_hit(
 
 def _deps(
     chat: FakeChatModel, vector_index: InMemoryVectorIndex, embedder: FakeEmbedder
-) -> AskAgentDeps:
-    return AskAgentDeps(
+) -> AgentDeps:
+    return AgentDeps(
         chat=chat,
         embedder=embedder,
         vector_index=vector_index,
@@ -104,7 +104,7 @@ async def test_model_decline_routes_to_insufficient() -> None:
             markers_used=(),
         ),
     )
-    result = await run_ask_agent(
+    result = await run_agent(
         engagement_id=engagement_id,
         question=Question(text=".."),
         folder_scope=None,
@@ -124,7 +124,7 @@ async def test_incomplete_structured_output_becomes_decline_not_crash() -> None:
         response=AnswerGenerationResult(can_answer=True, answer_text="x [1]", markers_used=(1,)),
         usage=LlmUsage(),
     )
-    result = await run_ask_agent(
+    result = await run_agent(
         engagement_id=engagement_id,
         question=Question(text=".."),
         folder_scope=None,

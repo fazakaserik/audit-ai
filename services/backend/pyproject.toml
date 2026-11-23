@@ -24,7 +24,7 @@ dependencies = [
 
 [project.scripts]
 audit-api = "backend.application.api.main:run"
-audit-worker = "backend.application.worker.main:run"
+audit-worker = "backend.application.rag.worker.main:run"
 
 [build-system]
 requires = ["hatchling"]

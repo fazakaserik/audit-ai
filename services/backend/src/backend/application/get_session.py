@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from backend.application.ports import EngagementRepository, SessionRepository
+from backend.application.repositories.engagement import EngagementRepository
+from backend.application.repositories.session import SessionRepository
 from backend.domain.engagement import EngagementId
 from backend.domain.errors import NotFoundError
 from backend.domain.session import Session, SessionId, Turn

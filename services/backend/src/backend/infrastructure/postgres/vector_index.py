@@ -8,7 +8,10 @@ from uuid import UUID
 from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.application.ports import RetrievalScope, ScoredChunk
+from backend.application.dto import (
+    RetrievalScope,
+    ScoredChunk,
+)
 from backend.domain.chunk import Chunk, ChunkId
 from backend.domain.document import DocumentId, DocumentPath
 from backend.domain.engagement import EngagementId

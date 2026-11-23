@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from backend.application.rag.progress import CollectingAskProgress, SourceHit
+from backend.application.agents.progress import CollectingAskProgress, SourceHit
 
 
 async def test_collecting_progress_emits_and_accumulates() -> None:

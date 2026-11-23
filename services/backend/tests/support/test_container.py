@@ -8,14 +8,12 @@ from unittest.mock import AsyncMock
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from backend.application.ports import DocumentStorage
+from backend.application.storage.document_storage import DocumentStorage
 from backend.bootstrap import Container, SessionBound
 from backend.config import Settings
-from backend.infrastructure.parsing import (
-    build_archive_extractor,
-    build_document_chunker,
-    build_document_parser,
-)
+from backend.infrastructure.parsing.archive import build_archive_extractor
+from backend.infrastructure.parsing.chunking import build_document_chunker
+from backend.infrastructure.parsing.parsers.default import build_document_parser
 from support.fakes import (
     FakeChatModel,
     FakeEmbedder,

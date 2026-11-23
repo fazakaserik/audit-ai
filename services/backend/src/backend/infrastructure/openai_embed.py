@@ -16,7 +16,7 @@ from openai import (
 )
 from tenacity import retry, retry_if_exception, stop_after_attempt
 
-from backend.application.ports import EmbedResult
+from backend.application.dto import EmbedResult
 from backend.domain.errors import ModelTimeoutError, ModelUnavailableError
 from backend.domain.session import LlmUsage
 from backend.infrastructure._embedding_dims import dimensions_for
