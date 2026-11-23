@@ -1,0 +1,27 @@
+[project]
+name = "tui"
+version = "0.1.0"
+description = "Fullscreen Textual client for AIditor"
+requires-python = ">=3.13"
+dependencies = [
+  "cli",
+  "textual>=2.0",
+  "rich>=13.9",
+]
+
+[project.scripts]
+aiditor-tui = "tui.main:main"
+
+[tool.uv.sources]
+cli = { workspace = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tui"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/tui/styles.tcss" = "tui/styles.tcss"
+"src/tui/py.typed" = "tui/py.typed"

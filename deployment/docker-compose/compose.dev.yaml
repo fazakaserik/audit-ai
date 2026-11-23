@@ -1,0 +1,24 @@
+# Dev override: publish internal service ports on the host.
+# Usage: docker compose -f compose.yaml -f compose.dev.yaml up -d
+
+name: auditor-ai-dev
+
+services:
+  postgres:
+    ports:
+      - "5432:5432"
+
+  api:
+    environment:
+      ENABLE_API_DOCS: "true"
+      LOG_LEVEL: "INFO"
+      LOG_JSON: "false"
+
+  upload-processor:
+    environment:
+      LOG_LEVEL: "INFO"
+      LOG_JSON: "false"
+
+  ollama:
+    ports:
+      - "11434:11434"

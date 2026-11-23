@@ -1,0 +1,1 @@
+Sample corpora only. Product docs live in README.md and specs/001-audit-assistant-rag/.

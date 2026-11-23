@@ -1,0 +1,9 @@
+NORTHWIND TRADERS — WAREHOUSE A LEASE ABSTRACT (FY2025)
+
+Landlord: Contoso Properties LLC
+Premises: 400 Industrial Way, Unit A
+Annual base rent: USD 480,000 payable monthly in advance
+Security deposit: USD 80,000
+Lease expiry: 31 December 2027
+Renewal option: one 3-year renewal at then-market rent
+Maintenance: Tenant responsible for interior; landlord for structure and roof

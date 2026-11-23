@@ -1,0 +1,140 @@
+name: check
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+
+concurrency:
+  group: check-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      cli: ${{ steps.filter.outputs.cli }}
+      tui: ${{ steps.filter.outputs.tui }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'services/backend/**'
+              - 'scripts/**'
+              - 'deployment/**'
+              - 'importlinter.ini'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'justfile'
+              - '.github/workflows/check.yml'
+            cli:
+              - 'cli/**'
+              - 'importlinter.ini'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'justfile'
+              - '.github/workflows/check.yml'
+            tui:
+              - 'tui/**'
+              - 'importlinter.ini'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'justfile'
+              - '.github/workflows/check.yml'
+
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: extractions/setup-just@v3
+
+      - name: Sync dependencies
+        run: uv sync --all-packages
+
+      - name: Backend lint, typecheck, imports, tests
+        run: just check-backend
+
+  cli:
+    needs: changes
+    if: needs.changes.outputs.cli == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: extractions/setup-just@v3
+
+      - name: Sync dependencies
+        run: uv sync --all-packages
+
+      - name: CLI lint, typecheck, imports, tests
+        run: just check-cli
+
+  tui:
+    needs: changes
+    if: needs.changes.outputs.tui == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: extractions/setup-just@v3
+
+      - name: Sync dependencies
+        run: uv sync --all-packages
+
+      - name: TUI lint, typecheck, imports, tests
+        run: just check-tui
+
+  # Single required status check: passes when every selected package job
+  # succeeded or was skipped (no changes in that package).
+  check:
+    needs: [changes, backend, cli, tui]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Aggregate package results
+        run: |
+          results=(
+            "${{ needs.backend.result }}"
+            "${{ needs.cli.result }}"
+            "${{ needs.tui.result }}"
+          )
+          for result in "${results[@]}"; do
+            if [[ "$result" != "success" && "$result" != "skipped" ]]; then
+              echo "A package job failed or was cancelled (result=$result)"
+              exit 1
+            fi
+          done
+          echo "All selected package checks passed."
