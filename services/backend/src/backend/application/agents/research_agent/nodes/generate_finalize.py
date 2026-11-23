@@ -13,7 +13,12 @@ from backend.application.agents.research_agent.state import State
 from backend.application.dto import IncompleteStructuredOutputError, ScoredChunk
 from backend.domain.answer import Answered, InsufficientReason
 
-from ._helpers import insufficient_answer, thinking_callbacks, uncertainties_from_generation
+from ._helpers import (
+    insufficient_answer,
+    partial_citations_from_evidence,
+    thinking_callbacks,
+    uncertainties_from_generation,
+)
 from .context import NodeContext
 from .suggestions import suggestions_from_generation, topic_phrase
 
@@ -25,12 +30,13 @@ def make_grade_evidence_node(ctx: NodeContext):
             return {"answer": None}
 
         question = state["question"]
+        topic_text = state["standalone_question"] or question.text
         if ctx.progress is not None:
             await ctx.progress.stage("suggest")
-        phrase = topic_phrase(question.text)
+        phrase = topic_phrase(topic_text)
         return {
             "answer": insufficient_answer(
-                question.text,
+                topic_text,
                 reason=InsufficientReason.NO_RELEVANT_CHUNKS,
                 auditor_role=question.auditor_role,
                 topic=question.topic,
@@ -76,18 +82,20 @@ def make_generate_node(ctx: NodeContext):
         if not result.can_answer or not result.answer_text.strip():
             if ctx.progress is not None:
                 await ctx.progress.stage("suggest")
+            topic_text = state["standalone_question"] or question.text
             return {
                 "generation": result,
                 "usage": usage,
                 "answer": insufficient_answer(
-                    question.text,
+                    topic_text,
                     reason=InsufficientReason.MODEL_JUDGED_INSUFFICIENT,
                     auditor_role=question.auditor_role,
                     topic=question.topic,
+                    partial_citations=partial_citations_from_evidence(evidence),
                     uncertainties=uncertainties_from_generation(result),
                     suggested_client_questions=suggestions_from_generation(
                         result,
-                        question_text=question.text,
+                        question_text=topic_text,
                         auditor_role=question.auditor_role,
                         topic=question.topic,
                     ),
@@ -123,7 +131,11 @@ def make_finalize_node(ctx: NodeContext):
             }
 
         evidence = ctx.tool_ctx.evidence
-        filtered = filter_and_build_citations(generation.answer_text, evidence)
+        filtered = filter_and_build_citations(
+            generation.answer_text,
+            evidence,
+            markers_used=generation.markers_used,
+        )
         if filtered is not None:
             text, citations = filtered
             return {"answer": Answered(text=text, citations=citations)}
@@ -141,6 +153,7 @@ def make_finalize_node(ctx: NodeContext):
                 reason=InsufficientReason.MODEL_JUDGED_INSUFFICIENT,
                 auditor_role=question.auditor_role,
                 topic=question.topic,
+                partial_citations=partial_citations_from_evidence(evidence),
             ),
         }
 

@@ -1,4 +1,4 @@
-"""Read a text/markdown document into the evidence bag (PDFs: use search)."""
+"""Read a document into the evidence bag (text files or indexed PDF/Office chunks)."""
 
 from __future__ import annotations
 
@@ -11,17 +11,22 @@ from backend.application.dto import (
     ScoredChunk,
     ToolSpec,
 )
-from backend.application.tools.base import ToolContext, ToolResult, tool_spec_from_model
+from backend.application.tools.base import (
+    ToolContext,
+    ToolResult,
+    evidence_indices_for,
+    tool_spec_from_model,
+)
 from backend.domain.chunk import Chunk, ChunkId
 from backend.domain.common import utc_now
-from backend.domain.document import ContentType, DocumentPath
+from backend.domain.document import ContentType, DocumentId, DocumentPath
 from backend.domain.errors import NotFoundError
 
 _DOCUMENT_PATH = TypeAdapter(DocumentPath)
 
 _CFG = ConfigDict(frozen=True, strict=True, extra="forbid")
 
-_BINARY_CONTENT_TYPES: frozenset[ContentType] = frozenset(
+_INDEXED_CONTENT_TYPES: frozenset[ContentType] = frozenset(
     {
         ContentType.PDF,
         ContentType.DOCX,
@@ -40,9 +45,10 @@ class ReadDocumentArgs(BaseModel):
 class ReadDocumentTool:
     name = "read_document"
     description = (
-        "Read the full text of a markdown, plain-text, HTML, or CSV document "
-        "into evidence. For PDFs and Office files (DOCX, XLSX, PPTX), prefer "
-        "search_relevant_chunks with targeted queries instead."
+        "Load a document into evidence. For markdown/text/HTML/CSV, reads file text. "
+        "For PDFs and Office files (DOCX, XLSX, PPTX), loads the indexed page/section "
+        "chunks for that path so you can cite them. Prefer this after search finds a "
+        "relevant file and you need more of its content."
     )
     args_model = ReadDocumentArgs
 
@@ -65,22 +71,25 @@ class ReadDocumentTool:
             document = await ctx.documents.get_by_path(ctx.engagement_id, path)
             if document is None:
                 raise NotFoundError(f"document not found: {path}")
-            data = await ctx.storage.get(ctx.engagement_id, path)
         except Exception as exc:
             return ToolResult(
                 content=f"Failed to read document {path}: {exc}",
                 summary=f"read_document(path={path!r}) → error",
             )
 
-        content_type = document.content_type
-        if content_type in _BINARY_CONTENT_TYPES:
-            label = content_type.value.upper()
+        if document.content_type in _INDEXED_CONTENT_TYPES:
+            return await _load_indexed_chunks(
+                ctx,
+                path=path,
+                document_id=document.id,
+            )
+
+        try:
+            data = await ctx.storage.get(ctx.engagement_id, path)
+        except Exception as exc:
             return ToolResult(
-                content=(
-                    f"{path} is a {label} file. Do not dump binary content. "
-                    "Call search_relevant_chunks with identifiers or phrases from the question."
-                ),
-                summary=f"read_document(path={path!r}) → {content_type.value} (use search)",
+                content=f"Failed to read document {path}: {exc}",
+                summary=f"read_document(path={path!r}) → error",
             )
 
         try:
@@ -125,3 +134,66 @@ class ReadDocumentTool:
             content=content,
             summary=f"read_document(path={path!r}) → evidence[{evidence_index}]",
         )
+
+
+async def _load_indexed_chunks(
+    ctx: ToolContext,
+    *,
+    path: DocumentPath,
+    document_id: DocumentId,
+) -> ToolResult:
+    indexed = await ctx.vector_index.list_document_chunks(
+        engagement_id=ctx.engagement_id,
+        document_id=document_id,
+    )
+    if not indexed:
+        return ToolResult(
+            content=(
+                f"{path} has no indexed chunks yet (still processing or empty). "
+                "Call search_relevant_chunks with identifiers from the question, "
+                "or wait for indexing to finish."
+            ),
+            summary=f"read_document(path={path!r}) → not indexed",
+        )
+
+    max_chars = ctx.settings.agent_read_max_chars
+    seen_ids = {row.chunk.id for row in ctx.evidence}
+    added: list[ScoredChunk] = []
+    used_chars = 0
+    truncated = False
+    for row in indexed:
+        if row.chunk.id in seen_ids:
+            continue
+        chunk_len = len(row.chunk.text)
+        if added and used_chars + chunk_len > max_chars:
+            truncated = True
+            break
+        added.append(row)
+        used_chars += chunk_len
+        seen_ids.add(row.chunk.id)
+
+    if not added:
+        existing = [row for row in ctx.evidence if row.document_path == path]
+        indices = evidence_indices_for(ctx.evidence, existing)
+        index_list = ", ".join(f"evidence[{i}]" for i in indices) or "(none)"
+        return ToolResult(
+            content=f"{path} chunks are already in evidence: {index_list}.",
+            summary=f"read_document(path={path!r}) → already in evidence",
+        )
+
+    ctx.evidence.extend(added)
+    indices = evidence_indices_for(ctx.evidence, added)
+    lines: list[str] = [
+        f"Loaded {len(added)} indexed chunk(s) from {path} into evidence"
+        f" ({used_chars} chars"
+        + ("; truncated to agent_read_max_chars" if truncated else "")
+        + ")."
+    ]
+    for index, row in zip(indices, added, strict=True):
+        snippet = row.chunk.text[:500].replace("\n", " ")
+        page = f" p.{row.chunk.page}" if row.chunk.page is not None else ""
+        lines.append(f"- evidence[{index}]{page}: {snippet}")
+    return ToolResult(
+        content="\n".join(lines),
+        summary=f"read_document(path={path!r}) → {len(added)} chunks",
+    )

@@ -115,6 +115,8 @@ async def test_model_decline_routes_to_insufficient() -> None:
     )
     assert result.answer.status == AnswerStatus.INSUFFICIENT_EVIDENCE
     assert result.answer.reason == InsufficientReason.MODEL_JUDGED_INSUFFICIENT
+    assert result.answer.partial_citations
+    assert result.answer.partial_citations[0].snippet.startswith("Some policy")
 
 
 async def test_incomplete_structured_output_becomes_decline_not_crash() -> None:

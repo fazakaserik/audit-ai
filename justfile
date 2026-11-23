@@ -114,6 +114,4 @@ cli:
     uv run --package cli aiditor --help
 
 tui:
-    # --package tui: root uv run does not install workspace members, and
-    # `python -m tui` would otherwise bind the repo's ./tui/ folder (no __main__).
     uv run --package tui aiditor-tui

@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import re
 import time
 from collections.abc import AsyncIterator, Sequence
 from typing import TypeVar, cast
@@ -38,8 +37,8 @@ def _usage_from_ollama(response: object) -> LlmUsage:
 
 TModel = TypeVar("TModel", bound=BaseModel)
 
-_JSON_OBJECT_RE = re.compile(r"\{[\s\S]*\}")
-# Thinking models can loop forever on "decline" decisions; bound wall-clock + size.
+# UI budget for streamed thinking; the model stream itself is not aborted early
+# (cutting mid-think drops the final JSON and forced insufficient_evidence).
 _THINKING_BUDGET_SECONDS = 45.0
 _THINKING_BUDGET_CHARS = 12_000
 
@@ -52,26 +51,38 @@ def _is_transient(exc: BaseException) -> bool:
     )
 
 
+def _try_parse_json_object(text: str) -> str | None:
+    stripped = text.strip()
+    if not stripped:
+        return None
+    try:
+        json.loads(stripped)
+        return stripped
+    except json.JSONDecodeError:
+        pass
+    # Prefer the last object — thinking prose often has braces before the payload.
+    decoder = json.JSONDecoder()
+    last: str | None = None
+    for index, char in enumerate(stripped):
+        if char != "{":
+            continue
+        try:
+            value, end = decoder.raw_decode(stripped, index)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, dict):
+            last = stripped[index:end]
+    return last
+
+
 def _extract_json_text(*, content: str | None, thinking: str | None) -> str:
     """Prefer message content; fall back to JSON embedded in thinking (Qwen-style)."""
     for candidate in (content, thinking):
         if candidate is None:
             continue
-        text = candidate.strip()
-        if not text:
-            continue
-        try:
-            json.loads(text)
-        except json.JSONDecodeError:
-            match = _JSON_OBJECT_RE.search(text)
-            if match is None:
-                continue
-            text = match.group(0)
-            try:
-                json.loads(text)
-            except json.JSONDecodeError:
-                continue
-        return text
+        parsed = _try_parse_json_object(candidate)
+        if parsed is not None:
+            return parsed
     raise ModelUnavailableError("Ollama chat returned empty content")
 
 
@@ -207,6 +218,39 @@ class OllamaChatModel:
             except (ConnectionError, ResponseError) as exc:
                 raise ModelUnavailableError("Ollama chat request failed") from exc
 
+    async def _generate_structured_without_thinking(
+        self,
+        vendor_messages: list[dict[str, object]],
+        format_schema: dict[str, object],
+        schema: type[TModel],
+    ) -> StructuredResult[TModel]:
+        chat = ollama_chat_client(self._client)
+        response = await chat.chat(
+            model=self._model,
+            messages=vendor_messages,
+            format=format_schema,
+            think=False,
+            options={"temperature": 0},
+        )
+        response_obj = cast(object, response)
+        response_message = getattr(response_obj, "message", None)
+        raw_content = (
+            getattr(response_message, "content", None) if response_message is not None else None
+        )
+        content = raw_content if isinstance(raw_content, str) else None
+        raw_thinking = (
+            getattr(response_message, "thinking", None) if response_message is not None else None
+        )
+        thinking_text = raw_thinking if isinstance(raw_thinking, str) else None
+        try:
+            payload = _extract_json_text(content=content, thinking=thinking_text)
+            return StructuredResult(
+                value=schema.model_validate_json(payload),
+                usage=_usage_from_ollama(response),
+            )
+        except (ModelUnavailableError, ValidationError) as exc:
+            raise IncompleteStructuredOutputError(str(exc)) from exc
+
     @retry(
         reraise=True,
         stop=stop_after_attempt(MAX_ATTEMPTS),
@@ -230,8 +274,8 @@ class OllamaChatModel:
             content_parts: list[str] = []
             thinking_parts: list[str] = []
             thinking_chars = 0
+            emit_thinking = True
             usage = LlmUsage()
-            budget_exhausted = False
             chat = ollama_chat_client(self._client)
             stream = cast(
                 AsyncIterator[object],
@@ -252,52 +296,41 @@ class OllamaChatModel:
                 if isinstance(delta_thinking, str) and delta_thinking:
                     thinking_parts.append(delta_thinking)
                     thinking_chars += len(delta_thinking)
-                    await thinking.on_delta(delta_thinking)
+                    if emit_thinking:
+                        await thinking.on_delta(delta_thinking)
                 delta_content = getattr(message, "content", None)
                 if isinstance(delta_content, str) and delta_content:
                     content_parts.append(delta_content)
                 elapsed = time.perf_counter() - started
-                if (
+                # Stop UI deltas after budget, but keep reading so final JSON can arrive.
+                if emit_thinking and (
                     thinking_chars >= _THINKING_BUDGET_CHARS or elapsed >= _THINKING_BUDGET_SECONDS
-                ) and not content_parts:
-                    budget_exhausted = True
-                    break
+                ):
+                    emit_thinking = False
             thinking.on_seconds(time.perf_counter() - started)
-            if budget_exhausted and not content_parts:
-                raise IncompleteStructuredOutputError(
-                    "Ollama thinking exceeded budget without structured output"
-                )
             try:
                 payload = _extract_json_text(
                     content="".join(content_parts) or None,
                     thinking="".join(thinking_parts) or None,
                 )
-            except ModelUnavailableError as exc:
-                raise IncompleteStructuredOutputError(str(exc)) from exc
-            return StructuredResult(value=schema.model_validate_json(payload), usage=usage)
+                return StructuredResult(
+                    value=schema.model_validate_json(payload),
+                    usage=usage,
+                )
+            except (ModelUnavailableError, ValidationError):
+                # Thinking models often narrate the answer then emit empty/invalid JSON.
+                # Retry cold (same pattern as tool turns).
+                cold = await self._generate_structured_without_thinking(
+                    vendor_messages,
+                    format_schema,
+                    schema,
+                )
+                return StructuredResult(value=cold.value, usage=usage + cold.usage)
 
-        chat = ollama_chat_client(self._client)
-        response = await chat.chat(
-            model=self._model,
-            messages=vendor_messages,
-            format=format_schema,
-            think=use_think,
-            options={"temperature": 0},
-        )
-        response_obj = cast(object, response)
-        response_message = getattr(response_obj, "message", None)
-        raw_content = (
-            getattr(response_message, "content", None) if response_message is not None else None
-        )
-        content = raw_content if isinstance(raw_content, str) else None
-        raw_thinking = (
-            getattr(response_message, "thinking", None) if response_message is not None else None
-        )
-        thinking_text = raw_thinking if isinstance(raw_thinking, str) else None
-        payload = _extract_json_text(content=content, thinking=thinking_text)
-        return StructuredResult(
-            value=schema.model_validate_json(payload),
-            usage=_usage_from_ollama(response),
+        return await self._generate_structured_without_thinking(
+            vendor_messages,
+            format_schema,
+            schema,
         )
 
     async def _tool_turn_without_thinking(

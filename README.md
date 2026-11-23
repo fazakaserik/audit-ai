@@ -161,6 +161,32 @@ ask HTTP (via load-balancer)  →  LangGraph  →  cited answer
 
 Provider adapters are selected with `LLM_PROVIDER` / `EMBEDDING_PROVIDER`; application logic does not change.
 
+### Research agent
+
+When you ask a question, the agent researches the engagement documents, then either
+returns a cited answer or explains what is missing and suggests follow-ups for the client.
+
+```mermaid
+flowchart TD
+  Q([Question]) --> think
+
+  think{Decide what to look up}
+  think -->|needs documents| lookup[Search, list, or read documents]
+  think -->|enough context already| check
+
+  lookup --> think
+
+  check{Did we find useful evidence?}
+  check -->|no| missing([Insufficient evidence<br/>suggest questions for the client])
+  check -->|yes| draft
+
+  draft{Can we answer from the evidence?}
+  draft -->|no| missing
+  draft -->|yes| cite[Attach citations from the source documents]
+
+  cite --> done([Cited answer])
+```
+
 ## Concurrency and scaling
 
 ### What this app does today

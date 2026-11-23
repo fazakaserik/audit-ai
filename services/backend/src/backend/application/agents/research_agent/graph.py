@@ -23,6 +23,9 @@ from backend.application.agents.research_agent.nodes import (
     route_after_tools,
 )
 from backend.application.agents.research_agent.prompts import build_agent_messages
+from backend.application.agents.research_agent.resolve_question import (
+    resolve_standalone_question,
+)
 from backend.application.agents.research_agent.state import State
 from backend.application.llm.chat_model import ChatModel
 from backend.application.llm.embedder import Embedder
@@ -106,7 +109,7 @@ async def run_graph(
     progress_sink = deps.progress
     history = tuple(prior_turns)
     folder = folder_scope if folder_scope is not None else question.folder_scope
-    standalone_question = question.text
+    standalone_question = resolve_standalone_question(question.text, history)
 
     if progress_sink is not None:
         await progress_sink.stage("agent")
@@ -124,7 +127,7 @@ async def run_graph(
     )
     messages = list(
         build_agent_messages(
-            question=question.text,
+            question=standalone_question,
             prior_turns=history,
             auditor_role=question.auditor_role,
             topic=question.topic,

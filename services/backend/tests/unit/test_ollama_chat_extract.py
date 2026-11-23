@@ -35,6 +35,15 @@ def test_extract_json_embedded_in_thinking_prose() -> None:
     assert '"answer_text"' in text
 
 
+def test_extract_prefers_last_json_object_in_prose() -> None:
+    thinking = (
+        'Earlier draft {"can_answer": false, "answer_text": ""}\n'
+        'Final {"can_answer": true, "answer_text": "ok", "markers_used": [1]}'
+    )
+    text = _extract_json_text(content=None, thinking=thinking)
+    assert '"can_answer": true' in text
+
+
 def test_extract_raises_when_no_json() -> None:
     with pytest.raises(ModelUnavailableError, match="empty content"):
         _extract_json_text(content="", thinking="no json here")
