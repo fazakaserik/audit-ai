@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import assert_never
 from uuid import UUID, uuid4
 
 from backend.domain.answer import (
@@ -244,3 +245,5 @@ def populate_answer_rows(row: SessionTurnRow, answer: Answer) -> None:
                 )
                 for index, item in enumerate(answer.suggested_client_questions)
             ]
+        case _:
+            assert_never(answer)

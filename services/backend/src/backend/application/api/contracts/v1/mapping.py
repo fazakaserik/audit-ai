@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from typing import assert_never
 
 from backend.application.api.contracts.v1.page import Page
 from backend.application.api.contracts.v1.responses import (
@@ -161,6 +162,8 @@ def answer_to_response(
                 usage=usage_response,
                 session_total_tokens=total,
             )
+        case _:
+            assert_never(answer)
 
 
 def engagement_to_response(engagement: Engagement, *, document_count: int) -> EngagementResponse:
@@ -300,3 +303,5 @@ def answer_status(answer: Answer) -> AnswerStatus:
             return AnswerStatus.ANSWERED
         case InsufficientEvidence():
             return AnswerStatus.INSUFFICIENT_EVIDENCE
+        case _:
+            assert_never(answer)

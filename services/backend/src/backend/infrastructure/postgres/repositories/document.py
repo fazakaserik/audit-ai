@@ -82,7 +82,7 @@ class PostgresDocumentRepository:
             )
         )
         await self._session.flush()
-        return bool(result.rowcount)
+        return bool(getattr(result, "rowcount", 0))
 
     async def list(
         self,

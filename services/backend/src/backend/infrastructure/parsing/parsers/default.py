@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import PurePosixPath
+from typing import assert_never
 
 from backend.application.dto import ParsedDocument
 from backend.application.parsing.document_parser import DocumentParser
@@ -37,6 +38,8 @@ def parse_bytes(data: bytes, *, path: str) -> ParsedDocument:
             sections = parse_text(data)
         case ContentType.PDF:
             sections = parse_pdf(data)
+        case _:
+            assert_never(content_type)
 
     return ParsedDocument(content_type=content_type, sections=sections)
 

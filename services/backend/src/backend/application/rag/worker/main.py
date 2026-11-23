@@ -58,7 +58,6 @@ async def run_worker_loop(
                         storage=container.document_storage,
                         vector_index=worker.vector_index,
                         embedder=container.embedder,
-                        uploads=worker.upload_repository,
                         document_parser=container.document_parser,
                         document_chunker=container.document_chunker,
                     )
