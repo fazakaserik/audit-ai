@@ -25,6 +25,7 @@ from tui.screens.base import ChromeScreen
 from tui.slash import HELP_TEXT, SlashAction, parse_slash
 from tui.streaming import ThinkingAppend, ThinkingFinished, ThinkingStarted, run_ask_stream
 from tui.textual_typing import worker_from_event
+from tui.render_text import renderable_to_text
 from tui.widgets.chat_input import ChatInput
 from tui.widgets.selectable import SelectableStatic
 from tui.widgets.thinking import LiveThoughtProcess, make_thinking_collapsible
@@ -101,7 +102,8 @@ class ChatScreen(ChromeScreen):
         self._scroll_end()
 
     def _mount_line(self, content: RenderableType) -> None:
-        self._mount_widget(SelectableStatic(content, markup=False))
+        # Textual selection offsets only attach to Text/Content visuals.
+        self._mount_widget(SelectableStatic(renderable_to_text(content), markup=False))
 
     def _mount_blank(self) -> None:
         self._mount_widget(SelectableStatic(""))

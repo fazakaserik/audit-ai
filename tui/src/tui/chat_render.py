@@ -4,8 +4,7 @@ from __future__ import annotations
 
 from typing import Literal, Protocol, assert_never
 
-from rich.console import Group, RenderableType
-from rich.markdown import Markdown
+from rich.console import RenderableType
 from rich.panel import Panel
 from rich.text import Text
 
@@ -23,6 +22,7 @@ from cli.formatting.copy import INSUFFICIENT_ANSWER_LEAD, NO_SAVED_THOUGHT_PROCE
 from cli.formatting.errors import format_error_lines
 from cli.formatting.tool_progress import ToolProgressCorrelator
 from cli.render import upload_status_renderable
+from tui.render_text import markdown_to_text
 
 ToolProgressBuffer = ToolProgressCorrelator
 
@@ -37,63 +37,72 @@ def speaker_label(role: Literal["you", "agent"]) -> Text:
             assert_never(role)
 
 
-def error_panel(error: CliApiError) -> Panel:
-    return Panel("\n".join(format_error_lines(error)), title="API error", border_style="red")
+def error_panel(error: CliApiError) -> Text:
+    body = Text()
+    body.append("API error\n", style="bold red")
+    body.append("\n".join(format_error_lines(error)), style="red")
+    return body
 
 
-def citations_panel(citations: tuple[CitationResponse, ...]) -> Panel | None:
+def citations_text(citations: tuple[CitationResponse, ...]) -> Text | None:
     if not citations:
         return None
     body = Text()
+    body.append("Citations\n", style="bold cyan")
     for index, citation in enumerate(citations):
         if index:
             body.append("\n\n")
         body.append_text(format_citation_line(citation))
-    return Panel(body, title="Citations", border_style="cyan")
+    return body
 
 
-def insufficient_group(
+def insufficient_text(
     *,
     questions: tuple[SuggestedClientQuestionResponse, ...],
-) -> Group:
-    lines: list[Text | str] = [INSUFFICIENT_ANSWER_LEAD]
+) -> Text:
+    body = Text(INSUFFICIENT_ANSWER_LEAD)
     if questions:
-        lines.append("")
+        body.append("\n")
         for index, item in enumerate(questions, start=1):
-            lines.append(f"Q{index}: {item.question}")
-    return Group(*lines)
+            body.append(f"\nQ{index}: {item.question}")
+    return body
 
 
-def ask_response_renderable(response: AskResponse) -> Group:
+def ask_response_renderable(response: AskResponse) -> Text:
+    """Answer body as Text so the TUI mouse-selection offsets work."""
     answered = unwrap_answer(response)
     if answered is not None:
-        parts: list[RenderableType] = [Markdown(answered.answer)]
-        panel = citations_panel(answered.citations)
-        if panel is not None:
-            parts.append(panel)
-        return Group(*parts)
+        body = markdown_to_text(answered.answer)
+        citations = citations_text(answered.citations)
+        if citations is not None:
+            body.append("\n\n")
+            body.append_text(citations)
+        return body
 
     insufficient = unwrap_insufficient(response)
     if insufficient is not None:
-        parts = [insufficient_group(questions=insufficient.suggested_client_questions)]
-        if insufficient.partial_citations:
-            panel = citations_panel(insufficient.partial_citations)
-            if panel is not None:
-                parts.append(panel)
-        return Group(*parts)
+        body = insufficient_text(questions=insufficient.suggested_client_questions)
+        citations = citations_text(insufficient.partial_citations)
+        if citations is not None:
+            body.append("\n\n")
+            body.append_text(citations)
+        return body
 
-    return Group(Text("(empty response)", style="dim"))
+    return Text("(empty response)", style="dim")
 
 
-def document_bytes_renderable(document_path: str, content: bytes) -> Group:
-    header = Text(f"Document: {document_path}", style="bold")
+def document_bytes_renderable(document_path: str, content: bytes) -> Text:
+    header = Text(f"Document: {document_path}\n", style="bold")
     try:
         text = content.decode("utf-8")
     except UnicodeDecodeError:
-        return Group(header, Text(f"(binary content, {len(content)} bytes)", style="dim"))
+        header.append(f"(binary content, {len(content)} bytes)", style="dim")
+        return header
     if text.strip().startswith(("#", "-", "*")) or "\n##" in text:
-        return Group(header, Markdown(text))
-    return Group(header, text)
+        header.append_text(markdown_to_text(text))
+        return header
+    header.append(text)
+    return header
 
 
 def upload_status_panel(upload: object) -> Panel:

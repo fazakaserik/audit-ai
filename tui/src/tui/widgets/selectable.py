@@ -2,19 +2,32 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from rich.console import RenderableType
 from textual.selection import Selection
 from textual.widgets import Static
 
+from tui.render_text import renderable_to_text
+
 
 class SelectableStatic(Static):
-    """Like Static, but selection works for Markdown/Group/Panel content.
+    """Static that stores ``Text`` so Textual can mouse-select and copy.
 
-    Textual's default ``get_selection`` only extracts text when the visual is
-    ``Text`` or ``Content``; Rich Markdown/Group return ``None`` and selection
-    appears broken.
+    Textual only attaches selection ``offset`` meta for ``Text`` / ``Content``.
+    Rich Markdown/Group/Panel omit that meta, so selection never starts.
     """
 
     ALLOW_SELECT = True
+
+    def __init__(
+        self,
+        renderable: RenderableType = "",
+        *,
+        markup: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(renderable_to_text(renderable), markup=markup, **kwargs)
 
     def get_selection(self, selection: Selection) -> tuple[str, str] | None:
         extracted = super().get_selection(selection)

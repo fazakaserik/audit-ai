@@ -46,7 +46,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 
 ## Developer workflow
 
-- **Decision**: A `justfile` at the repository root with recipes such as `just check` (lint, format check, type check, import contracts, tests), `just test`, `just test-integration`, `just migrate`, `just up` and `just seed` (runs `scripts/seed_samples.py`).
+- **Decision**: A `justfile` at the repository root with recipes such as `just check` (lint, format check, type check, import contracts, tests), `just test`, `just test-integration`, `just migrate`, `just compose-up` / `just compose-dev-up`, and `just seed` (runs `scripts/seed_samples.py`).
 - **Note**: `just` must be installed (`winget install Casey.Just`, `brew install just`, `cargo install just`). Every recipe is a thin wrapper around `uv run ...` or `docker compose ...`, and the README also lists the underlying commands.
 
 ## HTTP API conventions
