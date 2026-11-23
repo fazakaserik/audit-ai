@@ -7,7 +7,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from backend.application.agents.progress import SourceHit
-from backend.application.dto import ToolSpec
+from backend.application.dto import ScoredChunk, ToolSpec
 from backend.application.rag.retrieve import retrieve_relevant_chunks
 from backend.application.tools.base import (
     ToolContext,
@@ -16,6 +16,7 @@ from backend.application.tools.base import (
     parse_optional_folder_prefix,
     tool_spec_from_model,
 )
+from backend.domain.document import DocumentId
 
 _CFG = ConfigDict(frozen=True, strict=True, extra="forbid")
 
@@ -81,19 +82,69 @@ class SearchRelevantChunksTool:
         seen_ids = {row.chunk.id for row in ctx.evidence}
         added = [row for row in scored if row.chunk.id not in seen_ids]
         ctx.evidence.extend(added)
+        # Pull sibling chunks from hit documents so signature/tail pages (e.g. auditor
+        # firm name) enter evidence even when only the opinion page ranked highly.
+        expanded = await _expand_sibling_chunks(ctx, scored)
+        added.extend(expanded)
         if ctx.progress is not None:
             await ctx.progress.sources(
                 [SourceHit(path=row.document_path, score=row.score) for row in scored]
             )
 
         display = added if added else scored
-        lines: list[str] = [f"Found {len(scored)} chunk(s); added {len(added)} new to evidence."]
+        # Full chunk text (capped) so names/firms/dates in the body are visible in-tool,
+        # not only later in generation — truncated previews caused false declines.
+        snippet_chars = ctx.settings.agent_search_snippet_chars
+        lines: list[str] = [
+            f"Found {len(scored)} chunk(s); added {len(added)} to evidence"
+            f" ({len(expanded)} sibling expansions)."
+        ]
         indices = evidence_indices_for(ctx.evidence, display)
         for index, row in zip(indices, display, strict=True):
-            snippet = row.chunk.text[:240].replace("\n", " ")
+            text = row.chunk.text
+            snippet = text if len(text) <= snippet_chars else text[:snippet_chars].rstrip() + "…"
             page = f" p.{row.chunk.page}" if row.chunk.page is not None else ""
             lines.append(
-                f"- evidence[{index}] {row.document_path}{page} score={row.score:.3f}: {snippet}"
+                f"- evidence[{index}] {row.document_path}{page} score={row.score:.3f}:\n{snippet}"
             )
-        summary = f"search_relevant_chunks(query={args.query!r}) → {len(scored)} hits"
+        summary = (
+            f"search_relevant_chunks(query={args.query!r}) → {len(scored)} hits"
+            f" (+{len(expanded)} siblings)"
+        )
         return ToolResult(content="\n".join(lines), summary=summary)
+
+
+async def _expand_sibling_chunks(
+    ctx: ToolContext,
+    scored: list[ScoredChunk],
+) -> list[ScoredChunk]:
+    """Add other indexed chunks from documents that already hit search."""
+    doc_ids: list[DocumentId] = []
+    seen_docs: set[DocumentId] = set()
+    for row in scored:
+        doc_id = row.chunk.document_id
+        if doc_id not in seen_docs:
+            seen_docs.add(doc_id)
+            doc_ids.append(doc_id)
+
+    seen_chunk_ids = {row.chunk.id for row in ctx.evidence}
+    used_chars = sum(len(row.chunk.text) for row in ctx.evidence)
+    budget = ctx.settings.agent_read_max_chars
+    expanded: list[ScoredChunk] = []
+
+    for doc_id in doc_ids:
+        siblings = await ctx.vector_index.list_document_chunks(
+            engagement_id=ctx.engagement_id,
+            document_id=doc_id,
+        )
+        for row in siblings:
+            if row.chunk.id in seen_chunk_ids:
+                continue
+            chunk_len = len(row.chunk.text)
+            if expanded and used_chars + chunk_len > budget:
+                return expanded
+            expanded.append(row)
+            ctx.evidence.append(row)
+            seen_chunk_ids.add(row.chunk.id)
+            used_chars += chunk_len
+    return expanded

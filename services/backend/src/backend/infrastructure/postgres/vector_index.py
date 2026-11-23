@@ -125,6 +125,32 @@ class PostgresVectorIndex:
             )
         await self._session.flush()
 
+    async def list_document_chunks(
+        self,
+        *,
+        engagement_id: EngagementId,
+        document_id: DocumentId,
+    ) -> list[ScoredChunk]:
+        stmt = (
+            select(ChunkRow, DocumentRow.path)
+            .join(DocumentRow, DocumentRow.id == ChunkRow.document_id)
+            .where(
+                DocumentRow.engagement_id == engagement_id,
+                DocumentRow.id == document_id,
+                DocumentRow.version == ChunkRow.document_version,
+            )
+            .order_by(ChunkRow.ordinal.asc())
+        )
+        rows = (await self._session.execute(stmt)).all()
+        return [
+            ScoredChunk(
+                chunk=_chunk_from_row(row),
+                document_path=path,
+                score=1.0,
+            )
+            for row, path in (db_row.tuple() for db_row in rows)
+        ]
+
     async def search(
         self,
         query: str,
@@ -138,13 +164,14 @@ class PostgresVectorIndex:
         embedding_list = list(query_embedding)
         distance = ChunkRow.embedding.cosine_distance(embedding_list)
         similarity = (1.0 - distance).label("similarity")
+        candidate_limit = max(scope.top_k * 4, scope.top_k)
 
         vector_stmt = (
             select(ChunkRow, DocumentRow.path, similarity)
             .join(DocumentRow, DocumentRow.id == ChunkRow.document_id)
             .where(*filters)
             .order_by(distance.asc())
-            .limit(max(scope.top_k * 4, scope.top_k))
+            .limit(candidate_limit)
         )
         vector_rows = (await self._session.execute(vector_stmt)).all()
 
@@ -155,46 +182,56 @@ class PostgresVectorIndex:
             if score >= min_score:
                 vector_survivors.append((row, path, score))
 
-        if not vector_survivors:
+        # FTS runs over the full engagement scope (not only vector survivors) so
+        # exact names/ids (e.g. auditor firm on a signature page) can enter RRF
+        # even when their embedding score is weak or outside the vector shortlist.
+        fts_hits = await self._fts_hits(
+            query=query,
+            scope=scope,
+            embedding_model=embedding_model,
+            limit=candidate_limit,
+        )
+
+        if not vector_survivors and not fts_hits:
             return []
 
-        survivor_ids = {row.id for row, _, _ in vector_survivors}
         vector_ranked_ids = [row.id for row, _, _ in vector_survivors]
         score_by_id = {row.id: score for row, _, score in vector_survivors}
         path_by_id = {row.id: path for row, path, _ in vector_survivors}
         row_by_id = {row.id: row for row, _, _ in vector_survivors}
 
-        fts_ranked_ids = await self._fts_ranked_ids(
-            query=query,
-            scope=scope,
-            embedding_model=embedding_model,
-            allowed_ids=survivor_ids,
-            limit=max(scope.top_k * 4, scope.top_k),
-        )
+        fts_ranked_ids: list[UUID] = []
+        for row, path in fts_hits:
+            fts_ranked_ids.append(row.id)
+            if row.id not in row_by_id:
+                row_by_id[row.id] = row
+                path_by_id[row.id] = path
+                # Nominal score for FTS-only hits (vector score unavailable).
+                score_by_id[row.id] = min_score
 
-        fused_ids = _rrf_merge(vector_ranked_ids, fts_ranked_ids)[: scope.top_k]
-        results: list[ScoredChunk] = []
-        for chunk_id in fused_ids:
-            row = row_by_id[chunk_id]
-            results.append(
-                ScoredChunk(
-                    chunk=_chunk_from_row(row),
-                    document_path=path_by_id[chunk_id],
-                    score=score_by_id[chunk_id],
-                )
+        if vector_ranked_ids:
+            fused_ids = _rrf_merge(vector_ranked_ids, fts_ranked_ids)[: scope.top_k]
+        else:
+            fused_ids = fts_ranked_ids[: scope.top_k]
+
+        return [
+            ScoredChunk(
+                chunk=_chunk_from_row(row_by_id[chunk_id]),
+                document_path=path_by_id[chunk_id],
+                score=score_by_id[chunk_id],
             )
-        return results
+            for chunk_id in fused_ids
+        ]
 
-    async def _fts_ranked_ids(
+    async def _fts_hits(
         self,
         *,
         query: str,
         scope: RetrievalScope,
         embedding_model: str,
-        allowed_ids: set[UUID],
         limit: int,
-    ) -> list[UUID]:
-        if not query.strip() or not allowed_ids:
+    ) -> list[tuple[ChunkRow, str]]:
+        if not query.strip():
             return []
 
         filters = _scoped_chunk_filters(scope, embedding_model=embedding_model)
@@ -202,15 +239,14 @@ class PostgresVectorIndex:
         rank = func.ts_rank_cd(ChunkRow.search_vector, ts_query)
 
         stmt = (
-            select(ChunkRow.id)
+            select(ChunkRow, DocumentRow.path)
             .join(DocumentRow, DocumentRow.id == ChunkRow.document_id)
             .where(
                 *filters,
-                ChunkRow.id.in_(allowed_ids),
                 ChunkRow.search_vector.op("@@")(ts_query),
             )
             .order_by(rank.desc())
             .limit(limit)
         )
-        rows = (await self._session.execute(stmt)).scalars().all()
-        return list(rows)
+        rows = (await self._session.execute(stmt)).all()
+        return [(row, path) for row, path in (db_row.tuple() for db_row in rows)]

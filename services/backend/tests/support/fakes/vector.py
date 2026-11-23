@@ -70,6 +70,23 @@ class InMemoryVectorIndex:
                 )
             )
 
+    async def list_document_chunks(
+        self,
+        *,
+        engagement_id: EngagementId,
+        document_id: DocumentId,
+    ) -> list[ScoredChunk]:
+        rows = [
+            row
+            for row in self._rows
+            if row.engagement_id == engagement_id and row.document_id == document_id
+        ]
+        rows.sort(key=lambda row: row.chunk.ordinal)
+        return [
+            ScoredChunk(chunk=row.chunk, document_path=row.document_path, score=1.0)
+            for row in rows
+        ]
+
     async def search(
         self,
         query: str,
@@ -79,8 +96,10 @@ class InMemoryVectorIndex:
         embedding_model: str,
         min_score: float,
     ) -> list[ScoredChunk]:
-        _ = query
-        scored: list[ScoredChunk] = []
+        """Cosine survivors RRF-merged with simple token FTS (mirrors Postgres adapter)."""
+        tokens = {token.lower() for token in query.split() if len(token) > 1}
+        vector_hits: list[ScoredChunk] = []
+        fts_hits: list[ScoredChunk] = []
         for row in self._rows:
             if row.engagement_id != scope.engagement_id:
                 continue
@@ -92,14 +111,29 @@ class InMemoryVectorIndex:
                 if path != scope.folder_prefix and not path.startswith(prefix):
                     continue
             score = _cosine(query_embedding, row.embedding)
-            if score < min_score:
-                continue
-            scored.append(
-                ScoredChunk(
-                    chunk=row.chunk,
-                    document_path=row.document_path,
-                    score=score,
+            if score >= min_score:
+                vector_hits.append(
+                    ScoredChunk(
+                        chunk=row.chunk,
+                        document_path=row.document_path,
+                        score=score,
+                    )
                 )
-            )
-        scored.sort(key=lambda item: item.score, reverse=True)
-        return scored[: scope.top_k]
+            text_lower = row.chunk.text.lower()
+            if tokens and any(token in text_lower for token in tokens):
+                fts_hits.append(
+                    ScoredChunk(
+                        chunk=row.chunk,
+                        document_path=row.document_path,
+                        score=min_score if score < min_score else score,
+                    )
+                )
+        vector_hits.sort(key=lambda item: item.score, reverse=True)
+        # Prefer chunks that appear in both lists, then fill from each.
+        by_id: dict[object, ScoredChunk] = {}
+        for hit in vector_hits:
+            by_id[hit.chunk.id] = hit
+        for hit in fts_hits:
+            by_id.setdefault(hit.chunk.id, hit)
+        fused = sorted(by_id.values(), key=lambda item: item.score, reverse=True)
+        return fused[: scope.top_k]

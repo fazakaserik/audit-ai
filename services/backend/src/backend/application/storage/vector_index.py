@@ -24,6 +24,15 @@ class VectorIndex(Protocol):
         embedding_model: str,
     ) -> None: ...
 
+    async def list_document_chunks(
+        self,
+        *,
+        engagement_id: EngagementId,
+        document_id: DocumentId,
+    ) -> list[ScoredChunk]:
+        """Return indexed chunks for a document in ordinal order (score=1.0)."""
+        ...
+
     async def search(
         self,
         query: str,

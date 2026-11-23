@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     max_concurrent_model_calls: int = Field(default=2, ge=1, le=64)
     agent_max_tool_rounds: int = Field(default=6, ge=1, le=20)
     agent_read_max_chars: int = Field(default=12_000, ge=500, le=200_000)
+    agent_search_snippet_chars: int = Field(default=2_000, ge=240, le=20_000)
 
     upload_max_bytes: int = Field(default=50 * 1024 * 1024, ge=1)
     upload_max_files: int = Field(default=200, ge=1)
