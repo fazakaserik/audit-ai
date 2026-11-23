@@ -38,13 +38,16 @@ test-db:
 test-integration:
     uv run python -m pytest -m integration
 
-# Generate a new Alembic revision from model changes (DB auto-upgrades on API startup).
+# Generate a new Alembic revision from model changes (applied by the compose migrate service).
 # Usage: just migration "add foo column"
 migration message:
     uv run alembic -c services/backend/alembic.ini revision --autogenerate -m "{{message}}"
 
+# Two api + two upload-processor replicas by default (demo multi-instance).
+# Restart load-balancer after scale so Caddy refreshes Docker DNS upstreams.
 compose-up:
-    {{compose}} up -d --build
+    {{compose}} up -d --build --scale api=2 --scale upload-processor=2
+    {{compose}} restart load-balancer
 
 compose-down:
     {{compose}} down
@@ -57,7 +60,8 @@ compose-clean:
     {{compose}} down -v --remove-orphans
 
 compose-dev-up:
-    {{compose_dev}} up -d --build
+    {{compose_dev}} up -d --build --scale api=2 --scale upload-processor=2
+    {{compose_dev}} restart load-balancer
 
 compose-dev-down:
     {{compose_dev}} down

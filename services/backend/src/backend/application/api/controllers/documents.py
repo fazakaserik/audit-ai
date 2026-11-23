@@ -98,6 +98,30 @@ async def get_document_content(
     return Response(content=content.data, media_type=content.media_type)
 
 
+@router.delete(
+    "/{engagement_id}/documents/{document_path:path}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a document",
+)
+async def delete_document(
+    engagement_id: Annotated[
+        EngagementId,
+        Path(description="Engagement that owns the document"),
+    ],
+    document_path: Annotated[
+        DocumentPath,
+        Path(description="Full relative document path"),
+    ],
+    bound: Annotated[SessionBound, Depends(get_bound)],
+) -> Response:
+    """Remove one document and its indexed chunks."""
+    await bound.documents.delete_document(
+        engagement_id=engagement_id,
+        path=document_path,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post(
     "/{engagement_id}/documents",
     response_model=UploadAcceptedResponse,

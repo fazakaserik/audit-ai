@@ -82,7 +82,15 @@ queued --(worker picks first item)--> processing --(all items terminal)--> compl
 | `status`                    | enum           | `pending` → `processing` → `indexed` \| `skipped` \| `not_searchable` \| `failed` |
 | `reason`                    | `str \| None`  | required for skipped / not_searchable / failed                                    |
 | `attempts`                  | `int`          | 0..max (default max 3)                                                            |
+| `processing_started_at`     | `AwareDatetime \| None` | set when a worker claims the item                                        |
+| `processing_finished_at`    | `AwareDatetime \| None` | set when the item reaches a terminal status                              |
+| `embedding_prompt_tokens`   | `int \| None`  | provider-reported embedding prompt tokens (indexed items)                         |
+| `embedding_total_tokens`    | `int \| None`  | provider-reported embedding total tokens (indexed items)                          |
+| `chunk_count`               | `int \| None`  | chunks written for indexed items                                                  |
+| `chunk_token_sum`           | `int \| None`  | sum of chunker `token_count` for indexed items                                    |
 | `created_at` / `updated_at` |                |                                                                                   |
+
+API responses also expose derived `processing_duration_ms` when both timestamps are set.
 
 **Adapter-only job fields** (Postgres `upload_items` / jobs): `locked_until`, `locked_by`, `next_attempt_at`, `raw_storage_key`.
 

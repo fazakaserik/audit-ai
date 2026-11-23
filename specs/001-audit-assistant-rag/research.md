@@ -11,7 +11,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 ## Monorepo layout
 
 - **Decision**: One uv workspace at the repository root with two members:
-  - `services/backend` (import name `backend`): DDD layers `backend.domain`, `backend.application` (ports/use cases/RAG/HTTP API/worker), `backend.infrastructure` (Postgres, LLM providers, FS, parsing), plus composition root and Alembic migrations. One Dockerfile; compose may run a second container of the same image with `audit-worker`.
+  - `services/backend` (import name `backend`): DDD layers `backend.domain`, `backend.application` (ports/use cases/RAG/HTTP API/upload processor), `backend.infrastructure` (Postgres, LLM providers, FS, parsing), plus composition root and Alembic migrations. One Dockerfile; compose runs `api`, `upload-processor` (`audit-worker`), and one-shot `migrate` from that image, plus `load-balancer` (Caddy).
   - `cli/` (import name `cli`): non-interactive Typer client + shared HTTP library (`cli.client`); imports `backend.domain` and `backend.application.api.contracts`.
   - `tui/` (import name `tui`): fullscreen Textual client (`aiditor-tui`); HTTP only via `cli.client`.
 - **Rationale**: Auditor tooling does not need independently scaled API/worker packages. A single backend is simpler to run and demo while still allowing an optional second worker process from the same image. One `uv.lock` keeps versions consistent.
@@ -46,7 +46,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 
 ## Developer workflow
 
-- **Decision**: A `justfile` at the repository root with recipes such as `just check` (lint, format check, type check, import contracts, tests), `just test`, `just test-integration`, `just migrate`, `just compose-up` / `just compose-dev-up`, and `just seed` (runs `scripts/seed_samples.py`).
+- **Decision**: A `justfile` at the repository root with recipes such as `just check` (lint, format check, type check, import contracts, tests), `just test`, `just test-integration`, `just migrate`, `just compose-up` / `just compose-dev-up`, and `just seed` (runs `scripts/seed_samples.py`). Compose runs `migrate` (one-shot), `api`, `upload-processor`, and `load-balancer` (Caddy) from `deployment/docker-compose/`.
 - **Note**: `just` must be installed (`winget install Casey.Just`, `brew install just`, `cargo install just`). Every recipe is a thin wrapper around `uv run ...` or `docker compose ...`, and the README also lists the underlying commands.
 
 ## HTTP API conventions
@@ -105,7 +105,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 
 ## Configuration
 
-- **Decision**: pydantic-settings with flat environment variable names, for example `LLM_PROVIDER`, `LLM_MODEL`, `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, `OPENAI_API_KEY`, `OLLAMA_BASE_URL`, `DATABASE_URL`, `MODEL_TIMEOUT_SECONDS`, `RETRIEVAL_TOP_K`, `RELEVANCE_THRESHOLD`, `MAX_CONCURRENT_MODEL_CALLS`, `SESSION_CONTEXT_TURNS` and the upload limits. Settings stay typed (enums and `SecretStr`) and are validated at startup; for example, `LLM_PROVIDER=openai` without `OPENAI_API_KEY` fails fast with a clear message. A secret-free `.env.example` documents every variable and its default.
+- **Decision**: pydantic-settings with flat environment variable names for providers, models, DB/storage, RAG/ask knobs (`MODEL_TIMEOUT_SECONDS`, `RETRIEVAL_TOP_K`, `RELEVANCE_THRESHOLD`, `MAX_CONCURRENT_MODEL_CALLS`, `AGENT_MAX_TOOL_ROUNDS`, `AGENT_READ_MAX_CHARS`), upload limits, API bind/docs, and logging. Ask always includes the full session history (no turn window); history compression is a documented next step when prompts exceed the provider context. Schema upgrades and upload processing are separate compose services (`migrate`, `upload-processor`), not Settings toggles. Settings stay typed (enums and `SecretStr`) and are validated at startup; for example, `LLM_PROVIDER=openai` without `OPENAI_API_KEY` fails fast. A secret-free `.env.example` documents every variable.
 
 ## Model and embedding integration
 

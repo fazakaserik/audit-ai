@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, ClassVar, cast
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Vertical
@@ -12,8 +13,8 @@ from textual.widgets import Label, OptionList, Static
 from textual.widgets.option_list import Option
 
 from cli.client import CliApiError
-from tui.chat_render import document_bytes_renderable
-from tui.screens.chat import ChatScreen
+from tui.screens.confirm import ConfirmModal
+from tui.screens.document_view import DocumentViewScreen
 from tui.widgets.option_helpers import (
     begin_picker_load,
     finish_picker_load,
@@ -27,9 +28,10 @@ _PARENT = "parent-dir"
 
 
 class DocumentsModal(ModalScreen[None]):
-    """Browse folders and open a document into the chat log when possible."""
+    """Browse folders and open or delete documents."""
 
     BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("d", "delete_document", "Delete"),
         Binding("escape", "dismiss_modal", "Close"),
     ]
 
@@ -45,7 +47,7 @@ class DocumentsModal(ModalScreen[None]):
         with Vertical(id="modal-container"):
             yield Label("Documents", id="modal-title")
             yield OptionList(id="modal-list")
-            yield Static("Enter open  ·  Esc close", id="modal-help")
+            yield Static("Enter open  ·  d delete  ·  Esc close", id="modal-help")
 
     def on_mount(self) -> None:
         self._load()
@@ -87,20 +89,32 @@ class DocumentsModal(ModalScreen[None]):
             return
         options: list[Option] = []
         if self._current:
-            options.append(Option("..", id=_PARENT))
+            options.append(Option(Text(".."), id=_PARENT))
         for folder in listing.folders:
-            options.append(Option(f"[{folder}]", id=f"dir:{folder}"))
+            # Text avoids Rich markup eating "[folder]" as an empty style span.
+            options.append(Option(Text(f"{folder}/"), id=f"dir:{folder}"))
         for doc in listing.items:
             name = self._basename(doc.path)
             options.append(
                 Option(
-                    f"{name}  ({doc.size_bytes} bytes, {doc.content_type.value})",
+                    Text(f"{name}  ({doc.size_bytes} bytes, {doc.content_type.value})"),
                     id=f"doc:{doc.path}",
                 )
             )
         if not options:
             options.append(Option("(empty)", disabled=True))
         finish_picker_load(option_list, options)
+
+    def _highlighted_document_path(self) -> str | None:
+        option_list = self.query_one("#modal-list", OptionList)
+        index = option_list.highlighted
+        if index is None:
+            return None
+        option = option_list.get_option_at_index(index)
+        option_id = option.id
+        if option_id is None or not option_id.startswith("doc:"):
+            return None
+        return option_id.removeprefix("doc:")
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
         option_id = event.option.id
@@ -126,13 +140,34 @@ class DocumentsModal(ModalScreen[None]):
         except CliApiError as exc:
             self.aiditor.notify(str(exc.detail), severity="error")
             return
-        renderable = document_bytes_renderable(path, content)
-        self.dismiss(None)
-        active = self.aiditor.screen
-        if isinstance(active, ChatScreen):
-            active.write_renderable(renderable)
-        else:
-            self.aiditor.notify(f"Opened {path}", severity="information")
+        self.app.push_screen(DocumentViewScreen(path, content))
+
+    def action_delete_document(self) -> None:
+        path = self._highlighted_document_path()
+        if path is None:
+            self.notify("Highlight a document to delete.", severity="warning", timeout=3)
+            return
+        self.app.push_screen(
+            ConfirmModal(
+                f"Delete document '{path}'?\nIndexed chunks will be removed.",
+                title="Delete document",
+            ),
+            lambda confirmed: self._on_delete_confirmed(path, confirmed),
+        )
+
+    def _on_delete_confirmed(self, path: str, confirmed: bool | None) -> None:
+        if not confirmed:
+            return
+        engagement_id = self.aiditor.state.engagement_id
+        if engagement_id is None:
+            return
+        try:
+            self.aiditor.api_client.delete_document(engagement_id, path)
+        except CliApiError as exc:
+            self.notify(exc.detail, title="Delete failed", severity="error", timeout=5)
+            return
+        self.notify(f"Deleted {path}", title="Document", timeout=3)
+        self._load()
 
     def action_dismiss_modal(self) -> None:
         self.dismiss(None)

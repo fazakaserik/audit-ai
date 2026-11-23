@@ -17,6 +17,14 @@ class DocumentRepository(Protocol):
         path: DocumentPath,
     ) -> Document | None: ...
 
+    async def delete_by_path(
+        self,
+        engagement_id: EngagementId,
+        path: DocumentPath,
+    ) -> bool:
+        """Delete the document row; return True if a row was removed."""
+        ...
+
     async def list(
         self,
         engagement_id: EngagementId,

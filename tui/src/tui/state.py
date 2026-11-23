@@ -42,6 +42,11 @@ class AppState:
         self.engagement_name = name
         self.clear_session()
 
+    def clear_engagement(self) -> None:
+        self.engagement_id = None
+        self.engagement_name = None
+        self.clear_session()
+
     def apply_usage_from_answer(self, response: AskResponse) -> None:
         self.last_usage = response.usage
         self.session_total_tokens = response.session_total_tokens

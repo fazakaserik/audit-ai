@@ -51,3 +51,22 @@ def documents_get(
             exit_api_error(exc)
         else:
             render_document_bytes(console, path, content)
+
+
+@app.command("delete")
+def documents_delete(
+    engagement: str = typer.Option(..., "--engagement"),
+    path: str = typer.Option(..., "--path", help="Document path"),
+    yes: bool = typer.Option(False, "--yes", help="Skip confirmation"),
+) -> None:
+    """Delete a document and its indexed chunks."""
+    engagement_id: EngagementId = engagement
+    if not yes and not typer.confirm(f"Delete document {path}?"):
+        raise typer.Abort()
+    with client() as api:
+        try:
+            api.delete_document(engagement_id, path)
+        except CliApiError as exc:
+            exit_api_error(exc)
+        else:
+            console.print(f"Deleted document {path}")

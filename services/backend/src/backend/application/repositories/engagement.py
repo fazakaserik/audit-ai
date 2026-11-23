@@ -13,6 +13,10 @@ class EngagementRepository(Protocol):
 
     async def get(self, engagement_id: EngagementId) -> Engagement | None: ...
 
+    async def update(self, engagement: Engagement) -> Engagement: ...
+
+    async def delete(self, engagement_id: EngagementId) -> bool: ...
+
     async def list(
         self,
         *,

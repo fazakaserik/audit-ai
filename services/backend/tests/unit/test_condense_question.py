@@ -56,7 +56,7 @@ def test_generation_messages_include_prior_answers_for_follow_ups() -> None:
     assert "current_time=" in user
 
 
-def test_agent_messages_include_prior_questions_not_answers() -> None:
+def test_agent_messages_include_full_prior_history() -> None:
     prior = Turn(
         id=TurnId(uuid.uuid4()),
         session_id=SessionId(uuid.uuid4()),
@@ -88,7 +88,7 @@ def test_agent_messages_include_prior_questions_not_answers() -> None:
     )
     user = messages[1].content or ""
     assert "What is Contoso supply agreement?" in user
-    assert "A vendor" not in user
+    assert "A vendor [1]" in user
     assert "What are payment terms?" in user
 
 

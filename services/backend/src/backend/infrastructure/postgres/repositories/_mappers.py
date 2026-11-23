@@ -166,6 +166,16 @@ def upload_item_from_row(row: UploadItemRow) -> UploadItem:
         status=UploadItemStatus(row.status),
         reason=row.reason,
         attempts=row.attempts,
+        processing_started_at=(
+            aware(row.processing_started_at) if row.processing_started_at is not None else None
+        ),
+        processing_finished_at=(
+            aware(row.processing_finished_at) if row.processing_finished_at is not None else None
+        ),
+        embedding_prompt_tokens=row.embedding_prompt_tokens,
+        embedding_total_tokens=row.embedding_total_tokens,
+        chunk_count=row.chunk_count,
+        chunk_token_sum=row.chunk_token_sum,
         created_at=aware(row.created_at),
         updated_at=aware(row.updated_at),
     )

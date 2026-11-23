@@ -30,3 +30,8 @@ class InMemoryDocumentStorage:
 
     async def delete(self, engagement_id: EngagementId, path: DocumentPath) -> None:
         self._blobs.pop((engagement_id, path), None)
+
+    async def delete_engagement(self, engagement_id: EngagementId) -> None:
+        stale = [key for key in self._blobs if key[0] == engagement_id]
+        for key in stale:
+            del self._blobs[key]

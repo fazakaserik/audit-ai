@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 
 from backend.application.dto import ParsedChunk
@@ -13,6 +14,14 @@ from backend.domain.chunk import Chunk, ChunkId
 from backend.domain.common import new_uuid
 from backend.domain.document import ContentType, Document, DocumentId, DocumentPath
 from backend.domain.engagement import EngagementId
+from backend.domain.session import LlmUsage
+
+
+@dataclass(frozen=True, slots=True)
+class IndexDocumentResult:
+    chunk_count: int
+    chunk_token_sum: int
+    embedding_usage: LlmUsage
 
 
 async def index_document_chunks(
@@ -31,10 +40,14 @@ async def index_document_chunks(
     now: datetime,
     parsed_chunks: Sequence[ParsedChunk],
     searchable: bool = True,
-) -> int:
-    """Persist document metadata, embed chunks, and upsert vectors. Returns chunk count."""
+) -> IndexDocumentResult:
+    """Persist document metadata, embed chunks, and upsert vectors."""
     if not parsed_chunks:
-        return 0
+        return IndexDocumentResult(
+            chunk_count=0,
+            chunk_token_sum=0,
+            embedding_usage=LlmUsage(),
+        )
 
     document = Document(
         id=document_id,
@@ -74,4 +87,8 @@ async def index_document_chunks(
         embeddings=embedded.vectors,
         embedding_model=embedder.model_name,
     )
-    return len(domain_chunks)
+    return IndexDocumentResult(
+        chunk_count=len(domain_chunks),
+        chunk_token_sum=sum(piece.token_count for piece in domain_chunks),
+        embedding_usage=embedded.usage,
+    )

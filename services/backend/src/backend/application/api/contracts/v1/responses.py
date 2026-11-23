@@ -65,6 +65,13 @@ class UploadItemResponse(BaseModel):
     document_path: str
     status: UploadItemStatus
     reason: str | None = None
+    processing_started_at: datetime | None = None
+    processing_finished_at: datetime | None = None
+    processing_duration_ms: Annotated[int | None, Field(ge=0)] = None
+    embedding_prompt_tokens: Annotated[int | None, Field(ge=0)] = None
+    embedding_total_tokens: Annotated[int | None, Field(ge=0)] = None
+    chunk_count: Annotated[int | None, Field(ge=0)] = None
+    chunk_token_sum: Annotated[int | None, Field(ge=0)] = None
 
 
 class UploadSummaryResponse(BaseModel):

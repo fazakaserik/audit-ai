@@ -192,6 +192,13 @@ def upload_item_to_response(item: UploadItem) -> UploadItemResponse:
         document_path=item.document_path,
         status=item.status,
         reason=item.reason,
+        processing_started_at=item.processing_started_at,
+        processing_finished_at=item.processing_finished_at,
+        processing_duration_ms=item.processing_duration_ms,
+        embedding_prompt_tokens=item.embedding_prompt_tokens,
+        embedding_total_tokens=item.embedding_total_tokens,
+        chunk_count=item.chunk_count,
+        chunk_token_sum=item.chunk_token_sum,
     )
 
 

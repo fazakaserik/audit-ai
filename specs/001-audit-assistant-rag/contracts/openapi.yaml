@@ -98,6 +98,40 @@ paths:
                 $ref: "#/components/schemas/EngagementResponse"
         "404":
           $ref: "#/components/responses/Problem"
+    patch:
+      tags: [engagements]
+      operationId: updateEngagement
+      summary: Rename an engagement
+      parameters:
+        - $ref: "#/components/parameters/EngagementId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEngagementRequest"
+      responses:
+        "200":
+          description: Updated engagement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EngagementResponse"
+        "404":
+          $ref: "#/components/responses/Problem"
+        "422":
+          $ref: "#/components/responses/Problem"
+    delete:
+      tags: [engagements]
+      operationId: deleteEngagement
+      summary: Delete an engagement and all related data
+      parameters:
+        - $ref: "#/components/parameters/EngagementId"
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/Problem"
 
   /api/v1/engagements/{engagement_id}/documents:
     get:
@@ -199,6 +233,26 @@ paths:
               schema:
                 type: string
                 format: binary
+        "404":
+          $ref: "#/components/responses/Problem"
+    delete:
+      tags: [documents]
+      operationId: deleteDocument
+      summary: Delete a document
+      description: Remove one document and its indexed chunks.
+      parameters:
+        - $ref: "#/components/parameters/EngagementId"
+        - name: document_path
+          in: path
+          required: true
+          schema:
+            type: string
+          style: path
+          explode: false
+          description: Full relative document path
+      responses:
+        "204":
+          description: Deleted
         "404":
           $ref: "#/components/responses/Problem"
 
@@ -426,6 +480,16 @@ components:
           minLength: 1
           maxLength: 200
 
+    UpdateEngagementRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+
     EngagementResponse:
       type: object
       additionalProperties: false
@@ -513,6 +577,34 @@ components:
           enum: [pending, processing, indexed, skipped, not_searchable, failed]
         reason:
           type: string
+          nullable: true
+        processing_started_at:
+          type: string
+          format: date-time
+          nullable: true
+        processing_finished_at:
+          type: string
+          format: date-time
+          nullable: true
+        processing_duration_ms:
+          type: integer
+          minimum: 0
+          nullable: true
+        embedding_prompt_tokens:
+          type: integer
+          minimum: 0
+          nullable: true
+        embedding_total_tokens:
+          type: integer
+          minimum: 0
+          nullable: true
+        chunk_count:
+          type: integer
+          minimum: 0
+          nullable: true
+        chunk_token_sum:
+          type: integer
+          minimum: 0
           nullable: true
 
     UploadSummaryResponse:

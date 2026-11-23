@@ -39,7 +39,11 @@ def version() -> None:
 def upload(
     path: Path = typer.Argument(..., help="File, directory, or .zip"),
     engagement: str = typer.Option(..., "--engagement", help="Engagement id"),
-    folder: str = typer.Option(..., "--folder", help="Target folder prefix"),
+    folder: str = typer.Option(
+        "",
+        "--folder",
+        help="Target folder prefix (default: engagement root)",
+    ),
     wait: bool = typer.Option(False, "--wait", help="Poll until upload completes or fails"),
 ) -> None:
     """Upload files to an engagement folder."""

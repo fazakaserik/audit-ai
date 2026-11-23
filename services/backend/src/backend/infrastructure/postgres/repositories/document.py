@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -69,6 +69,20 @@ class PostgresDocumentRepository:
         if row is None:
             return None
         return document_from_row(row)
+
+    async def delete_by_path(
+        self,
+        engagement_id: EngagementId,
+        path: DocumentPath,
+    ) -> bool:
+        result = await self._session.execute(
+            delete(DocumentRow).where(
+                DocumentRow.engagement_id == engagement_id,
+                DocumentRow.path == path,
+            )
+        )
+        await self._session.flush()
+        return bool(result.rowcount)
 
     async def list(
         self,

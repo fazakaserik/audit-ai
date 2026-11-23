@@ -6,19 +6,20 @@ This document describes how AIditor would run in Azure. The application code sta
 
 ## Component mapping
 
-| Concern                           | Local (docker compose)                   | Azure target                                                                   | Change in the service                   |
-| --------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------ | --------------------------------------- |
-| API runtime                       | `backend` container                      | Azure Container Apps (autoscaled, stateless replicas)                          | None                                    |
-| Ingestion worker runtime          | `worker` (same backend image)            | Container Apps Jobs, event-driven (KEDA scaling on queue length)               | None                                    |
-| Metadata (engagements, documents) | PostgreSQL container                     | Azure Database for PostgreSQL Flexible Server                                  | Configuration only                      |
-| Chunk search (vector + keyword)   | pgvector in the same PostgreSQL          | Azure AI Search (hybrid search, semantic ranker)                               | New `VectorIndex` adapter               |
-| Document files                    | Local volume                             | Azure Blob Storage (one container per environment, engagement prefix per blob) | New `DocumentStorage` adapter           |
-| LLM and embeddings                | OpenAI API or local Ollama               | Azure OpenAI (data stays in the chosen Azure region, enterprise agreements)    | New `ChatModel` and `Embedder` adapters |
-| Secrets                           | `.env` file                              | Azure Key Vault + managed identity (no keys in configuration)                  | Configuration only                      |
-| Ingestion queue                   | Postgres jobs table + `worker` container | Azure Service Bus + Container Apps Job workers (scaled by queue length)        | New `JobQueue` adapter                  |
-| Observability                     | structlog JSON logs to stdout            | Azure Application Insights via OpenTelemetry                                   | Exporter configuration, see below       |
-| Edge, rate limiting               | None                                     | Azure API Management or Front Door (quotas, WAF)                               | None                                    |
-| Identity (next step)              | None                                     | Microsoft Entra ID (auditors and client contacts)                              | New auth layer, see "Next steps"        |
+| Concern                           | Local (docker compose)                                    | Azure target                                                                    | Change in the service                   |
+| --------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------- | --------------------------------------- |
+| API runtime                       | `api` behind `load-balancer` (Caddy)                      | Azure Container Apps (autoscaled, stateless replicas)                           | None                                    |
+| Schema migrations                 | One-shot `migrate` service                                | Init/job before replicas (not on every `api` start)                             | None                                    |
+| Ingestion runtime                 | `upload-processor` (same app image; scale with `--scale`) | Container Apps Jobs, event-driven (KEDA scaling on queue length, scale-to-zero) | None                                    |
+| Metadata (engagements, documents) | PostgreSQL container                                      | Azure Database for PostgreSQL Flexible Server                                   | Configuration only                      |
+| Chunk search (vector + keyword)   | pgvector in the same PostgreSQL                           | Azure AI Search (hybrid search, semantic ranker)                                | New `VectorIndex` adapter               |
+| Document files                    | Shared `document_storage` volume                          | Azure Blob Storage (one container per environment, engagement prefix per blob)  | New `DocumentStorage` adapter           |
+| LLM and embeddings                | OpenAI API or local Ollama                                | Azure OpenAI (data stays in the chosen Azure region, enterprise agreements)     | New `ChatModel` and `Embedder` adapters |
+| Secrets                           | `.env` file                                               | Azure Key Vault + managed identity (no keys in configuration)                   | Configuration only                      |
+| Ingestion queue                   | Postgres jobs table + `upload-processor`                  | Azure Service Bus + Container Apps Job workers (scaled by queue length)         | New `JobQueue` adapter                  |
+| Observability                     | structlog JSON logs to stdout                             | Azure Application Insights via OpenTelemetry                                    | Exporter configuration, see below       |
+| Edge, rate limiting               | `load-balancer` (no quotas)                               | Azure API Management or Front Door (quotas, WAF)                                | None                                    |
+| Identity (next step)              | None                                                      | Microsoft Entra ID (auditors and client contacts)                               | New auth layer, see "Next steps"        |
 
 ## Why Azure AI Search for search in the cloud
 
@@ -40,11 +41,11 @@ flowchart LR
   api --> aoai[Azure OpenAI]
   api --> blob[Blob Storage]
   api --> bus[Service Bus]
-  bus --> worker[Container Apps Job: ingestion]
-  worker --> blob
-  worker --> aoai
-  worker --> search
-  worker --> pg
+  bus --> uploadProcessor[Container Apps Job: upload-processor]
+  uploadProcessor --> blob
+  uploadProcessor --> aoai
+  uploadProcessor --> search
+  uploadProcessor --> pg
 ```
 
 ## Observability and investigations

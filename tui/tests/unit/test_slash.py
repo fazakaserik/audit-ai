@@ -27,6 +27,18 @@ def test_parse_upload() -> None:
     assert cmd.folder == "finance"
 
 
+def test_parse_upload_path_only() -> None:
+    cmd = parse_slash("/upload ./docs/policies")
+    assert cmd.action is SlashAction.UPLOAD
+    assert cmd.path == "./docs/policies"
+    assert cmd.folder is None
+
+
+def test_parse_upload_requires_path() -> None:
+    cmd = parse_slash("/upload")
+    assert cmd.action is SlashAction.USAGE
+
+
 def test_parse_unknown() -> None:
     cmd = parse_slash("/nope")
     assert cmd.action is SlashAction.UNKNOWN

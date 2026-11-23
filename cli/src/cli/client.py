@@ -17,7 +17,11 @@ import httpx
 from pydantic import TypeAdapter, ValidationError
 
 from backend.application.api.contracts.v1.page import Page
-from backend.application.api.contracts.v1.requests import AskRequest, CreateEngagementRequest
+from backend.application.api.contracts.v1.requests import (
+    AskRequest,
+    CreateEngagementRequest,
+    UpdateEngagementRequest,
+)
 from backend.application.api.contracts.v1.responses import (
     AnsweredResponse,
     AskResponse,
@@ -207,6 +211,24 @@ class AuditApiClient:
         )
         adapter: TypeAdapter[EngagementResponse] = TypeAdapter(EngagementResponse)
         return self._get_json(response, adapter)
+
+    def update_engagement(
+        self,
+        engagement_id: EngagementId,
+        *,
+        name: str,
+    ) -> EngagementResponse:
+        body = UpdateEngagementRequest(name=name)
+        response = self._client.patch(
+            f"/api/v1/engagements/{engagement_id}",
+            json=body.model_dump(mode="json"),
+        )
+        adapter: TypeAdapter[EngagementResponse] = TypeAdapter(EngagementResponse)
+        return self._get_json(response, adapter)
+
+    def delete_engagement(self, engagement_id: EngagementId) -> None:
+        response = self._client.delete(f"/api/v1/engagements/{engagement_id}")
+        self._raise_for_response(response)
 
     def ask(
         self,
@@ -427,6 +449,13 @@ class AuditApiClient:
         )
         self._raise_for_response(response)
         return response.content
+
+    def delete_document(self, engagement_id: EngagementId, document_path: str) -> None:
+        encoded = quote(document_path, safe="")
+        response = self._client.delete(
+            f"/api/v1/engagements/{engagement_id}/documents/{encoded}",
+        )
+        self._raise_for_response(response)
 
 
 def unwrap_answer(response: AskResponse) -> AnsweredResponse | None:

@@ -86,7 +86,7 @@ def wire_session_bound(
         upload_repository=uploads,
     )
     return SessionBound(
-        engagements=EngagementService(engagements),
+        engagements=EngagementService(engagements, storage=storage),
         documents=DocumentService(
             engagements,
             documents,

@@ -18,6 +18,20 @@ class CreateEngagementRequest(BaseModel):
     name: Annotated[str, Field(min_length=1, max_length=200)]
 
 
+class UpdateEngagementRequest(BaseModel):
+    model_config = ConfigDict(frozen=True, strict=True, extra="forbid")
+
+    name: Annotated[str, Field(min_length=1, max_length=200)]
+
+    @field_validator("name")
+    @classmethod
+    def strip_name(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("name must not be blank")
+        return stripped
+
+
 class AskRequest(BaseModel):
     model_config = ConfigDict(frozen=True, strict=True, extra="forbid")
 

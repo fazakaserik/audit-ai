@@ -2,24 +2,25 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from typing import ClassVar
 from uuid import UUID
 
-from rich.text import Text
 from textual.app import App
 from textual.binding import Binding, BindingType
 from textual.css.query import NoMatches
 
+from backend.application.api.contracts.v1.responses import UploadAcceptedResponse
 from backend.domain.engagement import EngagementId
-from cli.client import AuditApiClient, CliApiError
-from tui.chat_render import error_panel, upload_status_panel
+from cli.client import AuditApiClient
 from tui.connecting import wait_for_api
 from tui.screens.base import ChromeScreen
 from tui.screens.chat import ChatScreen
 from tui.screens.connecting import ConnectingScreen
 from tui.screens.documents import DocumentsModal
 from tui.screens.engagements import EngagementsScreen
+from tui.screens.folder_picker import FolderPickerModal
 from tui.screens.sessions import SessionsScreen
 from tui.screens.uploads import UploadsModal
 from tui.state import AppState
@@ -135,19 +136,26 @@ class AiditorApp(App[None]):
             return
         self.push_screen(UploadsModal(upload_id=upload_id))
 
-    def upload_path(self, raw_path: str, folder: str) -> object:
-        """Upload and wait; return a Rich renderable describing the result."""
+    def pick_upload_folder(
+        self,
+        *,
+        callback: Callable[[str | None], None],
+        start_folder: str = "",
+    ) -> None:
         if self.state.engagement_id is None:
-            return Text("No engagement selected.", style="red")
+            callback(None)
+            return
+        self.push_screen(
+            FolderPickerModal(start_folder=start_folder),
+            callback,
+        )
+
+    def upload_path(self, raw_path: str, folder: str) -> UploadAcceptedResponse:
+        """Submit files for ingest; returns as soon as the API accepts the upload."""
+        if self.state.engagement_id is None:
+            msg = "No engagement selected."
+            raise ValueError(msg)
 
         cleaned = raw_path.strip().strip("\"'")
         path = Path(cleaned).expanduser()
-        try:
-            accepted = self.api_client.upload_path(self.state.engagement_id, path, folder=folder)
-            final = self.api_client.wait_upload(self.state.engagement_id, accepted.upload_id)
-        except CliApiError as exc:
-            return error_panel(exc)
-        except (FileNotFoundError, ValueError, OSError) as exc:
-            return Text(str(exc), style="red")
-
-        return upload_status_panel(final)
+        return self.api_client.upload_path(self.state.engagement_id, path, folder=folder)

@@ -8,31 +8,13 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.domain.upload import UploadId, UploadItem, UploadItemId, UploadItemStatus
+from backend.domain.upload import UploadItem, UploadItemId, UploadItemStatus
 from backend.infrastructure.postgres.models import UploadItemRow
+from backend.infrastructure.postgres.repositories._mappers import upload_item_from_row
 
 _LEASE_SECONDS = 300
 _MAX_ATTEMPTS = 3
 _BASE_BACKOFF_SECONDS = 30
-
-
-def _aware(value: datetime) -> datetime:
-    if value.tzinfo is None:
-        return value.replace(tzinfo=UTC)
-    return value
-
-
-def _item_from_row(row: UploadItemRow) -> UploadItem:
-    return UploadItem(
-        id=UploadItemId(row.id),
-        upload_id=UploadId(row.upload_id),
-        document_path=row.document_path,
-        status=UploadItemStatus(row.status),
-        reason=row.reason,
-        attempts=row.attempts,
-        created_at=_aware(row.created_at),
-        updated_at=_aware(row.updated_at),
-    )
 
 
 class PostgresJobQueue:
@@ -68,9 +50,15 @@ class PostgresJobQueue:
         row.status = UploadItemStatus.PROCESSING.value
         row.locked_by = worker_id
         row.locked_until = now + timedelta(seconds=_LEASE_SECONDS)
+        row.processing_started_at = now
+        row.processing_finished_at = None
+        row.embedding_prompt_tokens = None
+        row.embedding_total_tokens = None
+        row.chunk_count = None
+        row.chunk_token_sum = None
         row.updated_at = now
         await self._session.flush()
-        return _item_from_row(row)
+        return upload_item_from_row(row)
 
     async def complete(
         self,
@@ -78,6 +66,10 @@ class PostgresJobQueue:
         *,
         status: str,
         reason: str | None,
+        embedding_prompt_tokens: int | None = None,
+        embedding_total_tokens: int | None = None,
+        chunk_count: int | None = None,
+        chunk_token_sum: int | None = None,
     ) -> None:
         terminal = {
             UploadItemStatus.INDEXED.value,
@@ -99,6 +91,11 @@ class PostgresJobQueue:
                 locked_until=None,
                 locked_by=None,
                 next_attempt_at=None,
+                processing_finished_at=now,
+                embedding_prompt_tokens=embedding_prompt_tokens,
+                embedding_total_tokens=embedding_total_tokens,
+                chunk_count=chunk_count,
+                chunk_token_sum=chunk_token_sum,
                 updated_at=now,
             )
         )
@@ -121,6 +118,7 @@ class PostgresJobQueue:
         if attempts >= _MAX_ATTEMPTS:
             row.status = UploadItemStatus.FAILED.value
             row.next_attempt_at = None
+            row.processing_finished_at = now
         else:
             exponent = max(attempts - 1, 0)
             backoff_seconds = float(_BASE_BACKOFF_SECONDS) * (2.0**exponent)

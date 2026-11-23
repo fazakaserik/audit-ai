@@ -105,8 +105,8 @@ async def run_graph(
     progress: AskProgress | None = None,
 ) -> GraphResult:
     progress_sink = progress if progress is not None else deps.progress
-    limit = deps.settings.session_context_turns
-    recent = tuple(prior_turns[-limit:]) if limit > 0 else ()
+    history = tuple(prior_turns)
+    folder = folder_scope if folder_scope is not None else question.folder_scope
     standalone_question = question.text
 
     if progress_sink is not None:
@@ -114,7 +114,7 @@ async def run_graph(
 
     tool_ctx = ToolContext(
         engagement_id=engagement_id,
-        folder_scope=folder_scope if folder_scope is not None else question.folder_scope,
+        folder_scope=folder,
         embedder=deps.embedder,
         vector_index=deps.vector_index,
         engagements=deps.engagements,
@@ -126,7 +126,7 @@ async def run_graph(
     messages = list(
         build_agent_messages(
             question=question.text,
-            prior_turns=recent,
+            prior_turns=history,
             auditor_role=question.auditor_role,
             topic=question.topic,
             folder_scope=str(tool_ctx.folder_scope) if tool_ctx.folder_scope else None,
@@ -137,7 +137,7 @@ async def run_graph(
         settings=deps.settings,
         tool_ctx=tool_ctx,
         progress=progress_sink,
-        prior_turns=recent,
+        prior_turns=history,
     )
     graph = _compile_graph(ctx)
     initial: State = {

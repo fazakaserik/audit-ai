@@ -10,7 +10,11 @@ from backend.application.api.contracts.v1.mapping import (
     upload_to_summary,
 )
 from backend.application.api.contracts.v1.page import Page
-from backend.application.api.contracts.v1.requests import AskRequest, CreateEngagementRequest
+from backend.application.api.contracts.v1.requests import (
+    AskRequest,
+    CreateEngagementRequest,
+    UpdateEngagementRequest,
+)
 from backend.application.api.contracts.v1.responses import (
     AnsweredResponse,
     AskResponse,
@@ -50,6 +54,7 @@ __all__ = [
     "SessionSummaryResponse",
     "SuggestedClientQuestionResponse",
     "TurnResponse",
+    "UpdateEngagementRequest",
     "UploadAcceptedResponse",
     "UploadItemResponse",
     "UploadResponse",

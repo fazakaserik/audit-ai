@@ -14,18 +14,19 @@ from textual.widget import Widget
 from textual.widgets import Input
 from textual.worker import Worker, WorkerState
 
+from backend.application.api.contracts.v1.responses import UploadAcceptedResponse
 from cli.client import CliApiError
 from tui.chat_render import (
-    document_bytes_renderable,
     error_panel,
     replay_session_detail,
     speaker_label,
 )
+from tui.render_text import renderable_to_text
 from tui.screens.base import ChromeScreen
+from tui.screens.document_view import DocumentViewScreen
 from tui.slash import HELP_TEXT, SlashAction, parse_slash
 from tui.streaming import ThinkingAppend, ThinkingFinished, ThinkingStarted, run_ask_stream
 from tui.textual_typing import worker_from_event
-from tui.render_text import renderable_to_text
 from tui.widgets.chat_input import ChatInput
 from tui.widgets.selectable import SelectableStatic
 from tui.widgets.thinking import LiveThoughtProcess, make_thinking_collapsible
@@ -218,7 +219,7 @@ class ChatScreen(ChromeScreen):
             self.aiditor.show_uploads_modal(upload_id=cmd.upload_id)
             return
         if action is SlashAction.UPLOAD:
-            assert cmd.path is not None and cmd.folder is not None
+            assert cmd.path is not None
             self._run_upload(cmd.path, cmd.folder)
             return
         if action is SlashAction.OPEN:
@@ -249,19 +250,36 @@ class ChatScreen(ChromeScreen):
         except CliApiError as exc:
             self._mount_line(error_panel(exc))
             return
-        self._mount_line(document_bytes_renderable(citation.document_path, content))
+        self.app.push_screen(DocumentViewScreen(citation.document_path, content))
 
-    def _run_upload(self, raw_path: str, folder: str) -> None:
+    def _run_upload(self, raw_path: str, folder: str | None) -> None:
         engagement_id = self.aiditor.state.engagement_id
         if engagement_id is None:
             self._mount_line(Text("No engagement selected.", style="red"))
             return
+        if folder is None:
+            self.aiditor.pick_upload_folder(
+                callback=lambda selected: self._on_upload_folder_picked(raw_path, selected),
+            )
+            return
+        self._start_upload(raw_path, folder)
 
-        def work() -> object:
+    def _on_upload_folder_picked(self, raw_path: str, folder: str | None) -> None:
+        if folder is None:
+            return
+        self._start_upload(raw_path, folder)
+
+    def _start_upload(self, raw_path: str, folder: str) -> None:
+        def work() -> UploadAcceptedResponse:
             return self.aiditor.upload_path(raw_path, folder)
 
-        self._asking = True
-        self.run_worker(work, exclusive=True, thread=True, name="upload")
+        self.notify(
+            f"Sending upload to '{folder}'…",
+            title="Upload",
+            timeout=2.5,
+        )
+        # Non-exclusive so chat/ask stays usable; we only wait for API accept, not ingest.
+        self.run_worker(work, exclusive=False, thread=True, name="upload")
 
     def _ask(self, question: str) -> None:
         engagement_id = self.aiditor.state.engagement_id
@@ -299,7 +317,10 @@ class ChatScreen(ChromeScreen):
             return
         worker = worker_from_event(event)
         name = cast(str | None, worker.name)
-        if name in {"ask", "upload"}:
+        if name == "upload":
+            self._on_upload_worker_done(event, worker)
+            return
+        if name == "ask":
             self._asking = False
             chat_input = self.query_one("#chat-input", ChatInput)
             chat_input.disabled = False
@@ -312,11 +333,30 @@ class ChatScreen(ChromeScreen):
                         self._mount_line(error_panel(error))
                     else:
                         self._mount_line(Text(str(error), style="red"))
-                return
-            if name == "upload" and event.state is WorkerState.SUCCESS:
-                upload_result = cast(object | None, worker.result)
-                if upload_result is not None:
-                    self.write_renderable(upload_result)
+
+    def _on_upload_worker_done(
+        self,
+        event: Worker.StateChanged,
+        worker: Worker[object],
+    ) -> None:
+        if event.state is WorkerState.ERROR:
+            error = worker.error
+            detail = str(error) if error is not None else "Upload failed"
+            if isinstance(error, CliApiError):
+                detail = error.detail
+            self.notify(detail, title="Upload failed", severity="error", timeout=6)
+            return
+        if event.state is not WorkerState.SUCCESS:
+            return
+        accepted = cast(UploadAcceptedResponse | None, worker.result)
+        if accepted is None:
+            return
+        self.notify(
+            f"Accepted - processing in the background.\n"
+            f"Use /uploads (or /uploads {accepted.upload_id}) to inspect.",
+            title="Upload",
+            timeout=5,
+        )
 
     def action_back_sessions(self) -> None:
         if self._asking:

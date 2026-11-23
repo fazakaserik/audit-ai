@@ -31,7 +31,7 @@ HELP_TEXT = """Slash commands:
   /resume [id]    Resume a session (picker if no id)
   /documents [folder]  Browse documents (optional start folder)
   /uploads [id]   List uploads or show one upload's details
-  /upload <path> <folder>  Upload to the active engagement under <folder>
+  /upload <path> [folder]  Upload (folder picker if folder omitted)
   /open <n>       Open citation [n] from the last answer
   /help           Show this help
   /quit           Exit
@@ -97,11 +97,17 @@ def parse_slash(line: str) -> SlashCommand:
                     )
             return SlashCommand(action=SlashAction.USAGE, message="Usage: /uploads [upload_id]")
         case "/upload":
-            upload_parts = remainder.rsplit(maxsplit=1)
-            if len(upload_parts) != 2 or not upload_parts[0] or not upload_parts[1]:
+            if not remainder.strip():
                 return SlashCommand(
                     action=SlashAction.USAGE,
-                    message="Usage: /upload <path> <folder>",
+                    message="Usage: /upload <path> [folder]",
+                )
+            upload_parts = remainder.rsplit(maxsplit=1)
+            if len(upload_parts) == 1:
+                return SlashCommand(
+                    action=SlashAction.UPLOAD,
+                    path=upload_parts[0],
+                    folder=None,
                 )
             return SlashCommand(
                 action=SlashAction.UPLOAD,

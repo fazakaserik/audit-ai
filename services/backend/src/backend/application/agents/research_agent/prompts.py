@@ -23,7 +23,7 @@ You are an audit assistant. Base every factual claim ONLY on the tool facts and/
 numbered source chunks below. Do not invent policy rules, amounts, dates, names, \
 or other data that those sources do not state.
 
-The Question may be a short follow-up; use Recent conversation together with the \
+The Question may be a short follow-up; use Conversation history together with the \
 tool facts / chunks to resolve pronouns and ellipsis, then answer the intended \
 question.
 
@@ -34,7 +34,7 @@ the document's own wording and cite it. State the policy condition clearly.
 
 Prefer a grounded answer over declining when the sources support the asked point. \
 Decline only when they truly do not (missing clause, missing definition, \
-contradictory evidence, or an unclear question that Recent conversation cannot \
+contradictory evidence, or an unclear question that Conversation history cannot \
 resolve).
 
 When source chunks support the answer: every document-grounded claim needs an \
@@ -107,6 +107,27 @@ def _format_chunks(scored: Sequence[ScoredChunk]) -> str:
     return "\n\n".join(blocks)
 
 
+def format_prior_answer(turn: Turn) -> str:
+    """Full prior assistant reply for session history (not truncated)."""
+    answer = turn.answer
+    if isinstance(answer, Answered):
+        return answer.text.strip() or "(empty answer)"
+    if isinstance(answer, InsufficientEvidence):
+        return f"(insufficient: {answer.reason.value})"
+    return "(no answer)"
+
+
+def _format_conversation_history(prior_turns: Sequence[Turn]) -> list[str]:
+    lines = [
+        "Conversation history (full session; resolve follow-ups; not evidence):",
+    ]
+    for turn in prior_turns:
+        lines.append(f"- User: {turn.standalone_question}")
+        lines.append(f"  Assistant: {format_prior_answer(turn)}")
+    lines.append("")
+    return lines
+
+
 def build_agent_messages(
     *,
     question: str,
@@ -117,10 +138,7 @@ def build_agent_messages(
 ) -> tuple[ChatMessage, ...]:
     lines: list[str] = []
     if prior_turns:
-        lines.append("Recent conversation (for reference resolution only; not evidence):")
-        for turn in prior_turns:
-            lines.append(f"- User asked: {turn.standalone_question}")
-        lines.append("")
+        lines.extend(_format_conversation_history(prior_turns))
     lines.append(f"Question: {question}")
     if auditor_role:
         lines.append(f"Auditor role: {auditor_role}")
@@ -136,16 +154,6 @@ def build_agent_messages(
     )
 
 
-def _prior_answer_summary(turn: Turn) -> str:
-    answer = turn.answer
-    if isinstance(answer, Answered):
-        text = answer.text.strip().replace("\n", " ")
-        return text if len(text) <= 240 else f"{text[:237]}..."
-    if isinstance(answer, InsufficientEvidence):
-        return f"(insufficient: {answer.reason.value})"
-    return "(no answer)"
-
-
 def build_generation_messages(
     *,
     question: str,
@@ -157,11 +165,7 @@ def build_generation_messages(
 ) -> tuple[ChatMessage, ...]:
     context_lines: list[str] = []
     if prior_turns:
-        context_lines.append("Recent conversation (resolve follow-ups; not evidence):")
-        for turn in prior_turns:
-            context_lines.append(f"- User asked: {turn.standalone_question}")
-            context_lines.append(f"  Assistant: {_prior_answer_summary(turn)}")
-        context_lines.append("")
+        context_lines.extend(_format_conversation_history(prior_turns))
     context_lines.append(f"Question: {question}")
     if auditor_role:
         context_lines.append(f"Auditor role: {auditor_role}")

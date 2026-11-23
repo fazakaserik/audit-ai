@@ -34,7 +34,6 @@ class Settings(BaseSettings):
     retrieval_top_k: int = Field(default=8, ge=1, le=50)
     relevance_threshold: float = Field(default=0.30, ge=0.0, le=1.0)
     max_concurrent_model_calls: int = Field(default=2, ge=1, le=64)
-    session_context_turns: int = Field(default=5, ge=0, le=20)
     agent_max_tool_rounds: int = Field(default=6, ge=1, le=20)
     agent_read_max_chars: int = Field(default=12_000, ge=500, le=200_000)
 
@@ -44,13 +43,9 @@ class Settings(BaseSettings):
 
     api_host: str = "0.0.0.0"
     api_port: int = Field(default=8000, ge=1, le=65535)
-    # Single-process default: run the upload claim loop inside the API.
-    run_worker_in_api: bool = True
-    # Swagger UI / ReDoc / OpenAPI JSON — enable only in local/dev deployments.
     enable_api_docs: bool = False
 
     log_level: str = "INFO"
-    # JSON for production scrapers; false for human-readable docker/dev tails.
     log_json: bool = True
 
     @model_validator(mode="after")

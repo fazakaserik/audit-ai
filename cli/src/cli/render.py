@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Literal, assert_never
 
 from rich.console import Console, Group, RenderableType
@@ -19,16 +20,71 @@ from backend.application.api.contracts.v1.responses import (
     SessionSummaryResponse,
     SuggestedClientQuestionResponse,
     TurnResponse,
+    UploadItemResponse,
     UploadResponse,
     UploadSummaryResponse,
 )
+from backend.domain.upload import UploadItemStatus, UploadStatus
 from cli.client import CliApiError, unwrap_answer, unwrap_insufficient
 from cli.formatting.citations import format_citation_line
 from cli.formatting.copy import INSUFFICIENT_ANSWER_LEAD, NO_SAVED_THOUGHT_PROCESS
+from cli.formatting.duration import format_duration_ms, format_elapsed
 from cli.formatting.errors import format_error_lines
 from cli.formatting.labels import stage_label
 from cli.formatting.tool_progress import ToolProgressCorrelator
 from cli.formatting.tools import source_progress_lines
+
+_UPLOAD_STATUS_STYLE: dict[UploadStatus, str] = {
+    UploadStatus.QUEUED: "cyan",
+    UploadStatus.PROCESSING: "yellow",
+    UploadStatus.COMPLETED: "green",
+    UploadStatus.FAILED: "red",
+}
+
+_ITEM_STATUS_STYLE: dict[UploadItemStatus, str] = {
+    UploadItemStatus.PENDING: "cyan",
+    UploadItemStatus.PROCESSING: "yellow",
+    UploadItemStatus.INDEXED: "green",
+    UploadItemStatus.SKIPPED: "dim",
+    UploadItemStatus.NOT_SEARCHABLE: "magenta",
+    UploadItemStatus.FAILED: "red",
+}
+
+
+def upload_status_text(status: UploadStatus, *, spinner: str | None = None) -> Text:
+    label = status.value
+    if spinner and status in (UploadStatus.QUEUED, UploadStatus.PROCESSING):
+        label = f"{spinner} {label}"
+    return Text(label, style=_UPLOAD_STATUS_STYLE.get(status, ""))
+
+
+def item_status_text(status: UploadItemStatus, *, spinner: str | None = None) -> Text:
+    label = status.value
+    if spinner and status in (UploadItemStatus.PENDING, UploadItemStatus.PROCESSING):
+        label = f"{spinner} {label}"
+    return Text(label, style=_ITEM_STATUS_STYLE.get(status, ""))
+
+
+def _tokens_cell(item: UploadItemResponse) -> str:
+    if item.embedding_total_tokens is None:
+        return "—"
+    return f"{item.embedding_total_tokens:,}"
+
+
+def _chunks_cell(item: UploadItemResponse) -> str:
+    if item.chunk_count is None:
+        return "—"
+    if item.chunk_token_sum is None:
+        return str(item.chunk_count)
+    return f"{item.chunk_count} ({item.chunk_token_sum:,} tok)"
+
+
+def _item_duration_cell(item: UploadItemResponse, *, now: datetime | None) -> str:
+    if item.processing_duration_ms is not None:
+        return format_duration_ms(item.processing_duration_ms)
+    if item.status in (UploadItemStatus.PENDING, UploadItemStatus.PROCESSING):
+        return format_elapsed(item.processing_started_at, None, now=now)
+    return "—"
 
 
 def render_error(console: Console, error: CliApiError) -> None:
@@ -210,7 +266,8 @@ def render_document_listing(
     table.add_column("Bytes", justify="right")
     table.add_column("Searchable")
     for folder in listing.folders:
-        table.add_row(f"[{folder}]", "folder", "", "")
+        # Text: literal brackets; a bare "[name]" string is Rich markup and vanishes.
+        table.add_row(Text(f"[{folder}]"), "folder", "", "")
     for item in listing.items:
         table.add_row(
             item.path,
@@ -232,16 +289,19 @@ def render_upload_summaries(
     uploads: tuple[UploadSummaryResponse, ...],
 ) -> None:
     table = Table(title="Uploads")
-    table.add_column("Upload ID", style="cyan")
-    table.add_column("Folder")
     table.add_column("Status")
+    table.add_column("Folder")
     table.add_column("Created")
+    table.add_column("Duration", justify="right")
+    table.add_column("Upload ID", style="cyan")
     for item in uploads:
+        duration = format_elapsed(item.created_at, item.completed_at)
         table.add_row(
-            str(item.id),
+            upload_status_text(item.status),
             item.target_folder,
-            item.status.value,
             item.created_at.isoformat(),
+            duration,
+            str(item.id),
         )
     console.print(table)
 
@@ -288,22 +348,57 @@ def render_turn(console: Console, turn: TurnResponse) -> None:
     )
 
 
-def upload_status_renderable(upload: UploadResponse) -> RenderableType:
-    parts: list[RenderableType] = [
-        Text(
-            f"Upload {upload.id} — {upload.status.value} (folder: {upload.target_folder})",
-            style="bold",
-        ),
-    ]
+def upload_status_renderable(
+    upload: UploadResponse,
+    *,
+    spinner: str | None = None,
+    now: datetime | None = None,
+) -> RenderableType:
+    header = Text()
+    header.append("Upload ", style="bold")
+    header.append(str(upload.id), style="bold cyan")
+    header.append(" — ", style="bold")
+    header.append_text(upload_status_text(upload.status, spinner=spinner))
+    header.append(f"  (folder: {upload.target_folder})", style="bold")
+
+    parts: list[RenderableType] = [header]
+    wall = format_elapsed(upload.created_at, upload.completed_at, now=now)
     if upload.completed_at is not None:
-        parts.append(Text(f"completed_at: {upload.completed_at.isoformat()}", style="dim"))
+        parts.append(
+            Text(
+                f"completed_at: {upload.completed_at.isoformat()}  ·  wall time: {wall}",
+                style="dim",
+            )
+        )
+    elif wall != "—":
+        parts.append(Text(f"elapsed: {wall}", style="dim"))
+
+    item_durations = [i.processing_duration_ms for i in upload.items if i.processing_duration_ms]
+    item_tokens = [i.embedding_total_tokens for i in upload.items if i.embedding_total_tokens]
+    summary_bits: list[str] = [f"{len(upload.items)} file(s)"]
+    if item_durations:
+        summary_bits.append(f"process time Σ {format_duration_ms(sum(item_durations))}")
+    if item_tokens:
+        summary_bits.append(f"embed tokens Σ {sum(item_tokens):,}")
+    parts.append(Text(" · ".join(summary_bits), style="dim"))
+
     if upload.items:
-        table = Table(title="Items")
-        table.add_column("Path")
+        table = Table(title="Items", expand=True)
+        table.add_column("Path", overflow="fold")
         table.add_column("Status")
-        table.add_column("Reason")
+        table.add_column("Duration", justify="right")
+        table.add_column("Embed tokens", justify="right")
+        table.add_column("Chunks", justify="right")
+        table.add_column("Reason", overflow="fold")
         for item in upload.items:
-            table.add_row(item.document_path, item.status.value, item.reason or "")
+            table.add_row(
+                item.document_path,
+                item_status_text(item.status, spinner=spinner),
+                _item_duration_cell(item, now=now),
+                _tokens_cell(item),
+                _chunks_cell(item),
+                item.reason or "",
+            )
         parts.append(table)
     return Group(*parts)
 

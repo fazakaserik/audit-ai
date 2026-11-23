@@ -77,16 +77,45 @@ ChatScreen #chat-input {
 }
 
 DocumentsModal,
-UploadsModal {
+UploadsModal,
+FolderPickerModal,
+ConfirmModal,
+EngagementCreateModal,
+EngagementRenameModal {
     align: center middle;
 }
 
 DocumentsModal > #modal-container,
-UploadsModal > #modal-container {
+UploadsModal > #modal-container,
+FolderPickerModal > #modal-container {
     width: 80%;
     height: 80%;
     border: thick $primary;
     background: $surface;
+}
+
+ConfirmModal > #modal-container,
+EngagementCreateModal > #modal-container,
+EngagementRenameModal > #modal-container {
+    width: 60%;
+    height: auto;
+    max-height: 80%;
+    border: thick $primary;
+    background: $surface;
+    padding: 1;
+}
+
+#confirm-message {
+    margin: 1 1;
+    height: auto;
+}
+
+.form-modal Input {
+    margin: 0 1 1 1;
+}
+
+.form-modal Label {
+    margin: 0 1;
 }
 
 #modal-title {
@@ -101,9 +130,53 @@ UploadsModal > #modal-container {
     margin: 1;
 }
 
+#uploads-table {
+    height: 1fr;
+    margin: 1;
+}
+
+#modal-detail-scroll {
+    height: 1fr;
+    margin: 1;
+}
+
+#modal-detail {
+    height: auto;
+    padding: 0 1;
+}
+
+#folder-input {
+    margin: 0 1 1 1;
+}
+
 #modal-help {
     dock: bottom;
     height: 1;
     padding: 0 1;
     color: $text-muted;
+}
+
+DocumentViewScreen {
+    background: $surface;
+}
+
+#doc-view-title {
+    dock: top;
+    height: 1;
+    padding: 0 1;
+    background: $boost;
+    text-style: bold;
+}
+
+#doc-view-body {
+    height: 1fr;
+    margin: 0 1 1 1;
+    border: tall $primary 30%;
+    padding: 0 1;
+    scrollbar-size: 1 1;
+}
+
+#doc-view-content {
+    height: auto;
+    padding: 1 0;
 }

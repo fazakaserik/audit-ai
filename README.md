@@ -11,22 +11,30 @@ See [specs/001-audit-assistant-rag/](specs/001-audit-assistant-rag/) for the ful
 
 ## Workspace
 
-| Path               | Package   | Role                                                                                |
-| ------------------ | --------- | ----------------------------------------------------------------------------------- |
-| `services/backend` | `backend` | Domain, application, infrastructure layers; HTTP API + worker; tests under `tests/` |
-| `cli`              | `cli`     | `aiditor` non-interactive CLI + shared HTTP client; tests in `cli/tests/`           |
-| `tui`              | `tui`     | `aiditor-tui` fullscreen Textual client; tests in `tui/tests/`                      |
-
-Compose runs a single `backend` container (HTTP API + in-process upload worker).
+| Path               | Package   | Role                                                                                          |
+| ------------------ | --------- | --------------------------------------------------------------------------------------------- |
+| `services/backend` | `backend` | Domain, application, infrastructure layers; HTTP API + upload processor; tests under `tests/` |
+| `cli`              | `cli`     | `aiditor` non-interactive CLI + shared HTTP client; tests in `cli/tests/`                     |
+| `tui`              | `tui`     | `aiditor-tui` fullscreen Textual client; tests in `tui/tests/`                                |
 
 ### Docker Compose recipes
 
-| Recipe                                                                                   | Files                                    | Use when                                                                                                                     |
-| ---------------------------------------------------------------------------------------- | ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
-| `just compose-up` / `compose-down` / `compose-restart` / `compose-clean`                 | `deployment/docker-compose/compose.yaml` | Default / production-like local deploy (API on `:8000` only)                                                                 |
-| `just compose-dev-up` / `compose-dev-down` / `compose-dev-restart` / `compose-dev-clean` | `compose.yaml` + `compose.dev.yaml`      | Local development overrides (publishes Postgres `:5432`, forces `/docs`, human-readable logs; optional Ollama profile ports) |
+| Recipe                                                                                   | Files                                    | Use when                                                                 |
+| ---------------------------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------ |
+| `just compose-up` / `compose-down` / `compose-restart` / `compose-clean`                 | `deployment/docker-compose/compose.yaml` | Production-like local deploy                                             |
+| `just compose-dev-up` / `compose-dev-down` / `compose-dev-restart` / `compose-dev-clean` | `compose.yaml` + `compose.dev.yaml`      | Dev overrides (Postgres `:5432`, readable logs; `/docs` forced on `api`) |
 
 `compose-clean` / `compose-dev-clean` also remove volumes (indexed data is wiped).
+
+Compose services (same app image, different commands — except the load balancer):
+
+| Service            | Role                                                                           |
+| ------------------ | ------------------------------------------------------------------------------ |
+| `migrate`          | One-shot Alembic `upgrade head`, then exits                                    |
+| `api`              | HTTP + ask agent (migrations via `migrate` service); **2 replicas** by default |
+| `upload-processor` | Claims upload jobs and indexes documents; **2 replicas** by default            |
+| `load-balancer`    | Caddy reverse proxy; host port `8000` → `api:8000`                             |
+| `postgres`         | Metadata, sessions, job queue, pgvector                                        |
 
 ## Prerequisites
 
@@ -81,13 +89,13 @@ OPENAI_API_KEY=sk-...
 ```bash
 cp deployment/docker-compose/.env.example deployment/docker-compose/.env
 uv sync
-just compose-up   # postgres + backend via compose.yaml; schema migrates on API startup
+just compose-up   # migrate → 2× api + 2× upload-processor + load-balancer + postgres
 just seed         # creates engagement northwind-fy2025 and indexes sample docs
 ```
 
 For day-to-day coding against published DB ports and readable logs, use `just compose-dev-up` instead.
 
-API base URL: `http://localhost:8000`  
+API base URL: `http://localhost:8000` (via `load-balancer`)  
 Interactive docs (enabled by default): [http://localhost:8000/docs](http://localhost:8000/docs)
 
 ### Health
@@ -127,7 +135,8 @@ aiditor-tui                # fullscreen interactive UI
 aiditor engagements list   # non-interactive CLI
 ```
 
-To author a new DB migration after changing SQLAlchemy models: `just migration "describe change"`.
+To author a new DB migration after changing SQLAlchemy models: `just migration "describe change"`.  
+Compose applies pending revisions via the `migrate` service on the next `compose-up`.
 
 ## Quality gate
 
@@ -140,22 +149,60 @@ Integration smoke against a live Ollama (optional): `just test-integration` with
 ## Architecture
 
 ```text
-upload / seed  →  job queue + worker  →  parse → chunk → embed → pgvector
+upload / seed  →  job queue + upload-processor  →  parse → chunk → embed → pgvector
                                               ↓
-ask HTTP  →  LangGraph (tools / retrieve → grade → generate → finalize)  →  cited answer
+ask HTTP (via load-balancer)  →  LangGraph  →  cited answer
 ```
 
 - **`backend.domain`** — frozen pydantic feature models
-- **`backend.application`** — Protocols (`llm`, `parsing`, `repositories`, `storage`), services, RAG, HTTP API (controllers), worker entrypoints
+- **`backend.application`** — Protocols (`llm`, `parsing`, `repositories`, `storage`), services, RAG, HTTP API (controllers), upload-processor entrypoints
 - **`backend.infrastructure`** — Postgres/pgvector, OpenAI, Ollama, local FS, parsing
 - **`cli` / `tui`** — HTTP clients only (same contracts as `/docs`)
 
 Provider adapters are selected with `LLM_PROVIDER` / `EMBEDDING_PROVIDER`; application logic does not change.
 
+## Concurrency and scaling
+
+### What this app does today
+
+- **Isolation:** Engagement-scoped data and chat sessions live in Postgres. Ask handlers do not keep mutable per-user state in process memory. Logs carry `request_id` for correlation.
+- **Roles:** `api` serves HTTP; `upload-processor` claims ingest jobs with `SELECT … FOR UPDATE SKIP LOCKED`; `migrate` runs once before either starts; `load-balancer` fronts `api`.
+- **Shared data:** Postgres (metadata, chunks, jobs) and the `document_storage` volume (raw uploads). Every `api` / `upload-processor` replica must see the same files.
+- **Model concurrency:** `MAX_CONCURRENT_MODEL_CALLS` is a **per-process** semaphore (each replica has its own cap).
+- **Ask path:** FastAPI async; ingest is off the request path (upload returns `202`, processors index in the background).
+
+`just compose-up` / `just compose-dev-up` start **2 `api` and 2 `upload-processor` replicas**, then restart `load-balancer` so Caddy refreshes Docker DNS upstreams. No sticky sessions are required (session state is in Postgres). Long ask / SSE timeouts are set on the proxy.
+
+To change replica counts:
+
+```bash
+docker compose -f deployment/docker-compose/compose.yaml up -d --scale api=3 --scale upload-processor=2
+docker compose -f deployment/docker-compose/compose.yaml restart load-balancer
+```
+
+### Bottlenecks (in order)
+
+1. **LLM / embeddings** (local Ollama GPU/CPU, or OpenAI rate limits and latency)
+2. **Postgres + pgvector** under heavy hybrid search and job claiming
+3. Only then more `api` replicas (more concurrent asks) or `upload-processor` replicas (deeper ingest queue)
+
+### Local vs cloud next step
+
+| Concern | Local compose (built)                                | Cloud target                                                                                                                                     |
+| ------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| HTTP    | `api` behind `load-balancer`                         | Autoscaled Container Apps replicas                                                                                                               |
+| Ingest  | Long-lived `upload-processor` (scale with `--scale`) | Same claim/process code; **queue-depth autoscaling** (KEDA / Container Apps Jobs / Service Bus), including scale-to-zero — not one VM per upload |
+| Schema  | One-shot `migrate`                                   | Same idea (job/init), not on every replica start                                                                                                 |
+| Files   | Shared Docker volume                                 | Blob storage adapter                                                                                                                             |
+| Search  | pgvector in Postgres                                 | Often Azure AI Search (independent scale)                                                                                                        |
+
+Details: [deployment/cloud/README.md](deployment/cloud/README.md).
+
 ## Limitations / next steps
 
 - No authentication or user management
 - Ask flow is a LangGraph `StateGraph` (tool loop → grade → generate → finalize); a minimal retrieve→generate graph would also satisfy the brief
+- Sessions always send **full** chat history into the model (no turn cap). Very long sessions may fail at the provider if the prompt exceeds the model context. **Next step:** a history-compression tool/step so long sessions can continue without dropping turns.
 - Chunk sizes not corpus-tuned; OCR out of scope
-- Default compose runs API + upload worker in one process (`RUN_WORKER_IN_API=true`)
+- Local compose does not autoscale ingest; cloud would scale processors from queue depth
 - Cloud mapping: [deployment/cloud/README.md](deployment/cloud/README.md)

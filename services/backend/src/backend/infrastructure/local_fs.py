@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import shutil
 from pathlib import Path
 
 from backend.domain.document import DocumentPath
@@ -16,8 +17,11 @@ class LocalDocumentStorage:
     def __init__(self, root: Path) -> None:
         self._root = root
 
+    def _engagement_root(self, engagement_id: EngagementId) -> Path:
+        return (self._root / engagement_id).resolve()
+
     def _resolve(self, engagement_id: EngagementId, path: DocumentPath) -> Path:
-        base = (self._root / engagement_id).resolve()
+        base = self._engagement_root(engagement_id)
         target = (base / path).resolve()
         try:
             target.relative_to(base)
@@ -58,3 +62,12 @@ class LocalDocumentStorage:
                 target.unlink()
 
         await asyncio.to_thread(_delete)
+
+    async def delete_engagement(self, engagement_id: EngagementId) -> None:
+        root = self._engagement_root(engagement_id)
+
+        def _delete_tree() -> None:
+            if root.is_dir():
+                shutil.rmtree(root)
+
+        await asyncio.to_thread(_delete_tree)

@@ -4,12 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.domain.engagement import Engagement, EngagementId
-from backend.domain.errors import ConflictError
+from backend.domain.errors import ConflictError, NotFoundError
 from backend.infrastructure.postgres.models import DocumentRow, EngagementRow
 from backend.infrastructure.postgres.repositories._mappers import engagement_from_row
 
@@ -37,6 +37,22 @@ class PostgresEngagementRepository:
         if row is None:
             return None
         return engagement_from_row(row)
+
+    async def update(self, engagement: Engagement) -> Engagement:
+        row = await self._session.get(EngagementRow, engagement.id)
+        if row is None:
+            raise NotFoundError(f"engagement not found: {engagement.id}")
+        row.name = engagement.name
+        row.updated_at = engagement.updated_at
+        await self._session.flush()
+        return engagement_from_row(row)
+
+    async def delete(self, engagement_id: EngagementId) -> bool:
+        result = await self._session.execute(
+            delete(EngagementRow).where(EngagementRow.id == engagement_id)
+        )
+        await self._session.flush()
+        return bool(result.rowcount)
 
     async def list(
         self,

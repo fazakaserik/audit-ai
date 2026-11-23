@@ -54,5 +54,18 @@ class UploadItem(BaseModel):
     status: UploadItemStatus
     reason: str | None = None
     attempts: Annotated[int, Field(ge=0)] = 0
+    processing_started_at: datetime | None = None
+    processing_finished_at: datetime | None = None
+    embedding_prompt_tokens: Annotated[int | None, Field(ge=0)] = None
+    embedding_total_tokens: Annotated[int | None, Field(ge=0)] = None
+    chunk_count: Annotated[int | None, Field(ge=0)] = None
+    chunk_token_sum: Annotated[int | None, Field(ge=0)] = None
     created_at: datetime
     updated_at: datetime
+
+    @property
+    def processing_duration_ms(self) -> int | None:
+        if self.processing_started_at is None or self.processing_finished_at is None:
+            return None
+        delta = self.processing_finished_at - self.processing_started_at
+        return max(0, int(delta.total_seconds() * 1000))

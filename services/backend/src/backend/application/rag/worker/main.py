@@ -66,6 +66,10 @@ async def run_worker_loop(
                         item.id,
                         status=outcome.status.value,
                         reason=outcome.reason,
+                        embedding_prompt_tokens=outcome.embedding_prompt_tokens,
+                        embedding_total_tokens=outcome.embedding_total_tokens,
+                        chunk_count=outcome.chunk_count,
+                        chunk_token_sum=outcome.chunk_token_sum,
                     )
                     # Refresh after complete so terminal item status is visible.
                     upload_status = await bound.uploads.refresh_status(item.upload_id)
@@ -75,6 +79,8 @@ async def run_worker_loop(
                         path=item.document_path,
                         status=outcome.status.value,
                         reason=outcome.reason,
+                        embedding_total_tokens=outcome.embedding_total_tokens,
+                        chunk_count=outcome.chunk_count,
                         upload_status=upload_status.status.value,
                     )
                 except Exception as exc:

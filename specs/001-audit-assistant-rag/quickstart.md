@@ -16,8 +16,8 @@ cp deployment/docker-compose/.env.example deployment/docker-compose/.env
 # Defaults already point at host Ollama + qwen3.5:4b
 # Or set LLM_PROVIDER=openai and OPENAI_API_KEY=...
 
-just compose-up          # production-like: compose.yaml only (schema upgrades on API startup)
-# just compose-dev-up    # optional: compose.yaml + compose.dev.yaml (DB port, /docs, readable logs)
+just compose-up          # migrate → 2× api + 2× upload-processor + load-balancer + postgres
+# just compose-dev-up    # optional: compose.yaml + compose.dev.yaml (DB port, readable logs)
 ```
 
 Equivalent without just:
@@ -25,6 +25,8 @@ Equivalent without just:
 ```bash
 docker compose -f deployment/docker-compose/compose.yaml up -d --build
 ```
+
+Host traffic hits `load-balancer` on `:8000` (Caddy → `api`).
 
 Check:
 

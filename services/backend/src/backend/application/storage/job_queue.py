@@ -13,6 +13,16 @@ class JobQueue(Protocol):
 
     async def claim_next(self, worker_id: str) -> UploadItem | None: ...
 
-    async def complete(self, item_id: UploadItemId, *, status: str, reason: str | None) -> None: ...
+    async def complete(
+        self,
+        item_id: UploadItemId,
+        *,
+        status: str,
+        reason: str | None,
+        embedding_prompt_tokens: int | None = None,
+        embedding_total_tokens: int | None = None,
+        chunk_count: int | None = None,
+        chunk_token_sum: int | None = None,
+    ) -> None: ...
 
     async def fail_for_retry(self, item_id: UploadItemId, *, reason: str) -> None: ...

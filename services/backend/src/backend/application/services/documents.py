@@ -181,6 +181,21 @@ class DocumentService:
             media_type=media_type_for_content_type(document.content_type),
         )
 
+    async def delete_document(
+        self,
+        *,
+        engagement_id: EngagementId,
+        path: DocumentPath,
+    ) -> None:
+        engagement = await self._engagements.get(engagement_id)
+        if engagement is None:
+            raise NotFoundError(f"engagement not found: {engagement_id}")
+
+        deleted = await self._documents.delete_by_path(engagement_id, path)
+        if not deleted:
+            raise NotFoundError(f"document not found: {path}")
+        await self._storage.delete(engagement_id, path)
+
     async def upload_documents(
         self,
         *,

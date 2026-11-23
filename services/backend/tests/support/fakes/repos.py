@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 
+from backend.domain.common import utc_now
 from backend.domain.document import (
     Document,
     DocumentPath,
@@ -43,6 +44,18 @@ class InMemoryEngagementRepository:
     async def get(self, engagement_id: EngagementId) -> Engagement | None:
         return self._items.get(engagement_id)
 
+    async def update(self, engagement: Engagement) -> Engagement:
+        if engagement.id not in self._items:
+            raise NotFoundError(f"engagement not found: {engagement.id}")
+        self._items[engagement.id] = engagement
+        return engagement
+
+    async def delete(self, engagement_id: EngagementId) -> bool:
+        existed = engagement_id in self._items
+        self._items.pop(engagement_id, None)
+        self._document_counts.pop(engagement_id, None)
+        return existed
+
     async def list(
         self,
         *,
@@ -77,6 +90,13 @@ class InMemoryDocumentRepository:
         path: DocumentPath,
     ) -> Document | None:
         return self._items.get((engagement_id, path))
+
+    async def delete_by_path(
+        self,
+        engagement_id: EngagementId,
+        path: DocumentPath,
+    ) -> bool:
+        return self._items.pop((engagement_id, path), None) is not None
 
     async def list(
         self,
@@ -185,7 +205,17 @@ class InMemoryJobQueue:
         _ = worker_id
         for item in sorted(self._items.values(), key=lambda row: row.created_at):
             if item.status == UploadItemStatus.PENDING:
-                claimed = item.model_copy(update={"status": UploadItemStatus.PROCESSING})
+                claimed = item.model_copy(
+                    update={
+                        "status": UploadItemStatus.PROCESSING,
+                        "processing_started_at": utc_now(),
+                        "processing_finished_at": None,
+                        "embedding_prompt_tokens": None,
+                        "embedding_total_tokens": None,
+                        "chunk_count": None,
+                        "chunk_token_sum": None,
+                    }
+                )
                 self._items[item.id] = claimed
                 return claimed
         return None
@@ -196,14 +226,26 @@ class InMemoryJobQueue:
         *,
         status: str,
         reason: str | None,
+        embedding_prompt_tokens: int | None = None,
+        embedding_total_tokens: int | None = None,
+        chunk_count: int | None = None,
+        chunk_token_sum: int | None = None,
     ) -> None:
         item = self._items.get(item_id)
         if item is None:
             return
+        finished = utc_now()
+        started = item.processing_started_at or finished
         self._items[item_id] = item.model_copy(
             update={
                 "status": UploadItemStatus(status),
                 "reason": reason,
+                "processing_started_at": started,
+                "processing_finished_at": finished,
+                "embedding_prompt_tokens": embedding_prompt_tokens,
+                "embedding_total_tokens": embedding_total_tokens,
+                "chunk_count": chunk_count,
+                "chunk_token_sum": chunk_token_sum,
             }
         )
 
@@ -218,6 +260,7 @@ class InMemoryJobQueue:
                     "status": UploadItemStatus.FAILED,
                     "attempts": attempts,
                     "reason": reason,
+                    "processing_finished_at": utc_now(),
                 }
             )
         else:
@@ -247,8 +290,20 @@ class NoopJobQueue:
         *,
         status: str,
         reason: str | None,
+        embedding_prompt_tokens: int | None = None,
+        embedding_total_tokens: int | None = None,
+        chunk_count: int | None = None,
+        chunk_token_sum: int | None = None,
     ) -> None:
-        _ = (item_id, status, reason)
+        _ = (
+            item_id,
+            status,
+            reason,
+            embedding_prompt_tokens,
+            embedding_total_tokens,
+            chunk_count,
+            chunk_token_sum,
+        )
 
     async def fail_for_retry(self, item_id: UploadItemId, *, reason: str) -> None:
         _ = (item_id, reason)

@@ -56,3 +56,37 @@ def engagements_create(
             exit_api_error(exc)
         else:
             console.print(f"Created engagement {created.id} ({created.name})")
+
+
+@app.command("rename")
+def engagements_rename(
+    id: str = typer.Option(..., "--id", help="Engagement id"),
+    name: str = typer.Option(..., "--name", help="New display name"),
+) -> None:
+    """Rename an engagement (id stays the same)."""
+    engagement_id: EngagementId = id
+    with client() as api:
+        try:
+            updated = api.update_engagement(engagement_id, name=name)
+        except CliApiError as exc:
+            exit_api_error(exc)
+        else:
+            console.print(f"Renamed engagement {updated.id} -> {updated.name}")
+
+
+@app.command("delete")
+def engagements_delete(
+    id: str = typer.Option(..., "--id", help="Engagement id"),
+    yes: bool = typer.Option(False, "--yes", help="Skip confirmation"),
+) -> None:
+    """Delete an engagement and all related documents, uploads, and sessions."""
+    engagement_id: EngagementId = id
+    if not yes and not typer.confirm(f"Delete engagement {engagement_id} and all its data?"):
+        raise typer.Abort()
+    with client() as api:
+        try:
+            api.delete_engagement(engagement_id)
+        except CliApiError as exc:
+            exit_api_error(exc)
+        else:
+            console.print(f"Deleted engagement {engagement_id}")

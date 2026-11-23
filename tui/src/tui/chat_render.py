@@ -91,17 +91,20 @@ def ask_response_renderable(response: AskResponse) -> Text:
     return Text("(empty response)", style="dim")
 
 
-def document_bytes_renderable(document_path: str, content: bytes) -> Text:
-    header = Text(f"Document: {document_path}\n", style="bold")
+def document_body_text(content: bytes) -> Text:
+    """Decode document bytes into selectable Text (markdown when it looks like MD)."""
     try:
         text = content.decode("utf-8")
     except UnicodeDecodeError:
-        header.append(f"(binary content, {len(content)} bytes)", style="dim")
-        return header
+        return Text(f"(binary content, {len(content)} bytes)", style="dim")
     if text.strip().startswith(("#", "-", "*")) or "\n##" in text:
-        header.append_text(markdown_to_text(text))
-        return header
-    header.append(text)
+        return markdown_to_text(text)
+    return Text(text)
+
+
+def document_bytes_renderable(document_path: str, content: bytes) -> Text:
+    header = Text(f"Document: {document_path}\n", style="bold")
+    header.append_text(document_body_text(content))
     return header
 
 

@@ -82,6 +82,16 @@ class UploadItemRow(Base):
     locked_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
     next_attempt_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     raw_storage_key: Mapped[str] = mapped_column(String(2048), nullable=False, default="")
+    processing_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    processing_finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    embedding_prompt_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    embedding_total_tokens: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    chunk_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    chunk_token_sum: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

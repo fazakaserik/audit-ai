@@ -1,4 +1,4 @@
-"""Apply Alembic migrations programmatically (e.g. API startup)."""
+"""Apply Alembic migrations programmatically (CLI, migrate job, or optional API startup)."""
 
 from __future__ import annotations
 

@@ -28,6 +28,10 @@ log = get_logger(__name__)
 class ProcessItemOutcome:
     status: UploadItemStatus
     reason: str | None
+    embedding_prompt_tokens: int | None = None
+    embedding_total_tokens: int | None = None
+    chunk_count: int | None = None
+    chunk_token_sum: int | None = None
 
 
 async def process_upload_item(
@@ -109,7 +113,7 @@ async def process_upload_item(
         chunk_count=len(chunks),
         model=embedder.model_name,
     )
-    chunk_count = await index_document_chunks(
+    indexed = await index_document_chunks(
         documents=documents,
         vector_index=vector_index,
         embedder=embedder,
@@ -124,10 +128,30 @@ async def process_upload_item(
         now=now,
         parsed_chunks=chunks,
     )
-    log.info("ingest_embed_done", path=path, vector_count=chunk_count)
+    usage = indexed.embedding_usage
+    log.info(
+        "ingest_embed_done",
+        path=path,
+        vector_count=indexed.chunk_count,
+        embedding_total_tokens=usage.total_tokens,
+    )
     await uploads.refresh_status(item.upload_id)
-    log.info("ingest_indexed", path=path, chunk_count=chunk_count, version=version)
-    return ProcessItemOutcome(status=UploadItemStatus.INDEXED, reason=None)
+    log.info(
+        "ingest_indexed",
+        path=path,
+        chunk_count=indexed.chunk_count,
+        chunk_token_sum=indexed.chunk_token_sum,
+        embedding_total_tokens=usage.total_tokens,
+        version=version,
+    )
+    return ProcessItemOutcome(
+        status=UploadItemStatus.INDEXED,
+        reason=None,
+        embedding_prompt_tokens=usage.prompt_tokens,
+        embedding_total_tokens=usage.total_tokens,
+        chunk_count=indexed.chunk_count,
+        chunk_token_sum=indexed.chunk_token_sum,
+    )
 
 
 async def _upsert_not_searchable(
