@@ -125,7 +125,7 @@ class AnsweredResponse(BaseModel):
 
     status: Literal["answered"] = "answered"
     answer: str
-    citations: Annotated[tuple[CitationResponse, ...], Field(min_length=1)]
+    citations: tuple[CitationResponse, ...] = ()
     session_id: UUID
     turn_id: UUID
     request_id: RequestId

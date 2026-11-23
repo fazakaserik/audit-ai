@@ -10,9 +10,8 @@ from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import VerticalScroll
-from textual.css.query import NoMatches
 from textual.widget import Widget
-from textual.widgets import Input, Static
+from textual.widgets import Input
 from textual.worker import Worker, WorkerState
 
 from cli.client import CliApiError
@@ -27,27 +26,35 @@ from tui.slash import HELP_TEXT, SlashAction, parse_slash
 from tui.streaming import ThinkingAppend, ThinkingFinished, ThinkingStarted, run_ask_stream
 from tui.textual_typing import worker_from_event
 from tui.widgets.chat_input import ChatInput
-from tui.widgets.thinking import (
-    THINKING_LIVE_ID,
-    LiveThoughtProcess,
-    make_thinking_collapsible,
-)
+from tui.widgets.selectable import SelectableStatic
+from tui.widgets.thinking import LiveThoughtProcess, make_thinking_collapsible
 
 
 class ChatScreen(ChromeScreen):
     """Ask questions and view streamed answers."""
 
+    ALLOW_SELECT = True
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("escape", "back_sessions", "Sessions"),
         Binding("ctrl+e", "back_engagement", "Engagement"),
         Binding("q", "app.quit", "Quit", show=False),
+        Binding("ctrl+c", "copy_text", "Copy", show=False),
     ]
+
+    def action_copy_text(self) -> None:
+        selected = self.get_selected_text()
+        if selected:
+            self.app.copy_to_clipboard(selected)
+            self.notify("Copied", timeout=1.5)
+            return
+        self.app.exit()
 
     def __init__(self, resume_session_id: UUID | None = None) -> None:
         super().__init__()
         self._resume_session_id = resume_session_id
         self._asking = False
         self._last_speaker: Literal["you", "agent"] | None = None
+        self._live_thinking: LiveThoughtProcess | None = None
 
     def compose_main(self) -> ComposeResult:
         yield VerticalScroll(id="chat-log")
@@ -84,6 +91,7 @@ class ChatScreen(ChromeScreen):
     def _clear_chat(self) -> None:
         self._chat_log().remove_children()
         self._last_speaker = None
+        self._live_thinking = None
 
     def _scroll_end(self) -> None:
         self._chat_log().scroll_end(animate=False)
@@ -93,10 +101,10 @@ class ChatScreen(ChromeScreen):
         self._scroll_end()
 
     def _mount_line(self, content: RenderableType) -> None:
-        self._mount_widget(Static(content, markup=False))
+        self._mount_widget(SelectableStatic(content, markup=False))
 
     def _mount_blank(self) -> None:
-        self._mount_widget(Static(""))
+        self._mount_widget(SelectableStatic(""))
 
     def _append_speaker(self, role: Literal["you", "agent"]) -> None:
         switched = self._last_speaker is not None and self._last_speaker != role
@@ -106,31 +114,32 @@ class ChatScreen(ChromeScreen):
         self._mount_line(speaker_label(role))
         self._last_speaker = role
 
-    def _live_thought(self) -> LiveThoughtProcess | None:
-        try:
-            return self._chat_log().query_one(f"#{THINKING_LIVE_ID}", LiveThoughtProcess)
-        except NoMatches:
-            return None
+    def _ensure_live_thinking(self) -> LiveThoughtProcess:
+        live = self._live_thinking
+        if live is not None:
+            return live
+        live = LiveThoughtProcess()
+        self._live_thinking = live
+        self._mount_widget(live)
+        return live
 
     def _append_content(self, content: object) -> None:
         if isinstance(content, ThinkingStarted):
-            existing = self._live_thought()
-            if existing is not None:
-                existing.remove()
-            self._mount_widget(LiveThoughtProcess())
+            live = self._live_thinking
+            if live is not None:
+                live.reset()
+            else:
+                self._ensure_live_thinking()
             return
         if isinstance(content, ThinkingAppend):
-            live = self._live_thought()
-            if live is None:
-                live = LiveThoughtProcess()
-                self._mount_widget(live)
-            live.append_text(content.text)
+            self._ensure_live_thinking().append_text(content.text)
             self._scroll_end()
             return
         if isinstance(content, ThinkingFinished):
-            live = self._live_thought()
+            live = self._live_thinking
             if live is not None:
                 live.finish(duration_seconds=content.duration_seconds)
+                self._live_thinking = None
                 self._scroll_end()
             return
         if isinstance(content, Widget):

@@ -5,11 +5,12 @@ from __future__ import annotations
 from rich.text import Text
 from textual.widgets import Collapsible, Static
 
-THINKING_LIVE_ID = "thinking-live"
-
 
 class LiveThoughtProcess(Collapsible):
     """Expanded while work streams in; collapsed when finished."""
+
+    # Collapsible defaults to ALLOW_SELECT=False; allow selecting streamed text.
+    ALLOW_SELECT = True
 
     def __init__(self) -> None:
         self._body = Static("", classes="thinking-body", markup=False)
@@ -18,9 +19,15 @@ class LiveThoughtProcess(Collapsible):
             self._body,
             title="Thinking…",
             collapsed=False,
-            id=THINKING_LIVE_ID,
             classes="thinking-collapsible",
         )
+
+    def reset(self) -> None:
+        """Reuse this widget for a new stream."""
+        self._buffer = ""
+        self._body.update("")
+        self.title = "Thinking…"
+        self.collapsed = False
 
     def append_text(self, text: str) -> None:
         if not text:

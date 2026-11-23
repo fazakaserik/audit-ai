@@ -64,7 +64,8 @@ class Answered(BaseModel):
 
     status: Literal[AnswerStatus.ANSWERED] = AnswerStatus.ANSWERED
     text: Annotated[str, Field(min_length=1)]
-    citations: Annotated[tuple[Citation, ...], Field(min_length=1)]
+    # Empty when the answer is grounded only in non-document tools (e.g. current time).
+    citations: tuple[Citation, ...] = ()
 
 
 class InsufficientEvidence(BaseModel):

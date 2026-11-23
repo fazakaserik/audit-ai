@@ -41,7 +41,7 @@ class UploadsModal(ModalScreen[None]):
 
     @property
     def aiditor(self) -> AiditorApp:
-        return cast(AiditorApp, self.app)
+        return cast("AiditorApp", self.app)
 
     def compose(self) -> ComposeResult:
         with Vertical(id="modal-container"):

@@ -137,6 +137,7 @@ async def run_graph(
         settings=deps.settings,
         tool_ctx=tool_ctx,
         progress=progress_sink,
+        prior_turns=recent,
     )
     graph = _compile_graph(ctx)
     initial: State = {

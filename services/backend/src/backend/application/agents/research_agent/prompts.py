@@ -11,6 +11,7 @@ from backend.application.dto import (
     ChatMessage,
     ScoredChunk,
 )
+from backend.domain.answer import Answered, InsufficientEvidence
 from backend.domain.session import Turn
 
 _CFG = ConfigDict(frozen=True, strict=True, extra="forbid")
@@ -18,23 +19,30 @@ _CFG = ConfigDict(frozen=True, strict=True, extra="forbid")
 # Field name is can_answer (not "sufficient") — thinking models misread "sufficient"
 # as English prose and loop on whether the instruction is a typo.
 _SYSTEM = """\
-You are an audit assistant. Base every factual claim ONLY on the numbered source \
-chunks below. Do not invent policy rules, amounts, dates, names, or other document \
-data that the chunks do not state.
+You are an audit assistant. Base every factual claim ONLY on the tool facts and/or \
+numbered source chunks below. Do not invent policy rules, amounts, dates, names, \
+or other data that those sources do not state.
+
+The Question may be a short follow-up; use Recent conversation together with the \
+tool facts / chunks to resolve pronouns and ellipsis, then answer the intended \
+question.
 
 Ordinary language understanding is allowed: you may map everyday wording in the \
 question onto terms that appear in the chunks (for example treating a common \
 instance as covered by a broader term the policy uses). When you do, answer with \
 the document's own wording and cite it. State the policy condition clearly.
 
-Prefer a grounded answer over declining when the chunks state the applicable rule. \
-Decline only when the chunks truly do not support the asked point (missing clause, \
-missing definition the documents never give, contradictory evidence, or an unclear \
-question).
+Prefer a grounded answer over declining when the sources support the asked point. \
+Decline only when they truly do not (missing clause, missing definition, \
+contradictory evidence, or an unclear question that Recent conversation cannot \
+resolve).
 
-When you answer: every factual claim needs an inline citation like [1]. After the \
-cited claims you may add at most one short sentence naming any residual uncertainty \
-that remains even with those citations — do not invent facts to fill the gap.
+When source chunks support the answer: every document-grounded claim needs an \
+inline citation like [1]. After the cited claims you may add at most one short \
+sentence naming any residual uncertainty — do not invent facts to fill the gap.
+
+When answering from tool facts alone (no source chunks): write a clear short \
+answer with no [n] citation markers.
 
 When you decline: list concrete uncertainties (what is missing or ambiguous) and \
 1-3 full client questions (complete interrogatives starting with What/Which/Who/How/ \
@@ -45,7 +53,7 @@ fragment prompts like "description of X".
 Work briefly, then output one JSON object and stop. Do not revisit the decision.
 
 JSON shape when you can answer:
-{"can_answer": true, "answer_text": "<markdown with [n] citations>", \
+{"can_answer": true, "answer_text": "<markdown, with [n] only if chunks are cited>", \
 "decline_reason": "", "markers_used": [1], "uncertainties": [], "client_questions": []}
 
 JSON shape when you decline:
@@ -128,21 +136,49 @@ def build_agent_messages(
     )
 
 
+def _prior_answer_summary(turn: Turn) -> str:
+    answer = turn.answer
+    if isinstance(answer, Answered):
+        text = answer.text.strip().replace("\n", " ")
+        return text if len(text) <= 240 else f"{text[:237]}..."
+    if isinstance(answer, InsufficientEvidence):
+        return f"(insufficient: {answer.reason.value})"
+    return "(no answer)"
+
+
 def build_generation_messages(
     *,
     question: str,
     scored: Sequence[ScoredChunk],
     auditor_role: str | None,
     topic: str | None,
+    tool_facts: Sequence[str] = (),
+    prior_turns: Sequence[Turn] = (),
 ) -> tuple[ChatMessage, ...]:
-    context_lines: list[str] = [f"Question: {question}"]
+    context_lines: list[str] = []
+    if prior_turns:
+        context_lines.append("Recent conversation (resolve follow-ups; not evidence):")
+        for turn in prior_turns:
+            context_lines.append(f"- User asked: {turn.standalone_question}")
+            context_lines.append(f"  Assistant: {_prior_answer_summary(turn)}")
+        context_lines.append("")
+    context_lines.append(f"Question: {question}")
     if auditor_role:
         context_lines.append(f"Auditor role: {auditor_role}")
     if topic:
         context_lines.append(f"Topic: {topic}")
     context_lines.append("")
-    context_lines.append("Source chunks:")
-    context_lines.append(_format_chunks(scored))
+    if tool_facts:
+        context_lines.append("Tool facts:")
+        for index, fact in enumerate(tool_facts, start=1):
+            context_lines.append(f"(tool {index})\n{fact}")
+        context_lines.append("")
+    if scored:
+        context_lines.append("Source chunks:")
+        context_lines.append(_format_chunks(scored))
+    elif not tool_facts:
+        context_lines.append("Source chunks:")
+        context_lines.append("(none)")
     user_content = "\n".join(context_lines)
     return (
         ChatMessage(role="system", content=_SYSTEM),

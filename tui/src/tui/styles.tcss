@@ -53,6 +53,12 @@ ChatScreen #chat-log > Static {
     margin: 0;
 }
 
+/* Make answer / transcript text easier to mouse-select. */
+ChatScreen #chat-log > Static,
+ChatScreen #chat-log .thinking-body {
+    pointer: text;
+}
+
 ChatScreen #chat-log > Collapsible {
     height: auto;
     margin: 0 0 1 0;

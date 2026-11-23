@@ -45,7 +45,7 @@ def test_document_path_rejects_traversal() -> None:
         adapter.validate_python("/abs/file.txt")
 
 
-def test_answered_requires_citation() -> None:
+def test_answered_allows_empty_citations_for_tool_only() -> None:
     citation = Citation(
         marker=1,
         chunk_id=ChunkId(uuid.uuid4()),
@@ -54,10 +54,10 @@ def test_answered_requires_citation() -> None:
         snippet="payment within 30 days",
         score=0.9,
     )
-    answered = Answered(text="Terms are 30 days [1]", citations=(citation,))
-    assert answered.status == "answered"
-    with pytest.raises(ValidationError):
-        Answered(text="no cite", citations=())
+    with_cite = Answered(text="Terms are 30 days [1]", citations=(citation,))
+    assert with_cite.status == "answered"
+    tool_only = Answered(text="Today is Monday, 23 November 2026.", citations=())
+    assert tool_only.citations == ()
 
 
 def test_insufficient_requires_suggestions() -> None:

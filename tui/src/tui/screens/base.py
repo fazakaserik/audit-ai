@@ -20,7 +20,8 @@ class ChromeScreen(Screen[None]):
 
     @property
     def aiditor(self) -> AiditorApp:
-        return cast(AiditorApp, self.app)
+        # Quoted: AiditorApp is TYPE_CHECKING-only (avoids import cycle with app.py).
+        return cast("AiditorApp", self.app)
 
     def compose(self) -> ComposeResult:
         yield BrandHeader(self.aiditor.state, id="brand-header")

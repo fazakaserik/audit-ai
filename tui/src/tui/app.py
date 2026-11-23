@@ -33,9 +33,20 @@ class AiditorApp(App[None]):
 
     CSS_PATH = "styles.tcss"
     TITLE = "AIditor"
+    ALLOW_SELECT = True
     BINDINGS: ClassVar[list[BindingType]] = [
         Binding("ctrl+e", "switch_engagement", "Engagement", show=True),
+        # Prefer copy-over-quit when text is selected (Textual's default ctrl+c quits).
+        Binding("ctrl+c", "copy_selected", "Copy", show=False, priority=True),
     ]
+
+    def action_copy_selected(self) -> None:
+        selected = self.screen.get_selected_text()
+        if selected:
+            self.copy_to_clipboard(selected)
+            self.notify("Copied", timeout=1.5)
+            return
+        self.exit()
 
     def __init__(self) -> None:
         super().__init__()

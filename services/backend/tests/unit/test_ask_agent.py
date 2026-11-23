@@ -335,3 +335,34 @@ async def test_agent_list_then_read_then_search() -> None:
     )
     assert result.answer.status == AnswerStatus.ANSWERED
     assert len(chat.tool_turn_calls) >= 3
+
+
+async def test_agent_current_time_answers_without_chunks() -> None:
+    chat = FakeChatModel(
+        tool_turns=[
+            ToolTurnResult(
+                content=None,
+                tool_calls=(
+                    ToolCall(id="t_time", name="get_current_time", arguments="{}"),
+                ),
+                usage=LlmUsage(),
+            ),
+            ToolTurnResult(content=None, tool_calls=(), usage=LlmUsage()),
+        ],
+        response=AnswerGenerationResult(
+            can_answer=True,
+            answer_text="Today is Monday, 23 November 2026 (UTC).",
+            markers_used=(),
+        ),
+    )
+    result = await run_graph(
+        engagement_id=EngagementId("northwind-fy2025"),
+        question=Question(text="What is today's date?"),
+        folder_scope=None,
+        prior_turns=(),
+        deps=_deps(chat=chat),
+    )
+    assert result.answer.status == AnswerStatus.ANSWERED
+    assert result.answer.citations == ()
+    assert "2026" in result.answer.text
+    assert chat.calls  # generation ran

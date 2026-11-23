@@ -48,4 +48,5 @@ class GetCurrentTimeTool:
             f"weekday={now.strftime('%A')}"
         )
         summary = f"get_current_time → {iso} ({tz_name})"
+        ctx.tool_facts.append(content)
         return ToolResult(content=content, summary=summary)

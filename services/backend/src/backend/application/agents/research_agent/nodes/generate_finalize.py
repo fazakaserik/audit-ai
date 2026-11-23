@@ -21,7 +21,7 @@ from .suggestions import suggestions_from_generation, topic_phrase
 def make_grade_evidence_node(ctx: NodeContext):
     async def grade_evidence_node(state: State) -> dict[str, object]:
         evidence: Sequence[ScoredChunk] = ctx.tool_ctx.evidence
-        if evidence:
+        if evidence or ctx.tool_ctx.tool_facts:
             return {"answer": None}
 
         question = state["question"]
@@ -53,6 +53,8 @@ def make_generate_node(ctx: NodeContext):
             scored=evidence,
             auditor_role=question.auditor_role,
             topic=question.topic,
+            tool_facts=ctx.tool_ctx.tool_facts,
+            prior_turns=ctx.prior_turns,
         )
         try:
             generation = await ctx.chat.generate_structured(
@@ -120,20 +122,26 @@ def make_finalize_node(ctx: NodeContext):
                 ),
             }
 
-        filtered = filter_and_build_citations(generation.answer_text, ctx.tool_ctx.evidence)
-        if filtered is None:
-            if ctx.progress is not None:
-                await ctx.progress.stage("suggest")
-            return {
-                "answer": insufficient_answer(
-                    question.text,
-                    reason=InsufficientReason.MODEL_JUDGED_INSUFFICIENT,
-                    auditor_role=question.auditor_role,
-                    topic=question.topic,
-                ),
-            }
+        evidence = ctx.tool_ctx.evidence
+        filtered = filter_and_build_citations(generation.answer_text, evidence)
+        if filtered is not None:
+            text, citations = filtered
+            return {"answer": Answered(text=text, citations=citations)}
 
-        text, citations = filtered
-        return {"answer": Answered(text=text, citations=citations)}
+        # Tool-only answers (e.g. current time) have no document chunks to cite.
+        text = generation.answer_text.strip()
+        if text and ctx.tool_ctx.tool_facts and not evidence:
+            return {"answer": Answered(text=text, citations=())}
+
+        if ctx.progress is not None:
+            await ctx.progress.stage("suggest")
+        return {
+            "answer": insufficient_answer(
+                question.text,
+                reason=InsufficientReason.MODEL_JUDGED_INSUFFICIENT,
+                auditor_role=question.auditor_role,
+                topic=question.topic,
+            ),
+        }
 
     return finalize_node

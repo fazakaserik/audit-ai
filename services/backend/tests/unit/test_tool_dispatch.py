@@ -106,13 +106,14 @@ async def test_get_current_time_returns_host_local() -> None:
     documents = InMemoryDocumentRepository()
     storage = InMemoryDocumentStorage()
 
+    ctx = _ctx(
+        engagement_id=engagement_id,
+        engagements=engagements,
+        documents=documents,
+        storage=storage,
+    )
     result = await dispatch_tool(
-        _ctx(
-            engagement_id=engagement_id,
-            engagements=engagements,
-            documents=documents,
-            storage=storage,
-        ),
+        ctx,
         ToolCall(id="t1", name="get_current_time", arguments="{}"),
     )
     assert "validation error" not in result.summary
@@ -120,3 +121,4 @@ async def test_get_current_time_returns_host_local() -> None:
     assert "timezone=" in result.content
     assert "weekday=" in result.content
     assert "get_current_time →" in result.summary
+    assert ctx.tool_facts == [result.content]

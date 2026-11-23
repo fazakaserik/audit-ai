@@ -37,6 +37,8 @@ class ToolContext:
     settings: Settings
     progress: AskProgress | None = None
     evidence: list[ScoredChunk] = field(default_factory=list)
+    # Non-document tool outputs (e.g. get_current_time) used for grading/generation.
+    tool_facts: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True, slots=True)

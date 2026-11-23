@@ -28,6 +28,34 @@ from support.fakes import (
 )
 
 
+def test_generation_messages_include_prior_answers_for_follow_ups() -> None:
+    from backend.application.agents.research_agent.prompts import build_generation_messages
+
+    prior = Turn(
+        id=TurnId(uuid.uuid4()),
+        session_id=SessionId(uuid.uuid4()),
+        ordinal=0,
+        question=Question(text="What is today's date?"),
+        standalone_question="What is today's date?",
+        answer=Answered(text="Today is Monday, 23 November 2026.", citations=()),
+        created_at=utc_now(),
+        usage=LlmUsage(),
+    )
+    messages = build_generation_messages(
+        question="so what is it?",
+        scored=(),
+        auditor_role=None,
+        topic=None,
+        tool_facts=("current_time=2026-11-23T18:04:48+00:00\ntimezone=UTC\nweekday=Monday",),
+        prior_turns=(prior,),
+    )
+    user = messages[1].content or ""
+    assert "What is today's date?" in user
+    assert "Today is Monday" in user
+    assert "so what is it?" in user
+    assert "current_time=" in user
+
+
 def test_agent_messages_include_prior_questions_not_answers() -> None:
     prior = Turn(
         id=TurnId(uuid.uuid4()),
