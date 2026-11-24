@@ -224,6 +224,21 @@ docker compose -f deployment/docker-compose/compose.yaml restart load-balancer
 
 Details: [deployment/cloud/README.md](deployment/cloud/README.md).
 
+## Cybersecurity
+
+Supply-chain and application controls in place today:
+
+- **Patch-only dependency ranges** — every direct dependency in the workspace `pyproject.toml` files is capped at the next minor (`>=X.Y,<X.(Y+1)`). Patch releases can land; minor/major upgrades require an intentional pin bump.
+- **Minimum package release age** — root `[tool.uv] exclude-newer = "7 days"` applies a dependency cooldown so freshly published (and potentially compromised) uploads cannot enter `uv.lock` until they have aged. Requires uv `>=0.9.17`.
+- **Locked, reproducible installs** — a single committed `uv.lock` pins the full transitive tree for CI and local sync.
+- **Security audit skill** — Cloudflare’s [security-audit-skill](https://github.com/cloudflare/security-audit-skill) is vendored under `.agents/skills/security-audit/` and pinned by commit hash in `skills-lock.json` for agent-led vulnerability reviews.
+- **Engagement isolation** — retrieval, document reads, and agent tools are scoped to one engagement id; path types reject `..` and absolute paths.
+- **Safe uploads** — zip extraction blocks path escape and symlinks; upload byte/file count caps limit resource exhaustion.
+- **Agent bounds** — tool allowlist with engagement-locked context, max tool rounds / check restarts, and prompt/evidence character caps.
+- **Secrets handling** — API keys use `SecretStr`; `.env` is gitignored (only `.env.example` is committed).
+
+Local compose still has no application authentication by design for this phase; treat published ports as trusted-network only. See Limitations below.
+
 ## Limitations / next steps
 
 - No authentication or user management

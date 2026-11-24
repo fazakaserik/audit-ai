@@ -3,8 +3,14 @@ name = "aiditor"
 version = "0.1.0"
 description = "AIditor — document-grounded auditor assistant (RAG)"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.14"
 dependencies = []
+
+[tool.uv]
+required-version = ">=0.9.17"
+# Dependency cooldown: ignore packages uploaded within the last 7 days so
+# freshly published (and potentially compromised) releases cannot enter the lock.
+exclude-newer = "7 days"
 
 [tool.uv.workspace]
 members = [
@@ -15,13 +21,13 @@ members = [
 
 [dependency-groups]
 dev = [
-  "basedpyright>=1.28.0",
-  "import-linter>=2.1",
-  "pytest>=8.3",
-  "pytest-asyncio>=0.25",
-  "ruff>=0.9",
-  "testcontainers[postgres]>=4.9",
-  "httpx>=0.28",
+  "basedpyright>=1.40,<1.41",
+  "import-linter>=2.16,<2.17",
+  "pytest>=9.2,<9.3",
+  "pytest-asyncio>=1.5,<1.6",
+  "ruff>=0.17,<0.18",
+  "testcontainers[postgres]>=4.15,<4.16",
+  "httpx>=0.28,<0.29",
 ]
 
 [tool.ruff]

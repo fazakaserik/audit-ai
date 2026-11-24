@@ -2,11 +2,11 @@
 name = "tui"
 version = "0.1.0"
 description = "Fullscreen Textual client for AIditor"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.14"
 dependencies = [
   "cli",
-  "textual>=2.0",
-  "rich>=13.9",
+  "textual>=8.2,<8.3",
+  "rich>=15.0,<15.1",
 ]
 
 [project.scripts]
