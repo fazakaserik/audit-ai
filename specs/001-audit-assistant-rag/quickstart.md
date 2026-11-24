@@ -58,7 +58,7 @@ curl -s -X POST http://localhost:8000/api/v1/engagements/northwind-fy2025/ask \
   -d "{\"question\": \"What are Contoso payment terms?\"}"
 ```
 
-Expect `kind: "answered"` with a citation to `contracts/contoso-msa.md`.
+Expect `status: "answered"` with a citation to `contracts/contoso-msa.md`.
 
 Folder-scoped ask:
 
@@ -76,7 +76,7 @@ curl -s -X POST http://localhost:8000/api/v1/engagements/northwind-fy2025/ask \
   -d "{\"question\": \"What is the SOC 2 Type II opinion date for Contoso?\"}"
 ```
 
-Expect `kind: "insufficient_evidence"` plus suggested client questions.
+Expect `status: "insufficient_evidence"` plus suggested client questions.
 
 Follow-up in a session: pass `session_id` from the previous response into the next ask body.
 
