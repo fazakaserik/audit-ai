@@ -179,6 +179,28 @@ async def test_greeting_answers_without_tools() -> None:
     assert not chat.calls
 
 
+async def test_factual_draft_without_tools_is_rejected() -> None:
+    chat = FakeChatModel(
+        auto_search=False,
+        tool_turns=[
+            ToolTurnResult(
+                content="Revenue was $5M with no citations.",
+                tool_calls=(),
+                usage=LlmUsage(),
+            ),
+        ],
+    )
+    result = await run_graph(
+        engagement_id=EngagementId("northwind-fy2025"),
+        question=Question(text="What was Q1 revenue?"),
+        folder_scope=None,
+        prior_turns=(),
+        deps=_deps(chat=chat, settings=_settings(agent_max_check_restarts=0)),
+    )
+    assert result.answer.status == AnswerStatus.INSUFFICIENT_EVIDENCE
+    assert result.answer.reason == InsufficientReason.NO_RELEVANT_CHUNKS
+
+
 async def test_agent_model_chosen_query_not_raw_question() -> None:
     engagement_id = EngagementId("northwind-fy2025")
     embedder = FakeEmbedder()

@@ -100,3 +100,46 @@ def evidence_indices_for(
                 indices.append(index)
                 break
     return indices
+
+
+def evidence_char_total(evidence: Sequence[ScoredChunk]) -> int:
+    return sum(len(row.chunk.text) for row in evidence)
+
+
+def append_evidence_within_budget(
+    ctx: ToolContext,
+    rows: Sequence[ScoredChunk],
+    *,
+    per_call_max_chars: int | None = None,
+) -> tuple[list[ScoredChunk], bool]:
+    """Append unique rows until the evidence-bag (and optional per-call) ceiling is hit.
+
+    Always allows the first new row so a single oversized chunk can still enter the bag.
+    Returns ``(added, truncated)``.
+    """
+    ceiling = ctx.settings.agent_evidence_max_chars
+    used = evidence_char_total(ctx.evidence)
+    call_used = 0
+    seen = {row.chunk.id for row in ctx.evidence}
+    added: list[ScoredChunk] = []
+    truncated = False
+    for row in rows:
+        if row.chunk.id in seen:
+            continue
+        chunk_len = len(row.chunk.text)
+        over_bag = used + chunk_len > ceiling
+        over_call = (
+            per_call_max_chars is not None and call_used + chunk_len > per_call_max_chars
+        )
+        if added and (over_bag or over_call):
+            truncated = True
+            break
+        if not added and used >= ceiling:
+            truncated = True
+            break
+        ctx.evidence.append(row)
+        added.append(row)
+        seen.add(row.chunk.id)
+        used += chunk_len
+        call_used += chunk_len
+    return added, truncated

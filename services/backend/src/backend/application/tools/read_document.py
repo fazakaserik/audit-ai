@@ -14,6 +14,8 @@ from backend.application.dto import (
 from backend.application.tools.base import (
     ToolContext,
     ToolResult,
+    append_evidence_within_budget,
+    evidence_char_total,
     evidence_indices_for,
     tool_spec_from_model,
 )
@@ -100,7 +102,17 @@ class ReadDocumentTool:
                 summary=f"read_document(path={path!r}) → decode error",
             )
 
-        max_chars = ctx.settings.agent_read_max_chars
+        bag_used = evidence_char_total(ctx.evidence)
+        bag_room = ctx.settings.agent_evidence_max_chars - bag_used
+        if bag_room <= 0:
+            return ToolResult(
+                content=(
+                    f"Evidence bag is at AGENT_EVIDENCE_MAX_CHARS "
+                    f"({ctx.settings.agent_evidence_max_chars}); cannot load {path}."
+                ),
+                summary=f"read_document(path={path!r}) → evidence bag full",
+            )
+        max_chars = min(ctx.settings.agent_read_max_chars, bag_room)
         truncated = text[:max_chars]
         if len(text) > max_chars:
             truncated = truncated.rstrip() + "\n…[truncated]"
@@ -123,7 +135,7 @@ class ReadDocumentTool:
             created_at=utc_now(),
         )
         scored = ScoredChunk(chunk=chunk, document_path=path, score=1.0)
-        ctx.evidence.append(scored)
+        append_evidence_within_budget(ctx, (scored,))
         evidence_index = len(ctx.evidence)
         preview = truncated[:240].replace("\n", " ")
         content = (
@@ -156,37 +168,39 @@ async def _load_indexed_chunks(
             summary=f"read_document(path={path!r}) → not indexed",
         )
 
-    max_chars = ctx.settings.agent_read_max_chars
-    seen_ids = {row.chunk.id for row in ctx.evidence}
-    added: list[ScoredChunk] = []
-    used_chars = 0
-    truncated = False
-    for row in indexed:
-        if row.chunk.id in seen_ids:
-            continue
-        chunk_len = len(row.chunk.text)
-        if added and used_chars + chunk_len > max_chars:
-            truncated = True
-            break
-        added.append(row)
-        used_chars += chunk_len
-        seen_ids.add(row.chunk.id)
+    added, truncated = append_evidence_within_budget(
+        ctx,
+        indexed,
+        per_call_max_chars=ctx.settings.agent_read_max_chars,
+    )
 
     if not added:
         existing = [row for row in ctx.evidence if row.document_path == path]
         indices = evidence_indices_for(ctx.evidence, existing)
         index_list = ", ".join(f"evidence[{i}]" for i in indices) or "(none)"
+        if existing:
+            return ToolResult(
+                content=f"{path} chunks are already in evidence: {index_list}.",
+                summary=f"read_document(path={path!r}) → already in evidence",
+            )
         return ToolResult(
-            content=f"{path} chunks are already in evidence: {index_list}.",
-            summary=f"read_document(path={path!r}) → already in evidence",
+            content=(
+                f"Evidence bag is at AGENT_EVIDENCE_MAX_CHARS "
+                f"({ctx.settings.agent_evidence_max_chars}); cannot load more of {path}."
+            ),
+            summary=f"read_document(path={path!r}) → evidence bag full",
         )
 
-    ctx.evidence.extend(added)
+    used_chars = sum(len(row.chunk.text) for row in added)
     indices = evidence_indices_for(ctx.evidence, added)
     lines: list[str] = [
         f"Loaded {len(added)} indexed chunk(s) from {path} into evidence"
         f" ({used_chars} chars"
-        + ("; truncated to agent_read_max_chars" if truncated else "")
+        + (
+            "; truncated to agent_read_max_chars / AGENT_EVIDENCE_MAX_CHARS"
+            if truncated
+            else ""
+        )
         + ")."
     ]
     for index, row in zip(indices, added, strict=True):

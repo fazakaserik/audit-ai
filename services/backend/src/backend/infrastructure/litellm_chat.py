@@ -415,6 +415,7 @@ class LiteLLMChatModel:
         started = time.perf_counter()
         content_parts: list[str] = []
         thinking_chars = 0
+        emit_thinking = True
         usage = LlmUsage()
         raw_calls: object | None = None
         stream = cast(
@@ -440,13 +441,18 @@ class LiteLLMChatModel:
             delta_thinking = _message_field(delta, "reasoning_content")
             if isinstance(delta_thinking, str) and delta_thinking:
                 thinking_chars += len(delta_thinking)
-                await thinking.on_delta(delta_thinking)
+                if emit_thinking:
+                    await thinking.on_delta(delta_thinking)
             delta_content = _message_field(delta, "content")
             if isinstance(delta_content, str) and delta_content:
                 content_parts.append(delta_content)
             elapsed = time.perf_counter() - started
-            if thinking_chars >= _THINKING_BUDGET_CHARS or elapsed >= _THINKING_BUDGET_SECONDS:
-                break
+            if emit_thinking and (
+                thinking_chars >= _THINKING_BUDGET_CHARS or elapsed >= _THINKING_BUDGET_SECONDS
+            ):
+                # Stop emitting thinking, but keep reading until finish_reason so late
+                # tool_calls deltas are not dropped (same pattern as structured generate).
+                emit_thinking = False
         thinking.on_seconds(time.perf_counter() - started)
         tool_calls = _parse_tool_calls(raw_calls)
         content = "".join(content_parts) or None

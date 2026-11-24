@@ -53,6 +53,9 @@ services:
         condition: service_healthy
 
   # Scaled to 2 by just compose-up / compose-dev-up (--scale api=2).
+  # Each replica uses SQLAlchemy pool_size=5 + max_overflow=10; keep replicas
+  # low or raise Postgres max_connections if you scale further while Ask holds
+  # a request-scoped session for the full LangGraph run.
   api:
     <<: *app
     restart: unless-stopped

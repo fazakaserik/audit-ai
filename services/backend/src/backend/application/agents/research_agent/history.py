@@ -9,13 +9,16 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.application.agents.research_agent.prompts import format_prior_answer
-from backend.application.dto import ChatMessage
+from backend.application.dto import ChatMessage, IncompleteStructuredOutputError
 from backend.application.llm.chat_model import ChatModel
+from backend.domain.errors import DomainError
 from backend.domain.session import LlmUsage, Turn
+from backend.logging import get_logger
 
 _CFG = ConfigDict(frozen=True, strict=True, extra="forbid")
 _FALLBACK_SUMMARY_CHARS = 1_500
 _ANSWER_STUB_CHARS = 120
+log = get_logger(__name__)
 
 
 class HistorySummaryResult(BaseModel):
@@ -92,7 +95,12 @@ async def prepare_session_context(
             SessionPromptContext(recent_turns=recent, older_summary=summary),
             result.usage,
         )
-    except Exception:
+    except (DomainError, IncompleteStructuredOutputError) as exc:
+        log.warning(
+            "session_history_summary_fallback",
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
         return (
             SessionPromptContext(
                 recent_turns=recent,

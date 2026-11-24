@@ -109,6 +109,82 @@ async def test_tool_turn_retries_without_think_when_stream_emits_no_calls() -> N
 
 
 @pytest.mark.asyncio
+async def test_tool_turn_keeps_reading_after_thinking_budget() -> None:
+    """Thinking budget stops deltas only; stream continues so late tool_calls arrive."""
+    chat = _chat()
+
+    async def stream_tools_after_budget() -> Any:
+        yield SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        reasoning_content="x" * 100,
+                        content=None,
+                        tool_calls=None,
+                    ),
+                    finish_reason=None,
+                )
+            ],
+            usage=None,
+        )
+        yield SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        reasoning_content=None,
+                        content=None,
+                        tool_calls=[
+                            SimpleNamespace(
+                                id="call_late",
+                                function=SimpleNamespace(
+                                    name="search_relevant_chunks",
+                                    arguments={"query": "late"},
+                                ),
+                            )
+                        ],
+                    ),
+                    finish_reason=None,
+                )
+            ],
+            usage=None,
+        )
+        yield SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        reasoning_content=None,
+                        content=None,
+                        tool_calls=None,
+                    ),
+                    finish_reason="tool_calls",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=4, completion_tokens=3, total_tokens=7),
+        )
+
+    mock = AsyncMock(side_effect=[stream_tools_after_budget()])
+    with (
+        patch.object(chat, "_acompletion", new=mock),
+        patch("backend.infrastructure.litellm_chat._THINKING_BUDGET_CHARS", 50),
+    ):
+        deltas: list[str] = []
+
+        async def on_delta(text: str) -> None:
+            deltas.append(text)
+
+        result = await chat.complete_tool_turn(
+            [ChatMessage(role="user", content="late tools?")],
+            [_tool_spec()],
+            thinking=ThinkingCallbacks(on_delta=on_delta, on_seconds=lambda _: None),
+        )
+
+    assert len(result.tool_calls) == 1
+    assert result.tool_calls[0].id == "call_late"
+    assert mock.await_count == 1
+    assert deltas and all(len(part) <= 100 for part in deltas)
+
+
+@pytest.mark.asyncio
 async def test_tool_turn_keeps_tool_calls_from_earlier_stream_chunk() -> None:
     chat = _chat()
 

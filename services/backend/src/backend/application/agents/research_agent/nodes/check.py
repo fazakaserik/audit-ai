@@ -15,6 +15,11 @@ from .context import NodeContext
 from .suggestions import default_client_suggestions, topic_phrase
 
 _MARKER_RE = re.compile(r"\[\d+\]")
+_META_QUESTION_RE = re.compile(
+    r"^\s*(hi|hello|hey|thanks|thank you|good (morning|afternoon|evening))\b"
+    r"|^\s*(what can you( do)?|who are you|help)\b",
+    re.IGNORECASE,
+)
 
 _CRITIQUE = (
     "Your previous draft failed the evidence check: statements that need "
@@ -41,7 +46,14 @@ def make_check_node(ctx: NodeContext):
         tool_facts = ctx.tool_ctx.tool_facts
         topic_text = state["standalone_question"] or question.text
 
-        accepted = _try_accept_draft(draft, evidence=evidence, tool_facts=tool_facts)
+        had_tool_results = any(message.role == "tool" for message in state["messages"])
+        accepted = _try_accept_draft(
+            draft,
+            question=question.text,
+            evidence=evidence,
+            tool_facts=tool_facts,
+            had_tool_results=had_tool_results,
+        )
         if accepted is not None:
             return {"answer": accepted, "draft_answer": draft or None}
 
@@ -101,8 +113,10 @@ def make_check_node(ctx: NodeContext):
 def _try_accept_draft(
     draft: str,
     *,
+    question: str,
     evidence: Sequence[ScoredChunk],
     tool_facts: Sequence[str],
+    had_tool_results: bool,
 ) -> Answered | None:
     if not draft:
         return None
@@ -118,6 +132,11 @@ def _try_accept_draft(
         # Claimed document citations with an empty evidence bag.
         return None
 
-    # Conversational reply or tool-fact-only answer (no document chunks).
-    _ = tool_facts
-    return Answered(text=draft, citations=())
+    if tool_facts:
+        return Answered(text=draft, citations=())
+
+    # Empty bag: allow pure meta/conversational replies without tools. After tools
+    # ran (or for engagement questions), reject so think must gather evidence.
+    if not had_tool_results and _META_QUESTION_RE.search(question.strip()):
+        return Answered(text=draft, citations=())
+    return None
