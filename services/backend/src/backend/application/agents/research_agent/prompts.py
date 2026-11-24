@@ -16,39 +16,36 @@ from backend.domain.session import Turn
 
 _CFG = ConfigDict(frozen=True, strict=True, extra="forbid")
 
-# Field name is can_answer (not "sufficient") — thinking models misread "sufficient"
-# as English prose and loop on whether the instruction is a typo.
+# Kept for offline schema / history tests; the ask graph no longer generates this.
 _SYSTEM = """\
 You are an audit assistant. Base every factual claim ONLY on the tool facts and/or \
-numbered source chunks below. Do not invent policy rules, amounts, dates, names, \
-or other data that those sources do not state.
+numbered source chunks below. Do not invent facts those sources do not state.
 
 The Question may be a short follow-up; use Conversation history together with the \
 tool facts / chunks to resolve pronouns and ellipsis, then answer the intended \
 question.
 
-Ordinary language understanding is allowed: you may map everyday wording in the \
-question onto terms that appear in the chunks (for example treating a common \
-instance as covered by a broader term the policy uses). When you do, answer with \
-the document's own wording and cite it. State the policy condition clearly.
+Ordinary language understanding is allowed: map everyday wording in the question \
+onto terms that appear in the chunks. When you do, answer with the document's own \
+wording and cite it.
 
 Prefer a grounded answer over declining when the sources support the asked point. \
-Decline only when they truly do not (missing clause, missing definition, \
-contradictory evidence, or an unclear question that Conversation history cannot \
-resolve).
+If they state what was asked, answer with can_answer true and cite them. Decline \
+only when they do not (missing detail, contradictory evidence, or an unclear \
+question that Conversation history cannot resolve).
 
 When source chunks support the answer: every document-grounded claim needs an \
-inline citation like [1]. After the cited claims you may add at most one short \
-sentence naming any residual uncertainty — do not invent facts to fill the gap.
+inline citation like [1] (and put those numbers in markers_used). After the cited \
+claims you may add at most one short sentence naming any residual uncertainty — \
+do not invent facts to fill the gap.
 
 When answering from tool facts alone (no source chunks): write a clear short \
 answer with no [n] citation markers.
 
 When you decline: list concrete uncertainties (what is missing or ambiguous) and \
-1-3 full client questions (complete interrogatives starting with What/Which/Who/How/ \
-Where/When/Does/Is/Are/Can). Each question must ask for missing information the \
-engagement lacks - never restate the auditor's question as a yes/no, and never use \
-fragment prompts like "description of X".
+1-3 full client questions (complete interrogatives). Each must ask for missing \
+information the engagement lacks — never restate the auditor's question as a \
+yes/no, and never use fragment prompts.
 
 Work briefly, then output one JSON object and stop. Do not revisit the decision.
 
@@ -60,13 +57,12 @@ JSON shape when you decline:
 {"can_answer": false, "answer_text": "", \
 "decline_reason": "<one short sentence>", "markers_used": [], \
 "uncertainties": ["<what is missing or ambiguous>"], \
-"client_questions": ["What is the definition of beer under this policy?", \
-"Which document states whether beer is reimbursable?"]}
+"client_questions": ["<full interrogative asking for the missing detail>"]}
 """
 
 
 class AnswerGenerationResult(BaseModel):
-    """Structured model output for grounded answer generation."""
+    """Structured model output for grounded answer generation (tests / legacy)."""
 
     model_config = _CFG
 
@@ -79,31 +75,57 @@ class AnswerGenerationResult(BaseModel):
 
 
 _AGENT_SYSTEM = """\
-You are an audit assistant with tools for searching and browsing engagement documents.
+You are a general audit assistant with tools for engagement documents and the \
+current time.
 
-Think briefly about what evidence you need, then emit a real tool call.
-Describing a tool in thought is not enough — you must call it.
-Prefer search_relevant_chunks with focused queries (ids, clause names, amounts, dates).
-When the question uses everyday wording, also search the broader policy terms the \
-documents are likely to use.
-Use list_documents to explore folders and read_document for markdown/text files.
-Use get_current_time when the question depends on now, today, or relative dates.
-You may call tools multiple times. Do not invent document facts.
+Decide each turn: call a tool when you need engagement data or the wall-clock \
+time; otherwise answer the user directly in plain text (greetings, thanks, \
+clarifications, and other non-document chat need no tools).
 
-When you have enough evidence — or after tools return nothing useful — stop calling tools.
-Do not write the final JSON answer in the tool loop; a later step will ask for that.
+Tools and what they add:
+- search_relevant_chunks: adds matching document chunks to evidence (primary tool).
+- read_document: loads a text file, or indexed chunks for a PDF/Office path, into \
+evidence. Use when search finds a relevant path and you need more of that file.
+- list_documents: browse folders/paths only (not evidence text).
+- get_current_time: wall-clock time for "now"/today/relative dates (tool fact, not chunks).
+
+Prefer focused search queries drawn from the question (identifiers, names, amounts, \
+dates, document terms). When the question uses everyday wording, also search the \
+broader terms documents are likely to use. You may call tools multiple times. \
+Do not invent document facts.
+
+When answering from document evidence, cite with inline [n] markers that match the \
+evidence[n] indices from tool results. When answering from tool facts alone (for \
+example the current time), write a short clear answer with no [n] markers.
+
+When a prior message says a draft failed the evidence check, gather more evidence \
+or fix citations, then answer again. Describing a tool in thought is not enough — \
+you must call it when you need data.
 """
 
 
-def _format_chunks(scored: Sequence[ScoredChunk]) -> str:
+def _format_chunks(scored: Sequence[ScoredChunk], *, max_chars: int | None = None) -> str:
     blocks: list[str] = []
+    used = 0
     for index, row in enumerate(scored, start=1):
         page = f", page {row.chunk.page}" if row.chunk.page is not None else ""
         heading = " > ".join(row.chunk.heading_path) if row.chunk.heading_path else ""
         meta = f"{row.document_path}{page}"
         if heading:
             meta = f"{meta} ({heading})"
-        blocks.append(f"[{index}] ({meta})\n{row.chunk.text}")
+        header = f"[{index}] ({meta})\n"
+        text = row.chunk.text
+        if max_chars is not None:
+            remaining = max_chars - used - len(header)
+            if remaining <= 0:
+                break
+            if len(text) > remaining:
+                text = f"{text[: max(0, remaining - 3)]}..."
+        block = f"{header}{text}"
+        blocks.append(block)
+        used += len(block) + 2  # account for joining "\n\n"
+        if max_chars is not None and used >= max_chars:
+            break
     return "\n\n".join(blocks)
 
 
@@ -117,10 +139,17 @@ def format_prior_answer(turn: Turn) -> str:
     return "(no answer)"
 
 
-def _format_conversation_history(prior_turns: Sequence[Turn]) -> list[str]:
+def _format_conversation_history(
+    prior_turns: Sequence[Turn],
+    *,
+    older_summary: str | None = None,
+) -> list[str]:
     lines = [
-        "Conversation history (full session; resolve follow-ups; not evidence):",
+        "Conversation history (recent turns; resolve follow-ups; not evidence):",
     ]
+    if older_summary:
+        lines.append(f"Earlier session summary: {older_summary}")
+        lines.append("")
     for turn in prior_turns:
         lines.append(f"- User: {turn.standalone_question}")
         lines.append(f"  Assistant: {format_prior_answer(turn)}")
@@ -135,10 +164,11 @@ def build_agent_messages(
     auditor_role: str | None,
     topic: str | None,
     folder_scope: str | None,
+    older_summary: str | None = None,
 ) -> tuple[ChatMessage, ...]:
     lines: list[str] = []
-    if prior_turns:
-        lines.extend(_format_conversation_history(prior_turns))
+    if prior_turns or older_summary:
+        lines.extend(_format_conversation_history(prior_turns, older_summary=older_summary))
     lines.append(f"Question: {question}")
     if auditor_role:
         lines.append(f"Auditor role: {auditor_role}")
@@ -147,7 +177,9 @@ def build_agent_messages(
     if folder_scope:
         lines.append(f"Folder scope: {folder_scope}")
     lines.append("")
-    lines.append("Gather evidence with tools, then stop when ready to answer or decline.")
+    lines.append(
+        "Call tools if you need engagement data or the current time; otherwise answer directly."
+    )
     return (
         ChatMessage(role="system", content=_AGENT_SYSTEM),
         ChatMessage(role="user", content="\n".join(lines)),
@@ -162,10 +194,13 @@ def build_generation_messages(
     topic: str | None,
     tool_facts: Sequence[str] = (),
     prior_turns: Sequence[Turn] = (),
+    older_summary: str | None = None,
+    evidence_max_chars: int | None = None,
 ) -> tuple[ChatMessage, ...]:
+    """Build messages for structured generation (used by history/unit tests)."""
     context_lines: list[str] = []
-    if prior_turns:
-        context_lines.extend(_format_conversation_history(prior_turns))
+    if prior_turns or older_summary:
+        context_lines.extend(_format_conversation_history(prior_turns, older_summary=older_summary))
     context_lines.append(f"Question: {question}")
     if auditor_role:
         context_lines.append(f"Auditor role: {auditor_role}")
@@ -179,7 +214,7 @@ def build_generation_messages(
         context_lines.append("")
     if scored:
         context_lines.append("Source chunks:")
-        context_lines.append(_format_chunks(scored))
+        context_lines.append(_format_chunks(scored, max_chars=evidence_max_chars))
     elif not tool_facts:
         context_lines.append("Source chunks:")
         context_lines.append("(none)")

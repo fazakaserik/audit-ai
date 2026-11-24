@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from backend.application.llm.chat_model import ChatModel
 from backend.application.llm.embedder import Embedder
 from backend.application.parsing.archive_extractor import ArchiveExtractor
+from backend.application.parsing.document_parser import DocumentParser
 from backend.application.repositories.document import DocumentRepository
 from backend.application.repositories.engagement import EngagementRepository
 from backend.application.repositories.session import SessionRepository
@@ -56,6 +57,7 @@ def build_fakes_bound(
     settings: Settings | None = None,
     chat: ChatModel | None = None,
     embedder: Embedder | None = None,
+    document_parser: DocumentParser | None = None,
 ) -> SessionBound:
     eng = engagements or InMemoryEngagementRepository()
     docs = documents or InMemoryDocumentRepository()
@@ -68,6 +70,10 @@ def build_fakes_bound(
     archive_extractor = archives or build_archive_extractor()
     chat_model = chat or FakeChatModel(tool_turns=agent_search_tool_turns())
     emb = embedder or FakeEmbedder()
+    parser = document_parser or build_document_parser(
+        max_pages=cfg.ingest_max_pages,
+        max_expanded_chars=cfg.ingest_max_expanded_chars,
+    )
     return wire_session_bound(
         engagements=eng,
         documents=docs,
@@ -80,6 +86,7 @@ def build_fakes_bound(
         settings=cfg,
         jobs=job_queue,
         vector_index=vectors,
+        document_parser=parser,
     )
 
 
@@ -103,7 +110,10 @@ def build_test_container(
         chat_model=chat or FakeChatModel(),
         embedder=embedder or FakeEmbedder(),
         document_storage=document_storage or InMemoryDocumentStorage(),
-        document_parser=build_document_parser(),
+        document_parser=build_document_parser(
+            max_pages=cfg.ingest_max_pages,
+            max_expanded_chars=cfg.ingest_max_expanded_chars,
+        ),
         document_chunker=build_document_chunker(),
         archive_extractor=build_archive_extractor(),
     )

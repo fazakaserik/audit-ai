@@ -9,6 +9,7 @@ import uuid
 from backend.application.rag.worker.process_item import process_upload_item
 from backend.bootstrap import Container, build_container
 from backend.config import Settings
+from backend.domain.errors import ConflictError
 from backend.logging import bind_context, clear_context, configure_logging, get_logger
 
 log = get_logger(__name__)
@@ -41,11 +42,15 @@ async def run_worker_loop(
                 log.info("job_claimed", item_id=str(item.id), path=item.document_path)
                 upload = await bound.uploads.get_by_id(item.upload_id)
                 if upload is None:
-                    await worker.jobs.complete(
-                        item.id,
-                        status="failed",
-                        reason="upload record missing",
-                    )
+                    try:
+                        await worker.jobs.complete(
+                            item.id,
+                            worker_id=wid,
+                            status="failed",
+                            reason="upload record missing",
+                        )
+                    except ConflictError:
+                        log.warning("job_stale_lease", item_id=str(item.id))
                     await session.commit()
                     continue
 
@@ -60,9 +65,11 @@ async def run_worker_loop(
                         embedder=container.embedder,
                         document_parser=container.document_parser,
                         document_chunker=container.document_chunker,
+                        settings=container.settings,
                     )
                     await worker.jobs.complete(
                         item.id,
+                        worker_id=wid,
                         status=outcome.status.value,
                         reason=outcome.reason,
                         embedding_prompt_tokens=outcome.embedding_prompt_tokens,
@@ -82,10 +89,19 @@ async def run_worker_loop(
                         chunk_count=outcome.chunk_count,
                         upload_status=upload_status.status.value,
                     )
+                except ConflictError:
+                    log.warning("job_stale_lease", item_id=str(item.id), path=item.document_path)
                 except Exception as exc:
                     log.exception("job_failed", item_id=str(item.id), path=item.document_path)
-                    await worker.jobs.fail_for_retry(item.id, reason=str(exc))
-                    await bound.uploads.refresh_status(item.upload_id)
+                    try:
+                        await worker.jobs.fail_for_retry(
+                            item.id,
+                            worker_id=wid,
+                            reason=str(exc),
+                        )
+                        await bound.uploads.refresh_status(item.upload_id)
+                    except ConflictError:
+                        log.warning("job_stale_lease", item_id=str(item.id))
                 await session.commit()
     finally:
         log.info("worker_stopped", worker_id=wid)

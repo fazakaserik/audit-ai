@@ -11,8 +11,10 @@ class ErrorCode(StrEnum):
     CONFLICT = "conflict"
     PAYLOAD_TOO_LARGE = "payload_too_large"
     UNSAFE_UPLOAD = "unsafe_upload"
+    REPRESENTATION_LIMIT_EXCEEDED = "representation_limit_exceeded"
     MODEL_TIMEOUT = "model_timeout"
     MODEL_UNAVAILABLE = "model_unavailable"
+    CONTEXT_TOO_LARGE = "context_too_large"
     DEPENDENCY_UNAVAILABLE = "dependency_unavailable"
     INTERNAL_ERROR = "internal_error"
 
@@ -53,12 +55,24 @@ class UnsafeUploadError(DomainError):
     code = ErrorCode.UNSAFE_UPLOAD
 
 
+class RepresentationLimitExceededError(DomainError):
+    """Parsed or chunked document exceeds configured representation ceilings."""
+
+    code = ErrorCode.REPRESENTATION_LIMIT_EXCEEDED
+
+
 class ModelTimeoutError(DomainError):
     code = ErrorCode.MODEL_TIMEOUT
 
 
 class ModelUnavailableError(DomainError):
     code = ErrorCode.MODEL_UNAVAILABLE
+
+
+class ContextTooLargeError(DomainError):
+    """Assembled prompt exceeds the model's context window."""
+
+    code = ErrorCode.CONTEXT_TOO_LARGE
 
 
 class DependencyUnavailableError(DomainError):

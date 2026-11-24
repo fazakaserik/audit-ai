@@ -21,7 +21,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 ## Domain model (draft for data-model.md)
 
 - **Style**: Every model is a pydantic model with `ConfigDict(frozen=True, strict=True, extra="forbid")`. Value objects are `Annotated` types with validators. Ids are `NewType`s over `uuid.UUID` (UUIDv4), so different id kinds cannot be swapped by accident. Mutable records carry `created_at` and `updated_at`, immutable records only `created_at`. All timestamps are timezone-aware UTC (`AwareDatetime`).
-- **Value types**: `EngagementId` (slug `^[a-z0-9][a-z0-9-]{1,62}$`); `FolderPath` and `DocumentPath` (relative POSIX paths that reject `..`, absolute paths, backslashes, control characters and empty segments); `ContentType` (`markdown | text | pdf`); `Question` (`text`, `folder_scope`, `auditor_role`, `topic`); `Citation` (`chunk_id`, `document_id`, `document_path`, `page`, `heading_path`, `snippet`, `score`); `SuggestedClientQuestion` (`question`, `rationale`); `Answer = Answered | InsufficientEvidence`, where `InsufficientEvidence.reason` is `no_relevant_chunks | model_judged_insufficient`.
+- **Value types**: `EngagementId` (slug `^[a-z0-9][a-z0-9-]{1,62}$`); `FolderPath` and `DocumentPath` (relative POSIX paths that reject `..`, absolute paths, backslashes, control characters and empty segments); `ContentType` (`markdown | text | pdf | docx | xlsx | pptx | html | csv`); `Question` (`text`, `folder_scope`, `auditor_role`, `topic`); `Citation` (`chunk_id`, `document_id`, `document_path`, `page`, `heading_path`, `snippet`, `score`); `SuggestedClientQuestion` (`question`, `rationale`); `Answer = Answered | InsufficientEvidence`, where `InsufficientEvidence.reason` is `no_relevant_chunks | model_judged_insufficient`.
 - **Entities**:
 
 | Model        | Fields                                                                                                                             | Timestamps       |
@@ -42,7 +42,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 
 - **Decision**: Two supported ways to run Ollama:
   - The `ollama` service under the `local` compose profile, plus a one-shot model-pull service. Fully containerized and CPU by default, with documented GPU settings for WSL2 and NVIDIA.
-  - An Ollama installed on the host, reached by setting `OLLAMA_BASE_URL` (for example `http://host.docker.internal:11434`). It uses the GPU natively and is recommended on Windows and macOS.
+  - An Ollama installed on the host, reached by setting `LLM_API_BASE` (for example `http://host.docker.internal:11434`) with an `ollama_chat/…` / `ollama/…` model id. It uses the GPU natively and is recommended on Windows and macOS.
 
 ## Developer workflow
 
@@ -72,7 +72,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 
 ## Sample data and seeding
 
-- **Decision**: AI-generated fictional sample documents live in `docs/samples/ai-generated/<engagement-id>/...`. `docs/samples/real/` is committed and reserved for real documents added by the author, which must be publicly available and non-confidential, with a README listing each document's source and licence. `scripts/seed_samples.py` (run with `uv run`) is the seeding script that creates the engagement(s) and uploads every folder by calling `aiditor` subcommands with `--wait`. A `just seed` recipe runs it as part of setting up the dev environment.
+- **Decision**: AI-generated fictional sample documents live in `docs/samples/ai-generated/<engagement-id>/...`. `docs/samples/real/` is committed and reserved for real documents added by the author, which must be publicly available and non-confidential, with a README listing each document's source and licence. `scripts/seed_samples.py` (run with `uv run`) is the seeding script that creates the engagement(s) and queues every folder upload via the same HTTP path as the CLI (without waiting for indexing). A `just seed` recipe runs it as part of setting up the dev environment.
 - **Rationale**: The CLI stays a clean product tool, and seeding goes through the same real path (HTTP, validation, queue, worker, indexing), which makes it a smoke test too.
 
 ## Testing strategy
@@ -91,8 +91,8 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 
 ## Ask orchestration
 
-- **Decision**: Ask flow is a LangGraph `StateGraph` under `backend.application.agents.research_agent` (`agent` ⇄ `tools` → `grade_evidence` → `generate` → `finalize`), with tool turns via `complete_tool_turn` / shared `backend.application.tools` and a structured `AnswerGenerationResult` + citation filter. Entry: `agents.research_agent.graph.run_graph`. Retrieval is `backend.application.rag.retrieve_relevant_chunks`; ingestion is `backend.application.rag.worker`. The `search_relevant_chunks` tool calls retrieve.
-- **Rationale**: Keeps the ask agent separate from RAG (ingest + retrieve). LangGraph owns control flow; project-owned `ChatModel` ports stay free of LangChain model wrappers.
+- **Decision**: Ask flow is a LangGraph `StateGraph` under `backend.application.agents.research_agent` (`think` ⇄ `tools` → `check`, with `check` able to restart `think` up to `AGENT_MAX_CHECK_RESTARTS`). The think node either calls tools or drafts an answer (including tool-free replies). The check node only validates that draft statements are grounded (citation filter against the evidence bag); it does not early-gate on an empty bag before an answer attempt. Entry: `agents.research_agent.graph.run_graph`. Retrieval is `backend.application.rag.retrieve_relevant_chunks`; ingestion is `backend.application.rag.worker`. The `search_relevant_chunks` tool calls retrieve.
+- **Rationale**: Keeps the ask agent separate from RAG (ingest + retrieve). LangGraph owns control flow; project-owned `ChatModel` ports stay free of LangChain model wrappers. A single think node can answer quickly without tools when no engagement data is needed.
 
 ## Grounding and citations
 
@@ -101,17 +101,17 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 
 ## Resilience
 
-- **Decision**: tenacity inside the model and embedding adapters. Exponential backoff with jitter, at most 3 attempts, retrying only typed transient errors (timeouts, rate limits, 5xx errors), and always bounded by the overall per-request time limit. The openai SDK's own retries are disabled (`max_retries=0`) so retry behaviour lives in one place. An `asyncio.Semaphore` caps concurrent model calls per process.
+- **Decision**: tenacity inside the model and embedding adapters. Exponential backoff with jitter, at most 3 attempts, retrying only typed transient errors (timeouts, rate limits, 5xx errors), and always bounded by the overall per-request time limit. LiteLLM provider retries are disabled (`num_retries=0`) so retry behaviour lives in one place. An `asyncio.Semaphore` caps concurrent model calls per process.
 
 ## Configuration
 
-- **Decision**: pydantic-settings with flat environment variable names for providers, models, DB/storage, RAG/ask knobs (`MODEL_TIMEOUT_SECONDS`, `RETRIEVAL_TOP_K`, `RELEVANCE_THRESHOLD`, `MAX_CONCURRENT_MODEL_CALLS`, `AGENT_MAX_TOOL_ROUNDS`, `AGENT_READ_MAX_CHARS`), upload limits, API bind/docs, and logging. Ask always includes the full session history (no turn window); history compression is a documented next step when prompts exceed the provider context. Schema upgrades and upload processing are separate compose services (`migrate`, `upload-processor`), not Settings toggles. Settings stay typed (enums and `SecretStr`) and are validated at startup; for example, `LLM_PROVIDER=openai` without `OPENAI_API_KEY` fails fast. A secret-free `.env.example` documents every variable.
+- **Decision**: pydantic-settings with flat environment variable names for LiteLLM model ids (`LLM_MODEL`, `EMBEDDING_MODEL`), optional keys/bases (`LLM_API_KEY`, `LLM_API_BASE`, `EMBEDDING_API_KEY`, `EMBEDDING_API_BASE`, `EMBEDDING_DIMENSIONS`), DB/storage, RAG/ask knobs (`MODEL_TIMEOUT_SECONDS`, `RETRIEVAL_TOP_K`, `RELEVANCE_THRESHOLD`, `MAX_CONCURRENT_MODEL_CALLS`, `AGENT_MAX_TOOL_ROUNDS`, `AGENT_MAX_CHECK_RESTARTS`, `AGENT_READ_MAX_CHARS`, `SESSION_CONTEXT_TURNS`, `AGENT_EVIDENCE_MAX_CHARS`, `OLLAMA_NUM_CTX`), upload limits, API bind/docs, and logging. Ask keeps the last `SESSION_CONTEXT_TURNS` turns verbatim and summarizes older turns before the tool loop; evidence text kept for checks is capped via `AGENT_EVIDENCE_MAX_CHARS`. Ollama-prefixed chat models pass `num_ctx` (`OLLAMA_NUM_CTX`, default 32768) because runtime defaults are often far below the model maximum. Provider context/OOM failures map to `context_too_large` (413) or a detailed `model_unavailable` (502). Schema upgrades and upload processing are separate compose services (`migrate`, `upload-processor`), not Settings toggles. Settings stay typed (`SecretStr` and validated model ids) and fail fast at startup; for example, `LLM_MODEL=openai/…` without `LLM_API_KEY` is rejected. A secret-free `.env.example` documents every variable.
 
 ## Model and embedding integration
 
-- **Decision**: Use the official `openai` SDK for cloud mode and the official `ollama` SDK for local mode, as two separate adapters behind project-owned ports (`ChatModel`, `Embedder`). LangChain packages are used only as far as LangGraph requires.
-- **Rationale**: Both SDKs are fully typed. Two real adapters show that providers can be swapped, and no vendor types leak into the application or the graph.
-- **Alternatives**: one `openai` adapter pointed at Ollama's OpenAI-compatible endpoint (fewer dependencies, but swapping providers becomes just a URL change); LangChain model wrappers (only partially typed).
+- **Decision**: Use LiteLLM (`acompletion` / `aembedding`) behind project-owned ports (`ChatModel`, `Embedder`). Configure any supported provider with a `provider/model` id plus optional API key and base URL. OpenAI chat calls rewrite `openai/<name>` to `openai/responses/<name>` so function tools work with reasoning models. LangChain packages are used only as far as LangGraph requires.
+- **Rationale**: One adapter absorbs provider endpoint quirks (Responses vs Chat Completions, Ollama `think` / `num_ctx`) without leaking vendor types into the application or the graph. New providers are a config change, not a new adapter class.
+- **Alternatives**: official `openai` + `ollama` SDKs as separate adapters (more control, more provider-specific code); LangChain model wrappers (only partially typed).
 
 ## Metadata and vector storage
 
@@ -131,7 +131,7 @@ Decisions agreed during specification, for use by `/speckit-plan`.
 
 - **Decision**: Hybrid search in version 1. A pgvector cosine-similarity query (HNSW index) and a Postgres full-text query (`tsvector` with a GIN index, `websearch_to_tsquery`) run filtered by engagement, folder prefix and active document version. The two ranked lists are merged with reciprocal rank fusion inside the pgvector `VectorIndex` adapter.
 - **Rationale**: Audit questions often contain exact identifiers (invoice numbers, contract ids, amounts) that vector search alone ranks poorly. Doing the fusion inside the adapter keeps the port simple (`search(query, scope) -> list[ScoredChunk]`) and lets Azure AI Search replace it with its native hybrid search.
-- **Relevance threshold**: Applied to vector cosine similarity **before** reciprocal rank fusion. Chunks with cosine similarity below `RELEVANCE_THRESHOLD` (default `0.30`) are discarded from the vector candidate set. If the vector candidate set is empty after the threshold, the graph returns `insufficient_evidence` with `reason=no_relevant_chunks` without calling the LLM, even if full-text search returned hits. Full-text hits participate in fusion only among the chunks that also survived the vector threshold (or were in the top-k vector set before thresholding but still above threshold). Rationale: fused RRF ranks are ordinal and not comparable across queries; vector similarity is.
+- **Relevance threshold**: Applied to vector cosine similarity **before** reciprocal rank fusion. Chunks with cosine similarity below `RELEVANCE_THRESHOLD` (default `0.30`) are discarded from the vector candidate set. Full-text search runs over the full engagement scope (not only vector survivors) and is RRF-merged with survivors; FTS-only hits (exact firm names, licence numbers, signature blocks) may enter the result set with a nominal score equal to the threshold. If both the vector survivor set and FTS are empty, retrieval returns no chunks and the ask graph yields `insufficient_evidence` with `reason=no_relevant_chunks`. Rationale: audit questions often need exact identifiers that embeddings rank poorly; gating FTS on vector survivors previously dropped signature-page answers.
 
 ## Ingestion
 

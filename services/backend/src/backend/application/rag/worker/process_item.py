@@ -13,10 +13,16 @@ from backend.application.rag.index_document import index_document_chunks
 from backend.application.repositories.document import DocumentRepository
 from backend.application.storage.document_storage import DocumentStorage
 from backend.application.storage.vector_index import VectorIndex
+from backend.config import Settings
 from backend.domain.common import new_uuid, utc_now
 from backend.domain.document import ContentType, Document, DocumentId, DocumentPath
 from backend.domain.engagement import EngagementId
-from backend.domain.errors import NotFoundError, UnsafeUploadError, ValidationError
+from backend.domain.errors import (
+    NotFoundError,
+    RepresentationLimitExceededError,
+    UnsafeUploadError,
+    ValidationError,
+)
 from backend.domain.upload import UploadItem, UploadItemStatus
 from backend.logging import get_logger
 
@@ -43,6 +49,7 @@ async def process_upload_item(
     embedder: Embedder,
     document_parser: DocumentParser,
     document_chunker: DocumentChunker,
+    settings: Settings,
 ) -> ProcessItemOutcome:
     path = item.document_path
     log.info("ingest_start", path=path, engagement_id=engagement_id)
@@ -79,6 +86,14 @@ async def process_upload_item(
     try:
         parsed = document_parser.parse_bytes(data, path=path)
         chunks = document_chunker.chunk_document(parsed)
+        if len(chunks) > settings.ingest_max_chunks:
+            raise RepresentationLimitExceededError(
+                f"document exceeds max chunks ({settings.ingest_max_chunks}): {len(chunks)}"
+            )
+    except RepresentationLimitExceededError as exc:
+        detail = exc.message
+        log.warning("ingest_representation_limit", path=path, reason=detail)
+        return ProcessItemOutcome(status=UploadItemStatus.FAILED, reason=detail)
     except (UnsafeUploadError, ValidationError) as exc:
         detail = exc.message
         log.warning("ingest_not_searchable", path=path, reason=detail)

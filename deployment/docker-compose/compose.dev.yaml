@@ -1,12 +1,12 @@
-# Dev override: publish internal service ports on the host.
+# Dev override: publish internal service ports on the host (loopback only).
 # Usage: docker compose -f compose.yaml -f compose.dev.yaml up -d
 
-name: auditor-ai-dev
+name: aiditor-dev
 
 services:
   postgres:
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
 
   api:
     environment:
@@ -21,4 +21,4 @@ services:
 
   ollama:
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"

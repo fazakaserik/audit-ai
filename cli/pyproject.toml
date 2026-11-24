@@ -2,12 +2,12 @@
 name = "cli"
 version = "0.1.0"
 description = "Non-interactive terminal client and HTTP library for AIditor"
-requires-python = ">=3.13"
+requires-python = ">=3.13,<3.14"
 dependencies = [
   "backend",
-  "httpx>=0.28",
-  "typer>=0.15",
-  "rich>=13.9",
+  "httpx>=0.28,<0.29",
+  "typer>=0.29,<0.30",
+  "rich>=15.0,<15.1",
 ]
 
 [project.scripts]

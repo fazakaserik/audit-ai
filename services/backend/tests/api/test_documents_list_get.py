@@ -36,6 +36,11 @@ async def _seed_documents(
         "contracts/acme.md": (b"# Terms\nPayment in 30 days.", ContentType.MARKDOWN),
         "contracts/nested/deep.txt": (b"nested", ContentType.TEXT),
         "policies/refund.txt": (b"Refunds within 14 days.", ContentType.TEXT),
+        "policies/note.html": (
+            b"<html><body><h1>Refund Policy</h1><p>Within 14 days.</p></body></html>",
+            ContentType.HTML,
+        ),
+        "exports/rows.csv": (b"item,amount\nwidget,10\n", ContentType.CSV),
     }
     for path, (data, content_type) in payloads.items():
         doc_path = DocumentPath(path)
@@ -120,7 +125,7 @@ async def test_list_documents_with_prefix_and_depth() -> None:
         assert root.status_code == 200
         root_body = root.json()
         assert root_body["items"] == []
-        assert set(root_body["folders"]) == {"contracts", "policies"}
+        assert set(root_body["folders"]) == {"contracts", "exports", "policies"}
 
         missing = await client.get(
             f"/api/v1/engagements/{engagement_id}/documents/contracts/missing.pdf",
@@ -133,3 +138,37 @@ async def test_list_documents_with_prefix_and_depth() -> None:
         assert download.status_code == 200
         assert download.headers["content-type"].startswith("text/markdown")
         assert download.content == b"# Terms\nPayment in 30 days."
+
+        md_view = await client.get(
+            f"/api/v1/engagements/{engagement_id}/documents/contracts/acme.md",
+            headers={"Accept": "text/markdown"},
+        )
+        assert md_view.status_code == 200
+        assert md_view.headers["content-type"].startswith("text/markdown")
+        assert md_view.content == b"# Terms\nPayment in 30 days."
+
+        html_md = await client.get(
+            f"/api/v1/engagements/{engagement_id}/documents/policies/note.html",
+            headers={"Accept": "text/markdown"},
+        )
+        assert html_md.status_code == 200
+        assert html_md.headers["content-type"].startswith("text/markdown")
+        html_text = html_md.content.decode("utf-8")
+        assert "Refund Policy" in html_text
+        assert "Within 14 days." in html_text
+        assert b"<html>" not in html_md.content
+
+        csv_raw = await client.get(
+            f"/api/v1/engagements/{engagement_id}/documents/exports/rows.csv",
+        )
+        assert csv_raw.status_code == 200
+        assert csv_raw.content == b"item,amount\nwidget,10\n"
+
+        csv_md = await client.get(
+            f"/api/v1/engagements/{engagement_id}/documents/exports/rows.csv",
+            headers={"Accept": "text/markdown"},
+        )
+        assert csv_md.status_code == 200
+        assert csv_md.headers["content-type"].startswith("text/markdown")
+        csv_text = csv_md.content.decode("utf-8")
+        assert "item" in csv_text and "widget" in csv_text

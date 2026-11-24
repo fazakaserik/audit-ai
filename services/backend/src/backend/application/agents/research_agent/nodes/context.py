@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from backend.application.agents.progress import AskProgress
+from backend.application.agents.research_agent.history import SessionPromptContext
 from backend.application.llm.chat_model import ChatModel
 from backend.application.tools.base import ToolContext
 from backend.config import Settings
-from backend.domain.session import Turn
 
 TOOL_NAMES: tuple[str, ...] = (
     "search_relevant_chunks",
@@ -19,10 +18,14 @@ TOOL_NAMES: tuple[str, ...] = (
 )
 
 
+def _empty_session_context() -> SessionPromptContext:
+    return SessionPromptContext(recent_turns=())
+
+
 @dataclass(frozen=True, slots=True)
 class NodeContext:
     chat: ChatModel
     settings: Settings
     tool_ctx: ToolContext
     progress: AskProgress | None
-    prior_turns: Sequence[Turn] = ()
+    session_context: SessionPromptContext = field(default_factory=_empty_session_context)

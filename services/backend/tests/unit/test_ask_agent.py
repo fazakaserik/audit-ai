@@ -13,11 +13,11 @@ from backend.application.dto import (
     ToolTurnResult,
 )
 from backend.config import Settings
-from backend.domain.answer import AnswerStatus, InsufficientReason, Question
+from backend.domain.answer import Answered, AnswerStatus, InsufficientReason, Question
 from backend.domain.chunk import Chunk, ChunkId
 from backend.domain.document import ContentType, Document, DocumentId, DocumentPath
 from backend.domain.engagement import EngagementId
-from backend.domain.session import LlmUsage
+from backend.domain.session import LlmUsage, SessionId, Turn, TurnId
 from support.fakes import (
     FakeChatModel,
     FakeEmbedder,
@@ -29,11 +29,16 @@ from support.fakes import (
 )
 
 
-def _settings(*, agent_max_tool_rounds: int = 6) -> Settings:
+def _settings(
+    *,
+    agent_max_tool_rounds: int = 6,
+    agent_max_check_restarts: int = 2,
+) -> Settings:
     return Settings(
         relevance_threshold=0.0,
         retrieval_top_k=8,
         agent_max_tool_rounds=agent_max_tool_rounds,
+        agent_max_check_restarts=agent_max_check_restarts,
     )
 
 
@@ -130,7 +135,7 @@ async def test_agent_empty_search_is_insufficient() -> None:
         tool_turns=agent_search_tool_turns(),
         response=AnswerGenerationResult(
             can_answer=True,
-            answer_text="should not run",
+            answer_text="Invented answer [1].",
             markers_used=(1,),
         ),
     )
@@ -139,11 +144,61 @@ async def test_agent_empty_search_is_insufficient() -> None:
         question=Question(text="Anything?"),
         folder_scope=None,
         prior_turns=(),
-        deps=_deps(chat=chat, vector_index=InMemoryVectorIndex()),
+        deps=_deps(
+            chat=chat,
+            vector_index=InMemoryVectorIndex(),
+            settings=_settings(agent_max_check_restarts=0),
+        ),
     )
     assert result.answer.status == AnswerStatus.INSUFFICIENT_EVIDENCE
     assert result.answer.reason == InsufficientReason.NO_RELEVANT_CHUNKS
     assert not chat.calls
+
+
+async def test_greeting_answers_without_tools() -> None:
+    chat = FakeChatModel(
+        auto_search=False,
+        tool_turns=[
+            ToolTurnResult(
+                content="Hi! How can I help with this engagement?", tool_calls=(), usage=LlmUsage()
+            ),
+        ],
+    )
+    result = await run_graph(
+        engagement_id=EngagementId("northwind-fy2025"),
+        question=Question(text="hi"),
+        folder_scope=None,
+        prior_turns=(),
+        deps=_deps(chat=chat),
+    )
+    assert result.answer.status == AnswerStatus.ANSWERED
+    assert result.answer.citations == ()
+    assert "Hi" in result.answer.text
+    assert len(chat.tool_turn_calls) == 1
+    assert chat.tool_turn_calls[0][1]  # tools were offered
+    assert not chat.calls
+
+
+async def test_factual_draft_without_tools_is_rejected() -> None:
+    chat = FakeChatModel(
+        auto_search=False,
+        tool_turns=[
+            ToolTurnResult(
+                content="Revenue was $5M with no citations.",
+                tool_calls=(),
+                usage=LlmUsage(),
+            ),
+        ],
+    )
+    result = await run_graph(
+        engagement_id=EngagementId("northwind-fy2025"),
+        question=Question(text="What was Q1 revenue?"),
+        folder_scope=None,
+        prior_turns=(),
+        deps=_deps(chat=chat, settings=_settings(agent_max_check_restarts=0)),
+    )
+    assert result.answer.status == AnswerStatus.INSUFFICIENT_EVIDENCE
+    assert result.answer.reason == InsufficientReason.NO_RELEVANT_CHUNKS
 
 
 async def test_agent_model_chosen_query_not_raw_question() -> None:
@@ -237,7 +292,76 @@ async def test_agent_max_rounds_stops_tool_loop() -> None:
         ),
     )
     assert result.answer.status == AnswerStatus.ANSWERED
-    assert len(chat.tool_turn_calls) == 2
+    # Two tool-capable thinks + one forced answer turn after the round cap.
+    assert len(chat.tool_turn_calls) == 3
+    assert chat.tool_turn_calls[-1][1] == ()
+
+
+async def test_check_restart_then_grounded_answer() -> None:
+    engagement_id = EngagementId("northwind-fy2025")
+    embedder = FakeEmbedder()
+    vector_index = InMemoryVectorIndex()
+    await _index(
+        vector_index,
+        embedder,
+        engagement_id=engagement_id,
+        path="contracts/a.pdf",
+        text="Payment is due within thirty days.",
+    )
+    chat = FakeChatModel(
+        auto_search=False,
+        tool_turns=[
+            # Cited claim with no evidence yet — check fails and restarts think.
+            ToolTurnResult(content="Thirty days [1].", tool_calls=(), usage=LlmUsage()),
+            ToolTurnResult(
+                content=None,
+                tool_calls=(
+                    ToolCall(
+                        id="c1",
+                        name="search_relevant_chunks",
+                        arguments=json.dumps({"query": "payment terms"}),
+                    ),
+                ),
+                usage=LlmUsage(),
+            ),
+            ToolTurnResult(content="Thirty days [1].", tool_calls=(), usage=LlmUsage()),
+        ],
+    )
+    result = await run_graph(
+        engagement_id=engagement_id,
+        question=Question(text="What are the payment terms?"),
+        folder_scope=None,
+        prior_turns=(),
+        deps=_deps(
+            chat=chat,
+            embedder=embedder,
+            vector_index=vector_index,
+            settings=_settings(agent_max_check_restarts=2),
+        ),
+    )
+    assert result.answer.status == AnswerStatus.ANSWERED
+    assert "[1]" in result.answer.text
+    assert len(chat.tool_turn_calls) >= 3
+
+
+async def test_check_restarts_exhausted_is_insufficient() -> None:
+    chat = FakeChatModel(
+        auto_search=False,
+        tool_turns=[
+            ToolTurnResult(content="Still inventing facts [1].", tool_calls=(), usage=LlmUsage()),
+            ToolTurnResult(content="Still inventing facts [1].", tool_calls=(), usage=LlmUsage()),
+            ToolTurnResult(content="Still inventing facts [1].", tool_calls=(), usage=LlmUsage()),
+        ],
+    )
+    result = await run_graph(
+        engagement_id=EngagementId("northwind-fy2025"),
+        question=Question(text="What are the payment terms?"),
+        folder_scope=None,
+        prior_turns=(),
+        deps=_deps(chat=chat, settings=_settings(agent_max_check_restarts=1)),
+    )
+    assert result.answer.status == AnswerStatus.INSUFFICIENT_EVIDENCE
+    assert result.answer.reason == InsufficientReason.NO_RELEVANT_CHUNKS
 
 
 async def test_agent_list_then_read_then_search() -> None:
@@ -363,4 +487,241 @@ async def test_agent_current_time_answers_without_chunks() -> None:
     assert result.answer.status == AnswerStatus.ANSWERED
     assert result.answer.citations == ()
     assert "2026" in result.answer.text
-    assert chat.calls  # generation ran
+    assert not chat.calls  # think drafts the answer; no separate generate call
+
+
+async def test_agent_read_pdf_loads_indexed_chunks_into_evidence() -> None:
+    from backend.domain.common import utc_now
+    from backend.domain.engagement import Engagement
+
+    engagement_id = EngagementId("fourig-fy2024")
+    now = utc_now()
+    engagements = InMemoryEngagementRepository()
+    await engagements.create(
+        Engagement(id=engagement_id, name="4iG", created_at=now, updated_at=now)
+    )
+    documents = InMemoryDocumentRepository()
+    doc_id = DocumentId(uuid.uuid4())
+    path = DocumentPath("reports/AGENDA_2_KVJ_4iG_VMT_20240630_signed_EN.pdf")
+    await documents.upsert(
+        Document(
+            id=doc_id,
+            engagement_id=engagement_id,
+            path=path,
+            content_type=ContentType.PDF,
+            size_bytes=100,
+            sha256="b" * 64,
+            version=1,
+            searchable=True,
+            created_at=now,
+            updated_at=now,
+        )
+    )
+    embedder = FakeEmbedder()
+    vector_index = InMemoryVectorIndex()
+    auditor_text = (
+        "Quercus Audit Kft. Veszprém, Radnóti tér 2/c. "
+        "Licence number 002651. Tölgyes András registered auditor."
+    )
+    chunk = Chunk(
+        id=ChunkId(uuid.uuid4()),
+        document_id=doc_id,
+        document_version=1,
+        ordinal=0,
+        page=3,
+        heading_path=(),
+        text=auditor_text,
+        token_count=max(1, len(auditor_text.split())),
+        created_at=now,
+    )
+    embedded = await embedder.embed((auditor_text,))
+    await vector_index.upsert_chunks(
+        engagement_id=engagement_id,
+        document_id=doc_id,
+        document_path=path,
+        document_version=1,
+        chunks=(chunk,),
+        embeddings=(embedded.vectors[0],),
+        embedding_model=embedder.model_name,
+    )
+    chat = FakeChatModel(
+        auto_search=False,
+        tool_turns=[
+            ToolTurnResult(
+                content=None,
+                tool_calls=(
+                    ToolCall(
+                        id="t_read",
+                        name="read_document",
+                        arguments=json.dumps({"path": str(path)}),
+                    ),
+                ),
+                usage=LlmUsage(),
+            ),
+            ToolTurnResult(content=None, tool_calls=(), usage=LlmUsage()),
+        ],
+        response=AnswerGenerationResult(
+            can_answer=True,
+            answer_text="Quercus Audit Kft. audited 4iG [1].",
+            markers_used=(1,),
+        ),
+    )
+    result = await run_graph(
+        engagement_id=engagement_id,
+        question=Question(text="Who audited 4ig?"),
+        folder_scope=None,
+        prior_turns=(),
+        deps=_deps(
+            chat=chat,
+            embedder=embedder,
+            vector_index=vector_index,
+            engagements=engagements,
+            documents=documents,
+        ),
+    )
+    assert result.answer.status == AnswerStatus.ANSWERED
+    assert "Quercus" in result.answer.text
+    assert result.answer.citations[0].snippet.startswith("Quercus")
+
+
+async def test_search_expands_sibling_chunks_from_hit_document() -> None:
+    """Opinion-page hits must pull the signature sibling into evidence."""
+    engagement_id = EngagementId("fourig-fy2024")
+    embedder = FakeEmbedder()
+    vector_index = InMemoryVectorIndex()
+    doc_id = DocumentId(uuid.uuid4())
+    path = "reports/auditor.pdf"
+    now = datetime.now(UTC)
+    opinion = Chunk(
+        id=ChunkId(uuid.uuid4()),
+        document_id=doc_id,
+        document_version=1,
+        ordinal=0,
+        page=1,
+        heading_path=(),
+        text="INDEPENDENT AUDITOR'S REPORT for 4iG Public Limited Company opinion.",
+        token_count=10,
+        created_at=now,
+    )
+    signature = Chunk(
+        id=ChunkId(uuid.uuid4()),
+        document_id=doc_id,
+        document_version=1,
+        ordinal=1,
+        page=3,
+        heading_path=(),
+        text="Quercus Audit Kft. Tölgyes András registered auditor Licence 005572.",
+        token_count=10,
+        created_at=now,
+    )
+    # Embed opinion with query-like text so FakeEmbedder cosine prefers it;
+    # signature uses distinct wording so it would miss top_k without expansion.
+    emb_opinion = await embedder.embed((opinion.text,))
+    emb_signature = await embedder.embed(("zzzz unrelated padding tokens here",))
+    await vector_index.upsert_chunks(
+        engagement_id=engagement_id,
+        document_id=doc_id,
+        document_path=path,
+        document_version=1,
+        chunks=(opinion, signature),
+        embeddings=(emb_opinion.vectors[0], emb_signature.vectors[0]),
+        embedding_model=embedder.model_name,
+    )
+    chat = FakeChatModel(
+        tool_turns=agent_search_tool_turns(query="4iG independent auditor report"),
+        response=AnswerGenerationResult(
+            can_answer=True,
+            answer_text="Quercus Audit Kft. audited 4iG [2].",
+            markers_used=(2,),
+        ),
+    )
+    result = await run_graph(
+        engagement_id=engagement_id,
+        question=Question(text="Who audited 4ig?"),
+        folder_scope=None,
+        prior_turns=(),
+        deps=_deps(
+            chat=chat,
+            embedder=embedder,
+            vector_index=vector_index,
+            # top_k=1 keeps only the opinion hit; siblings must expand in Quercus.
+            settings=Settings(relevance_threshold=0.0, retrieval_top_k=1),
+        ),
+    )
+    assert result.answer.status == AnswerStatus.ANSWERED
+    assert "Quercus" in result.answer.text
+
+
+async def test_retry_follow_up_reuses_prior_standalone_question() -> None:
+    engagement_id = EngagementId("northwind-fy2025")
+    embedder = FakeEmbedder()
+    vector_index = InMemoryVectorIndex()
+    await _index(
+        vector_index,
+        embedder,
+        engagement_id=engagement_id,
+        path="reports/auditor.pdf",
+        text="Quercus Audit Kft. audited 4iG Public Limited Company.",
+    )
+    prior = Turn(
+        id=TurnId(uuid.uuid4()),
+        session_id=SessionId(uuid.uuid4()),
+        ordinal=0,
+        question=Question(text="Who audited 4ig?"),
+        standalone_question="Who audited 4ig?",
+        answer=Answered(text="(insufficient)", citations=()),
+        created_at=datetime.now(UTC),
+        usage=LlmUsage(),
+    )
+    chat = FakeChatModel(
+        tool_turns=agent_search_tool_turns(),
+        response=AnswerGenerationResult(
+            can_answer=True,
+            answer_text="Quercus Audit Kft. [1].",
+            markers_used=(1,),
+        ),
+    )
+    result = await run_graph(
+        engagement_id=engagement_id,
+        question=Question(text="try again"),
+        folder_scope=None,
+        prior_turns=(prior,),
+        deps=_deps(chat=chat, embedder=embedder, vector_index=vector_index),
+    )
+    assert result.standalone_question == "Who audited 4ig?"
+    assert result.answer.status == AnswerStatus.ANSWERED
+
+
+async def test_agent_uncited_draft_with_evidence_is_rejected() -> None:
+    engagement_id = EngagementId("northwind-fy2025")
+    embedder = FakeEmbedder()
+    vector_index = InMemoryVectorIndex()
+    await _index(
+        vector_index,
+        embedder,
+        engagement_id=engagement_id,
+        path="reports/auditor.pdf",
+        text="Quercus Audit Kft. issued the independent auditor's report.",
+    )
+    chat = FakeChatModel(
+        tool_turns=agent_search_tool_turns(),
+        response=AnswerGenerationResult(
+            can_answer=True,
+            answer_text="Quercus Audit Kft. audited the company.",
+            markers_used=(1,),
+        ),
+        # markers_used on structured responses is unused by check; drafts need inline [n].
+    )
+    result = await run_graph(
+        engagement_id=engagement_id,
+        question=Question(text="Who audited them?"),
+        folder_scope=None,
+        prior_turns=(),
+        deps=_deps(
+            chat=chat,
+            embedder=embedder,
+            vector_index=vector_index,
+            settings=_settings(agent_max_check_restarts=0),
+        ),
+    )
+    assert result.answer.status == AnswerStatus.INSUFFICIENT_EVIDENCE

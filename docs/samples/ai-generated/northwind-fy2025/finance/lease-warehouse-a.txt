@@ -1,9 +1,31 @@
 NORTHWIND TRADERS — WAREHOUSE A LEASE ABSTRACT (FY2025)
+Document ID: NW-FIN-LEASE-A-2025
+Engagement: northwind-fy2025 (fictional)
 
 Landlord: Contoso Properties LLC
-Premises: 400 Industrial Way, Unit A
-Annual base rent: USD 480,000 payable monthly in advance
-Security deposit: USD 80,000
+Tenant: Northwind Traders, Inc.
+Premises: 400 Industrial Way, Unit A, Kent, WA 98032
+Use: Dry goods wholesale distribution; no hazardous materials beyond ordinary cleaning supplies
+Rentable area: 85,000 sq ft
+
+COMMERCIAL TERMS
+Annual base rent: USD 480,000 payable monthly in advance (USD 40,000 per month)
+Additional rent (CAM / taxes / insurance estimate FY2025): USD 96,000 (reconciled annually)
+Security deposit: USD 80,000 (held by landlord; no interest)
+Lease commencement: 1 January 2023
 Lease expiry: 31 December 2027
-Renewal option: one 3-year renewal at then-market rent
-Maintenance: Tenant responsible for interior; landlord for structure and roof
+Renewal option: one (1) 3-year renewal at then-market rent; notice due 9 months prior to expiry
+Early termination: none for convenience; casualty/condemnation per lease §14
+
+MAINTENANCE AND INSURANCE
+Maintenance: Tenant responsible for interior, HVAC filters, and dock equipment;
+             Landlord responsible for structure, roof, and exterior envelope
+Required insurance: Tenant CGL USD 2,000,000; property insurance on tenant FF&E;
+                    Landlord named as additional insured / loss payee as applicable
+
+AUDIT NOTES (prepared 12 Feb 2025)
+- Rent expense Q1 FY2025: USD 120,000 base + USD 24,000 estimated CAM = USD 144,000
+- No rent concessions or free-rent periods in FY2025
+- Related-party disclosure: Contoso Properties LLC is an affiliate of Contoso Ltd (MSA counterparty);
+  arm's-length memo on file with Corporate Counsel (not included in this sample tree)
+- Right-of-use asset / lease liability measured under ASC 842; discount rate 5.25% (incremental borrowing rate)

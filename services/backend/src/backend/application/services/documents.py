@@ -7,6 +7,7 @@ from dataclasses import dataclass
 
 from backend.application.dto import DocumentListing, UploadAccepted
 from backend.application.parsing.archive_extractor import ArchiveExtractor
+from backend.application.parsing.document_parser import DocumentParser
 from backend.application.repositories.document import DocumentRepository
 from backend.application.repositories.engagement import EngagementRepository
 from backend.application.repositories.upload import UploadRepository
@@ -41,6 +42,11 @@ _CONTENT_TYPE_TO_MEDIA: dict[ContentType, str] = {
     ContentType.MARKDOWN: "text/markdown",
     ContentType.TEXT: "text/plain",
     ContentType.PDF: "application/pdf",
+    ContentType.DOCX: ("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+    ContentType.XLSX: ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    ContentType.PPTX: ("application/vnd.openxmlformats-officedocument.presentationml.presentation"),
+    ContentType.HTML: "text/html",
+    ContentType.CSV: "text/csv",
 }
 
 
@@ -80,12 +86,23 @@ def _expand_incoming(
     files: Sequence[IncomingUploadFile],
     target_folder: FolderPath,
     archives: ArchiveExtractor,
+    *,
+    settings: Settings,
 ) -> list[tuple[DocumentPath, bytes]]:
     planned: list[tuple[DocumentPath, bytes]] = []
     for incoming in files:
         if archives.is_zip_upload(filename=incoming.filename, data=incoming.data):
-            archives.list_zip_member_paths(incoming.data)
-            for rel, payload in archives.extract_zip_files(incoming.data):
+            remaining_files = settings.upload_max_files - len(planned)
+            remaining_bytes = max(
+                0, settings.upload_max_bytes - sum(len(data) for _, data in planned)
+            )
+            archives.list_zip_member_paths(incoming.data, max_files=remaining_files)
+            for rel, payload in archives.extract_zip_files(
+                incoming.data,
+                max_file_bytes=settings.upload_max_file_bytes,
+                max_total_bytes=remaining_bytes,
+                max_files=remaining_files,
+            ):
                 planned.append((_join_folder(target_folder, rel), payload))
         else:
             rel = _basename(incoming.filename)
@@ -124,6 +141,7 @@ class DocumentService:
         jobs: JobQueue,
         archives: ArchiveExtractor,
         settings: Settings,
+        document_parser: DocumentParser,
     ) -> None:
         self._engagements = engagements
         self._documents = documents
@@ -132,6 +150,7 @@ class DocumentService:
         self._jobs = jobs
         self._archives = archives
         self._settings = settings
+        self._document_parser = document_parser
 
     async def list_documents(
         self,
@@ -166,6 +185,7 @@ class DocumentService:
         *,
         engagement_id: EngagementId,
         path: DocumentPath,
+        as_markdown: bool = False,
     ) -> DocumentContent:
         engagement = await self._engagements.get(engagement_id)
         if engagement is None:
@@ -176,6 +196,12 @@ class DocumentService:
             raise NotFoundError(f"document not found: {path}")
 
         data = await self._storage.get(engagement_id, path)
+        if as_markdown:
+            markdown = self._document_parser.to_markdown(data, path=path)
+            return DocumentContent(
+                data=markdown.encode("utf-8"),
+                media_type="text/markdown; charset=utf-8",
+            )
         return DocumentContent(
             data=data,
             media_type=media_type_for_content_type(document.content_type),
@@ -211,7 +237,12 @@ class DocumentService:
         if not files:
             raise ValidationError("upload must include at least one file")
 
-        planned = _expand_incoming(files, folder, self._archives)
+        planned = _expand_incoming(
+            files,
+            folder,
+            self._archives,
+            settings=self._settings,
+        )
         _enforce_limits(planned, settings=self._settings)
 
         now = utc_now()

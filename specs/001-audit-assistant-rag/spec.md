@@ -166,7 +166,7 @@ The auditor uses an interactive terminal application, similar in feel to modern 
 
 - **FR-004**: System MUST accept upload of one or more individual files to a target folder path within an engagement.
 - **FR-005**: System MUST accept upload of a single zip archive to a target folder path and preserve the archive's internal folder structure beneath that path.
-- **FR-006**: System MUST support at least plain text, Markdown, and PDF documents; other types MUST be reported as skipped with a reason.
+- **FR-006**: System MUST support at least plain text, Markdown, PDF, DOCX, XLSX, PPTX, HTML, and CSV documents; other types MUST be reported as skipped with a reason.
 - **FR-007**: System MUST reject the entire upload at submission time, storing and queuing nothing, if any archive entry would resolve outside the target folder, the archive is corrupted, or configured limits (total size, file count, single file size) are exceeded.
 - **FR-008**: Uploading to an existing document path MUST replace that document and its searchable content once processing completes; the replacement MUST be atomic, so answers use either the complete old version or the complete new version.
 - **FR-009**: System MUST acknowledge a valid upload immediately with an upload identifier and process it in the background.
@@ -183,12 +183,12 @@ The auditor uses an interactive terminal application, similar in feel to modern 
 - **FR-014**: System MUST answer only from chunks retrieved from the engagement's documents and MUST NOT use the model's general knowledge to supply facts.
 - **FR-014a**: Chunk retrieval MUST match both by meaning and by exact terms, so that questions containing identifiers such as invoice numbers, contract ids, amounts or names find the chunks that contain those exact terms.
 - **FR-015**: Every response MUST carry an explicit outcome: "answered" or "insufficient_evidence".
-- **FR-016**: An "answered" response MUST include at least one citation; each citation MUST identify the document path, the chunk text, the page number when the document is paginated, and a relevance score.
-- **FR-016a**: The answer text MUST mark each claim with a numbered reference (for example "[1]") that corresponds to an entry in the citation list; references that point to no citation MUST be removed, and an answer left with no valid reference MUST be treated as insufficient evidence.
+- **FR-016**: An "answered" response that relies on engagement documents MUST include at least one citation; each citation MUST identify the document path, the chunk text, the page number when the document is paginated, and a relevance score. Answers that make no document claims (greetings, meta chat, or non-document tool facts such as the current time) MAY omit citations.
+- **FR-016a**: When document citations are required, the answer text MUST mark each claim with a numbered reference (for example "[1]") that corresponds to an entry in the citation list; references that point to no citation MUST be removed, and an answer left with no valid reference MUST be treated as insufficient evidence.
 - **FR-017**: Citations MUST only reference chunks that were actually retrieved for that request.
 - **FR-018**: An "insufficient_evidence" response MUST include 1 to 3 suggested client questions or document requests, MAY include citations of partially relevant chunks, and MUST NOT include a factual answer.
 - **FR-019**: Suggested client questions MUST reflect the provided role and topic when given.
-- **FR-020**: If the ask agent finishes with no in-threshold evidence chunks (for example every `search_relevant_chunks` call returned nothing useful), the system MUST return "insufficient_evidence" without generating a factual answer.
+- **FR-020**: After the agent drafts an answer, the system MUST check whether statements that need engagement data are supported by retrieved evidence (and cited). If they are not, the system MAY send the agent back to gather more evidence or revise, up to a configured restart limit, and MUST return "insufficient_evidence" when the limit is exhausted or the draft remains ungrounded. Non-document replies (for example greetings) that make no engagement claims MAY be answered without citations.
 
 **Sessions**
 
@@ -257,7 +257,7 @@ The auditor uses an interactive terminal application, similar in feel to modern 
 - Real sample documents are committed to the public repository only if publicly available; their sources and licences are recorded next to them.
 - Engagements are created explicitly before documents can be uploaded; folders are implicit (they exist when a document is stored under them).
 - Uploads are processed in the background and sized for small document sets (default limits: 50 MB per upload, 200 files per archive, 20 MB per file). The client checks progress by polling the upload status; push notifications (webhooks) are out of scope.
-- AI-generated fictional sample documents live in a dedicated samples folder; a separate folder is reserved for real documents added by the author, which must be publicly available, non-confidential documents. The seeding script uploads them through the same background processing path and waits until processing completes.
+- AI-generated fictional sample documents live in a dedicated samples folder; a separate folder is reserved for real documents added by the author, which must be publicly available, non-confidential documents. The seeding script uploads them through the same background processing path (queue only; indexing continues asynchronously).
 - Scanned image-only documents are not made searchable (no OCR) in this version.
 - Answers are returned complete, not streamed token by token.
 - Document deletion and version history are out of scope; replacing a document by uploading to the same path is supported.

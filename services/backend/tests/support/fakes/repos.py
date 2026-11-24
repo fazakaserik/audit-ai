@@ -16,7 +16,7 @@ from backend.domain.document import (
     within_depth,
 )
 from backend.domain.engagement import Engagement, EngagementId
-from backend.domain.errors import NotFoundError
+from backend.domain.errors import ConflictError, NotFoundError
 from backend.domain.session import Session, SessionId, Turn
 from backend.domain.upload import (
     Upload,
@@ -196,13 +196,34 @@ class InMemoryUploadRepository:
 class InMemoryJobQueue:
     def __init__(self) -> None:
         self._items: dict[UploadItemId, UploadItem] = {}
+        self._locked_by: dict[UploadItemId, str] = {}
+
+    def get(self, item_id: UploadItemId) -> UploadItem | None:
+        return self._items.get(item_id)
+
+    def locked_by(self, item_id: UploadItemId) -> str | None:
+        return self._locked_by.get(item_id)
+
+    def force_reclaim(self, item_id: UploadItemId, *, worker_id: str) -> UploadItem:
+        """Simulate lease reclaim by another worker (test helper)."""
+        item = self._items[item_id]
+        claimed = item.model_copy(
+            update={
+                "status": UploadItemStatus.PROCESSING,
+                "processing_started_at": utc_now(),
+                "processing_finished_at": None,
+            }
+        )
+        self._items[item_id] = claimed
+        self._locked_by[item_id] = worker_id
+        return claimed
 
     async def enqueue_items(self, items: Sequence[UploadItem]) -> None:
         for item in items:
             self._items[item.id] = item
+            self._locked_by.pop(item.id, None)
 
     async def claim_next(self, worker_id: str) -> UploadItem | None:
-        _ = worker_id
         for item in sorted(self._items.values(), key=lambda row: row.created_at):
             if item.status == UploadItemStatus.PENDING:
                 claimed = item.model_copy(
@@ -217,6 +238,7 @@ class InMemoryJobQueue:
                     }
                 )
                 self._items[item.id] = claimed
+                self._locked_by[item.id] = worker_id
                 return claimed
         return None
 
@@ -224,6 +246,7 @@ class InMemoryJobQueue:
         self,
         item_id: UploadItemId,
         *,
+        worker_id: str,
         status: str,
         reason: str | None,
         embedding_prompt_tokens: int | None = None,
@@ -232,8 +255,12 @@ class InMemoryJobQueue:
         chunk_token_sum: int | None = None,
     ) -> None:
         item = self._items.get(item_id)
-        if item is None:
-            return
+        if (
+            item is None
+            or item.status != UploadItemStatus.PROCESSING
+            or self._locked_by.get(item_id) != worker_id
+        ):
+            raise ConflictError(f"stale job lease for item {item_id}")
         finished = utc_now()
         started = item.processing_started_at or finished
         self._items[item_id] = item.model_copy(
@@ -248,11 +275,22 @@ class InMemoryJobQueue:
                 "chunk_token_sum": chunk_token_sum,
             }
         )
+        self._locked_by.pop(item_id, None)
 
-    async def fail_for_retry(self, item_id: UploadItemId, *, reason: str) -> None:
+    async def fail_for_retry(
+        self,
+        item_id: UploadItemId,
+        *,
+        worker_id: str,
+        reason: str,
+    ) -> None:
         item = self._items.get(item_id)
-        if item is None:
-            return
+        if (
+            item is None
+            or item.status != UploadItemStatus.PROCESSING
+            or self._locked_by.get(item_id) != worker_id
+        ):
+            raise ConflictError(f"stale job lease for item {item_id}")
         attempts = item.attempts + 1
         if attempts >= 3:
             self._items[item_id] = item.model_copy(
@@ -263,6 +301,7 @@ class InMemoryJobQueue:
                     "processing_finished_at": utc_now(),
                 }
             )
+            self._locked_by.pop(item_id, None)
         else:
             self._items[item_id] = item.model_copy(
                 update={
@@ -271,6 +310,7 @@ class InMemoryJobQueue:
                     "reason": reason,
                 }
             )
+            self._locked_by.pop(item_id, None)
 
 
 class NoopJobQueue:
@@ -288,6 +328,7 @@ class NoopJobQueue:
         self,
         item_id: UploadItemId,
         *,
+        worker_id: str,
         status: str,
         reason: str | None,
         embedding_prompt_tokens: int | None = None,
@@ -297,6 +338,7 @@ class NoopJobQueue:
     ) -> None:
         _ = (
             item_id,
+            worker_id,
             status,
             reason,
             embedding_prompt_tokens,
@@ -305,8 +347,14 @@ class NoopJobQueue:
             chunk_token_sum,
         )
 
-    async def fail_for_retry(self, item_id: UploadItemId, *, reason: str) -> None:
-        _ = (item_id, reason)
+    async def fail_for_retry(
+        self,
+        item_id: UploadItemId,
+        *,
+        worker_id: str,
+        reason: str,
+    ) -> None:
+        _ = (item_id, worker_id, reason)
 
 
 @dataclass

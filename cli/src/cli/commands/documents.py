@@ -46,7 +46,7 @@ def documents_get(
     engagement_id: EngagementId = engagement
     with client() as api:
         try:
-            content = api.get_document_content(engagement_id, path)
+            content = api.get_document_content(engagement_id, path, as_markdown=True)
         except CliApiError as exc:
             exit_api_error(exc)
         else:

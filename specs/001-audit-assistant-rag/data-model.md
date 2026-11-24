@@ -17,7 +17,7 @@ Source of truth for domain types in `backend.domain` (one module per model, e.g.
 | `FolderPath`                                                                            | relative POSIX path                      | no `..`, absolute, backslash, control chars, empty segments; may be `""` (root)                                                                                                |
 | `DocumentPath`                                                                          | relative POSIX path ending in a filename | same as FolderPath; must have a non-empty final segment with an allowed extension                                                                                              |
 | `UploadId`, `UploadItemId`, `DocumentId`, `ChunkId`, `SessionId`, `TurnId`, `RequestId` | `NewType("…", UUID)`                     | UUIDv4                                                                                                                                                                         |
-| `ContentType`                                                                           | enum                                     | `markdown`, `text`, `pdf`                                                                                                                                                      |
+| `ContentType`                                                                           | enum                                     | `markdown`, `text`, `pdf`, `docx`, `xlsx`, `pptx`, `html`, `csv`                                                                                                              |
 | `Question`                                                                              | model                                    | `text` 1–2000 chars after strip; optional `folder_scope`, `auditor_role`, `topic` (each ≤ 200 chars)                                                                           |
 | `Citation`                                                                              | model                                    | `chunk_id`, `document_id`, `document_path`, `page: int \| None` (≥1), `heading_path: tuple[str, ...]`, `snippet` (≤ 500 chars), `score: float` in `[0, 1]`, `marker: int` (≥1) |
 | `SuggestedClientQuestion`                                                               | model                                    | `question` 1–500 chars, `rationale` 1–500 chars                                                                                                                                |
@@ -161,6 +161,7 @@ Stable machine-readable codes for Problem Details `code` field. Never rename or 
 | `unsafe_upload`          | 400          | path traversal, corrupt zip                          |
 | `model_timeout`          | 504          | model call exceeded budget                           |
 | `model_unavailable`      | 502          | provider error / bad structured output after retries |
+| `context_too_large`      | 413          | assembled Ask prompt exceeds the model context       |
 | `dependency_unavailable` | 503          | Postgres (or model for readiness) unreachable        |
 | `internal_error`         | 500          | unexpected                                           |
 

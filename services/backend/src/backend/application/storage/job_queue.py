@@ -17,6 +17,7 @@ class JobQueue(Protocol):
         self,
         item_id: UploadItemId,
         *,
+        worker_id: str,
         status: str,
         reason: str | None,
         embedding_prompt_tokens: int | None = None,
@@ -25,4 +26,10 @@ class JobQueue(Protocol):
         chunk_token_sum: int | None = None,
     ) -> None: ...
 
-    async def fail_for_retry(self, item_id: UploadItemId, *, reason: str) -> None: ...
+    async def fail_for_retry(
+        self,
+        item_id: UploadItemId,
+        *,
+        worker_id: str,
+        reason: str,
+    ) -> None: ...

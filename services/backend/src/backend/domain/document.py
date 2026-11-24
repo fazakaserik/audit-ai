@@ -54,6 +54,11 @@ class ContentType(StrEnum):
     MARKDOWN = "markdown"
     TEXT = "text"
     PDF = "pdf"
+    DOCX = "docx"
+    XLSX = "xlsx"
+    PPTX = "pptx"
+    HTML = "html"
+    CSV = "csv"
 
 
 class Document(BaseModel):

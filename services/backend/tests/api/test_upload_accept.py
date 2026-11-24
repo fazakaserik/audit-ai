@@ -94,3 +94,86 @@ async def test_unsafe_zip_returns_400(upload_app_factory) -> None:
     assert response.status_code == 400
     assert response.json()["code"] == "unsafe_upload"
     assert len(bound.documents._documents._items) == 0
+
+
+async def test_oversized_file_part_returns_413() -> None:
+    prepare = _build_upload_app(settings=Settings(upload_max_file_bytes=32, upload_max_bytes=1024))
+    app, _bound = await prepare()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/engagements/northwind-fy2025/documents",
+            data={"folder": "inbox"},
+            files=[("files", ("big.txt", b"x" * 64, "text/plain"))],
+        )
+    assert response.status_code == 413, response.text
+    assert response.json()["code"] == "payload_too_large"
+
+
+async def test_too_many_files_returns_413() -> None:
+    prepare = _build_upload_app(settings=Settings(upload_max_files=1))
+    app, _bound = await prepare()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/engagements/northwind-fy2025/documents",
+            data={"folder": "inbox"},
+            files=[
+                ("files", ("a.txt", b"a", "text/plain")),
+                ("files", ("b.txt", b"b", "text/plain")),
+            ],
+        )
+    assert response.status_code == 413, response.text
+    assert response.json()["code"] == "payload_too_large"
+
+
+async def test_zip_member_over_limit_returns_413() -> None:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("member.txt", b"x" * 200)
+    prepare = _build_upload_app(
+        settings=Settings(
+            upload_max_file_bytes=50,
+            upload_max_bytes=10_000,
+            upload_max_files=10,
+        )
+    )
+    app, bound = await prepare()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/engagements/northwind-fy2025/documents",
+            data={"folder": "inbox"},
+            files=[("files", ("pack.zip", buffer.getvalue(), "application/zip"))],
+        )
+    assert response.status_code == 413, response.text
+    assert response.json()["code"] == "payload_too_large"
+    assert len(bound.documents._documents._items) == 0
+
+
+async def test_zip_rejected_when_prior_files_consume_byte_budget() -> None:
+    """Zip that fits under the full cap still 413s when earlier parts leave no room."""
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("extra.txt", b"y" * 40)
+    prepare = _build_upload_app(
+        settings=Settings(
+            upload_max_file_bytes=100,
+            upload_max_bytes=50,
+            upload_max_files=10,
+        )
+    )
+    app, bound = await prepare()
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.post(
+            "/api/v1/engagements/northwind-fy2025/documents",
+            data={"folder": "inbox"},
+            files=[
+                ("files", ("first.txt", b"x" * 30, "text/plain")),
+                ("files", ("pack.zip", buffer.getvalue(), "application/zip")),
+            ],
+        )
+    assert response.status_code == 413, response.text
+    assert response.json()["code"] == "payload_too_large"
+    assert len(bound.documents._documents._items) == 0

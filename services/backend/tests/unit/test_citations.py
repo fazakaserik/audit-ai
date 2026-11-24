@@ -51,8 +51,27 @@ def test_unknown_markers_dropped_and_renumbered() -> None:
     assert citations[0].snippet.startswith("Payment")
 
 
-def test_empty_when_no_valid_markers() -> None:
+def test_empty_when_no_evidence() -> None:
+    assert filter_and_build_citations("No markers here.", ()) is None
+
+
+def test_missing_markers_without_markers_used_rejected() -> None:
     scored = (_scored("Only chunk."),)
-    assert filter_and_build_citations("No markers here.", scored) is None
-    assert filter_and_build_citations("Unknown [5] marker.", scored) is None
-    assert filter_and_build_citations("Empty chunks.", ()) is None
+    assert filter_and_build_citations("Answer grounded in the only chunk.", scored) is None
+
+
+def test_markers_used_salvages_missing_inline_markers() -> None:
+    scored = (
+        _scored("Payment is due in thirty days."),
+        _scored("Quercus Audit Kft. signed the report."),
+    )
+    result = filter_and_build_citations(
+        "Quercus Audit Kft. audited the company.",
+        scored,
+        markers_used=(2,),
+    )
+    assert result is not None
+    text, citations = result
+    assert text.endswith("[1]")
+    assert len(citations) == 1
+    assert citations[0].snippet.startswith("Quercus")

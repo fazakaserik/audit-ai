@@ -9,20 +9,20 @@ from typing import cast
 from langgraph.graph import END, START, StateGraph
 
 from backend.application.agents.progress import AskProgress
+from backend.application.agents.research_agent.history import prepare_session_context
 from backend.application.agents.research_agent.nodes import (
-    AfterTools,
     NodeContext,
-    make_agent_node,
-    make_finalize_node,
-    make_generate_node,
-    make_grade_evidence_node,
+    make_check_node,
+    make_think_node,
     make_tools_node,
-    route_after_agent,
-    route_after_generate,
-    route_after_grade,
+    route_after_check,
+    route_after_think,
     route_after_tools,
 )
 from backend.application.agents.research_agent.prompts import build_agent_messages
+from backend.application.agents.research_agent.resolve_question import (
+    resolve_standalone_question,
+)
 from backend.application.agents.research_agent.state import State
 from backend.application.llm.chat_model import ChatModel
 from backend.application.llm.embedder import Embedder
@@ -58,40 +58,27 @@ class GraphResult:
 
 
 def _compile_graph(ctx: NodeContext):
-    max_rounds = ctx.settings.agent_max_tool_rounds
-
-    def tools_router(state: State) -> AfterTools:
-        return route_after_tools(state, max_rounds=max_rounds)
-
     builder = StateGraph(State)
-    builder.add_node("agent", make_agent_node(ctx))
+    builder.add_node("think", make_think_node(ctx))
     builder.add_node("tools", make_tools_node(ctx))
-    builder.add_node("grade_evidence", make_grade_evidence_node(ctx))
-    builder.add_node("generate", make_generate_node(ctx))
-    builder.add_node("finalize", make_finalize_node(ctx))
+    builder.add_node("check", make_check_node(ctx))
 
-    builder.add_edge(START, "agent")
+    builder.add_edge(START, "think")
     builder.add_conditional_edges(
-        "agent",
-        route_after_agent,
-        {"tools": "tools", "grade_evidence": "grade_evidence"},
+        "think",
+        route_after_think,
+        {"tools": "tools", "check": "check"},
     )
     builder.add_conditional_edges(
         "tools",
-        tools_router,
-        {"agent": "agent", "grade_evidence": "grade_evidence"},
+        route_after_tools,
+        {"think": "think"},
     )
     builder.add_conditional_edges(
-        "grade_evidence",
-        route_after_grade,
-        {"generate": "generate", "__end__": END},
+        "check",
+        route_after_check,
+        {"think": "think", "__end__": END},
     )
-    builder.add_conditional_edges(
-        "generate",
-        route_after_generate,
-        {"finalize": "finalize", "__end__": END},
-    )
-    builder.add_edge("finalize", END)
     return builder.compile()
 
 
@@ -106,10 +93,13 @@ async def run_graph(
     progress_sink = deps.progress
     history = tuple(prior_turns)
     folder = folder_scope if folder_scope is not None else question.folder_scope
-    standalone_question = question.text
+    standalone_question = resolve_standalone_question(question.text, history)
 
-    if progress_sink is not None:
-        await progress_sink.stage("agent")
+    session_context, history_usage = await prepare_session_context(
+        history,
+        max_recent=deps.settings.session_context_turns,
+        chat=deps.chat,
+    )
 
     tool_ctx = ToolContext(
         engagement_id=engagement_id,
@@ -124,11 +114,12 @@ async def run_graph(
     )
     messages = list(
         build_agent_messages(
-            question=question.text,
-            prior_turns=history,
+            question=standalone_question,
+            prior_turns=session_context.recent_turns,
             auditor_role=question.auditor_role,
             topic=question.topic,
             folder_scope=str(tool_ctx.folder_scope) if tool_ctx.folder_scope else None,
+            older_summary=session_context.older_summary,
         )
     )
     ctx = NodeContext(
@@ -136,7 +127,7 @@ async def run_graph(
         settings=deps.settings,
         tool_ctx=tool_ctx,
         progress=progress_sink,
-        prior_turns=history,
+        session_context=session_context,
     )
     graph = _compile_graph(ctx)
     initial: State = {
@@ -145,8 +136,9 @@ async def run_graph(
         "messages": messages,
         "tool_rounds": 0,
         "pending_tool_calls": (),
-        "usage": LlmUsage(),
-        "generation": None,
+        "usage": history_usage,
+        "draft_answer": None,
+        "check_restarts": 0,
         "answer": None,
     }
     final = cast(State, await graph.ainvoke(initial))

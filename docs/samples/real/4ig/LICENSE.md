@@ -1,0 +1,1 @@
+https://bet.hu/newkibdata/129116863/AGENDA_2_KVJ_4iG_VMT_20240630_signed_EN.pdf

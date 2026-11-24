@@ -1,16 +1,15 @@
-name: auditor-ai
+name: aiditor
 
 x-app: &app
   build:
     context: ../..
     dockerfile: services/backend/Dockerfile
-  image: auditor-ai-app:local
+  image: aiditor-app:local
   env_file:
     - .env
   environment:
-    DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-audit}:${POSTGRES_PASSWORD:-audit}@postgres:5432/${POSTGRES_DB:-audit}
+    DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     DOCUMENT_STORAGE_PATH: /data/storage
-    OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
   extra_hosts:
     - "host.docker.internal:host-gateway"
 
@@ -19,9 +18,9 @@ services:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-audit}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-audit}
-      POSTGRES_DB: ${POSTGRES_DB:-audit}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -34,9 +33,8 @@ services:
     <<: *app
     restart: "no"
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-audit}:${POSTGRES_PASSWORD:-audit}@postgres:5432/${POSTGRES_DB:-audit}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       DOCUMENT_STORAGE_PATH: /data/storage
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       # No model calls; keep provider defaults from env_file without requiring GPU.
     command:
       [
@@ -55,13 +53,15 @@ services:
         condition: service_healthy
 
   # Scaled to 2 by just compose-up / compose-dev-up (--scale api=2).
+  # Each replica uses SQLAlchemy pool_size=5 + max_overflow=10; keep replicas
+  # low or raise Postgres max_connections if you scale further while Ask holds
+  # a request-scoped session for the full LangGraph run.
   api:
     <<: *app
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-audit}:${POSTGRES_PASSWORD:-audit}@postgres:5432/${POSTGRES_DB:-audit}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       DOCUMENT_STORAGE_PATH: /data/storage
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     volumes:
       - document_storage:/data/storage
     expose:
@@ -89,9 +89,8 @@ services:
     <<: *app
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-audit}:${POSTGRES_PASSWORD:-audit}@postgres:5432/${POSTGRES_DB:-audit}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       DOCUMENT_STORAGE_PATH: /data/storage
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     command: ["audit-worker"]
     volumes:
       - document_storage:/data/storage
@@ -105,7 +104,7 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:

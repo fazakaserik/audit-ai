@@ -121,8 +121,8 @@ async def test_post_ask_stream_progress_and_final() -> None:
         assert types.count("thinking_done") == 1
         assert types[-1] == "final"
         thinking_done = next(event for event in events if event.get("type") == "thinking_done")
-        # Tool loop + generate each report thinking_seconds from the fake.
-        assert thinking_done.get("duration_seconds") == round(1.26 * 3, 1)
+        # Think turns (search + draft answer) each report thinking_seconds from the fake.
+        assert thinking_done.get("duration_seconds") == round(1.26 * 2, 1)
         assert "tool_call" in types
         assert "tool_result" in types
         final = events[-1]["response"]
@@ -140,6 +140,6 @@ async def test_post_ask_stream_progress_and_final() -> None:
         assert detail.status_code == 200
         turns = detail.json()["turns"]
         assert len(turns) == 1
-        assert turns[0]["thinking_text"] == "Checking policy chunks…" * 3
-        assert turns[0]["thinking_seconds"] == round(1.26 * 3, 1)
+        assert turns[0]["thinking_text"] == "Checking policy chunks…" * 2
+        assert turns[0]["thinking_seconds"] == round(1.26 * 2, 1)
         assert turns[0]["answer"]["usage"]["total_tokens"] >= 15

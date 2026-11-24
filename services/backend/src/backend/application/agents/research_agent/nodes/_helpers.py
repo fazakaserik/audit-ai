@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from backend.application.agents.progress import AskProgress
 from backend.application.agents.research_agent.prompts import AnswerGenerationResult
+from backend.application.dto import ScoredChunk
 from backend.application.llm.chat_model import ChatModel
 from backend.domain.answer import (
     Citation,
@@ -14,11 +17,43 @@ from backend.domain.answer import (
 
 from .suggestions import default_client_suggestions
 
+_PARTIAL_CITATION_SNIPPET = 500
+_PARTIAL_CITATION_LIMIT = 5
+
 
 def _truncate(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     return text[: limit - 1].rstrip() + "…"
+
+
+def partial_citations_from_evidence(
+    evidence: Sequence[ScoredChunk],
+    *,
+    limit: int = _PARTIAL_CITATION_LIMIT,
+) -> tuple[Citation, ...]:
+    """Build partial citations from the evidence bag for insufficient answers."""
+    citations: list[Citation] = []
+    for marker, row in enumerate(evidence[:limit], start=1):
+        chunk = row.chunk
+        snippet = (
+            chunk.text[:_PARTIAL_CITATION_SNIPPET].strip() or chunk.text[:_PARTIAL_CITATION_SNIPPET]
+        )
+        if not snippet:
+            continue
+        citations.append(
+            Citation(
+                marker=marker,
+                chunk_id=chunk.id,
+                document_id=chunk.document_id,
+                document_path=row.document_path,
+                page=chunk.page,
+                heading_path=chunk.heading_path,
+                snippet=snippet,
+                score=row.score,
+            )
+        )
+    return tuple(citations)
 
 
 def thinking_callbacks(chat: ChatModel, progress: AskProgress | None):
