@@ -128,9 +128,7 @@ def append_evidence_within_budget(
             continue
         chunk_len = len(row.chunk.text)
         over_bag = used + chunk_len > ceiling
-        over_call = (
-            per_call_max_chars is not None and call_used + chunk_len > per_call_max_chars
-        )
+        over_call = per_call_max_chars is not None and call_used + chunk_len > per_call_max_chars
         if added and (over_bag or over_call):
             truncated = True
             break

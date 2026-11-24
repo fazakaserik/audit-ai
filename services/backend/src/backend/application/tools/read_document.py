@@ -196,11 +196,7 @@ async def _load_indexed_chunks(
     lines: list[str] = [
         f"Loaded {len(added)} indexed chunk(s) from {path} into evidence"
         f" ({used_chars} chars"
-        + (
-            "; truncated to agent_read_max_chars / AGENT_EVIDENCE_MAX_CHARS"
-            if truncated
-            else ""
-        )
+        + ("; truncated to agent_read_max_chars / AGENT_EVIDENCE_MAX_CHARS" if truncated else "")
         + ")."
     ]
     for index, row in zip(indices, added, strict=True):

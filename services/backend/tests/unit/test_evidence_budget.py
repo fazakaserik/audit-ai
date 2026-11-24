@@ -65,8 +65,6 @@ def test_append_evidence_stops_at_bag_ceiling() -> None:
 def test_append_evidence_respects_per_call_cap() -> None:
     ctx = _ctx(evidence_max=10_000)
     rows = (_chunk("x" * 400), _chunk("y" * 400), _chunk("z" * 400))
-    added, truncated = append_evidence_within_budget(
-        ctx, rows, per_call_max_chars=500
-    )
+    added, truncated = append_evidence_within_budget(ctx, rows, per_call_max_chars=500)
     assert len(added) == 1
     assert truncated is True
