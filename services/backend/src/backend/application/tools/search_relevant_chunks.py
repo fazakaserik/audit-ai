@@ -94,9 +94,9 @@ class SearchRelevantChunksTool:
                 [SourceHit(path=row.document_path, score=row.score) for row in scored]
             )
 
-        display = added if added else scored
-        # Full chunk text (capped) so names/firms/dates in the body are visible in-tool,
-        # not only later in generation — truncated previews caused false declines.
+        # Only rows actually in the bag — never fall back to `scored` when the bag
+        # rejected adds (zip(..., strict=True) would raise on missing indices).
+        display = added
         snippet_chars = ctx.settings.agent_search_snippet_chars
         lines: list[str] = [
             f"Found {len(scored)} chunk(s); added {len(added)} to evidence"
@@ -104,14 +104,17 @@ class SearchRelevantChunksTool:
             + ("; evidence bag at AGENT_EVIDENCE_MAX_CHARS" if bag_full else "")
             + ")."
         ]
-        indices = evidence_indices_for(ctx.evidence, display)
-        for index, row in zip(indices, display, strict=True):
-            text = row.chunk.text
-            snippet = text if len(text) <= snippet_chars else text[:snippet_chars].rstrip() + "…"
-            page = f" p.{row.chunk.page}" if row.chunk.page is not None else ""
-            lines.append(
-                f"- evidence[{index}] {row.document_path}{page} score={row.score:.3f}:\n{snippet}"
-            )
+        if display:
+            indices = evidence_indices_for(ctx.evidence, display)
+            for index, row in zip(indices, display, strict=True):
+                text = row.chunk.text
+                snippet = (
+                    text if len(text) <= snippet_chars else text[:snippet_chars].rstrip() + "…"
+                )
+                page = f" p.{row.chunk.page}" if row.chunk.page is not None else ""
+                lines.append(
+                    f"- evidence[{index}] {row.document_path}{page} score={row.score:.3f}:\n{snippet}"
+                )
         summary = (
             f"search_relevant_chunks(query={args.query!r}) → {len(scored)} hits"
             f" (+{len(expanded)} siblings)"

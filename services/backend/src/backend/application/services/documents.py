@@ -92,11 +92,13 @@ def _expand_incoming(
     planned: list[tuple[DocumentPath, bytes]] = []
     for incoming in files:
         if archives.is_zip_upload(filename=incoming.filename, data=incoming.data):
-            archives.list_zip_member_paths(incoming.data)
+            remaining_files = settings.upload_max_files - len(planned)
+            archives.list_zip_member_paths(incoming.data, max_files=remaining_files)
             for rel, payload in archives.extract_zip_files(
                 incoming.data,
                 max_file_bytes=settings.upload_max_file_bytes,
                 max_total_bytes=settings.upload_max_bytes,
+                max_files=remaining_files,
             ):
                 planned.append((_join_folder(target_folder, rel), payload))
         else:

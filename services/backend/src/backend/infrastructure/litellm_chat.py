@@ -151,6 +151,34 @@ def _parse_tool_calls(raw_calls: object) -> tuple[ToolCall, ...]:
     return tuple(parsed)
 
 
+def _accumulate_tool_call_deltas(
+    buckets: dict[int, dict[str, object]],
+    chunk_calls: object,
+) -> None:
+    """Merge streamed tool-call fragments by ``index`` (OpenAI-style) into ``buckets``."""
+    if not isinstance(chunk_calls, (list, tuple)):
+        return
+    for offset, item in enumerate(cast(Sequence[object], chunk_calls)):
+        index_raw = _mapping_get(item, "index")
+        index = index_raw if isinstance(index_raw, int) else offset
+        slot = buckets.setdefault(index, {"function": {}})
+        call_id = _mapping_get(item, "id")
+        if isinstance(call_id, str) and call_id:
+            slot["id"] = call_id
+        function = _mapping_get(item, "function")
+        if function is None:
+            continue
+        dest = cast(dict[str, object], slot.setdefault("function", {}))
+        name = _mapping_get(function, "name")
+        if isinstance(name, str) and name:
+            dest["name"] = name
+        arguments = _mapping_get(function, "arguments")
+        if isinstance(arguments, str):
+            dest["arguments"] = str(dest.get("arguments") or "") + arguments
+        elif isinstance(arguments, dict):
+            dest["arguments"] = arguments
+
+
 def _message_field(message: object | None, name: str) -> object | None:
     if message is None:
         return None
@@ -417,7 +445,7 @@ class LiteLLMChatModel:
         thinking_chars = 0
         emit_thinking = True
         usage = LlmUsage()
-        raw_calls: object | None = None
+        tool_call_buckets: dict[int, dict[str, object]] = {}
         stream = cast(
             AsyncIterator[object],
             await self._acompletion(
@@ -437,7 +465,7 @@ class LiteLLMChatModel:
                 usage = _usage_from_litellm(_mapping_get(chunk, "usage"))
             chunk_calls = _message_field(delta, "tool_calls")
             if chunk_calls is not None:
-                raw_calls = chunk_calls
+                _accumulate_tool_call_deltas(tool_call_buckets, chunk_calls)
             delta_thinking = _message_field(delta, "reasoning_content")
             if isinstance(delta_thinking, str) and delta_thinking:
                 thinking_chars += len(delta_thinking)
@@ -454,7 +482,8 @@ class LiteLLMChatModel:
                 # tool_calls deltas are not dropped (same pattern as structured generate).
                 emit_thinking = False
         thinking.on_seconds(time.perf_counter() - started)
-        tool_calls = _parse_tool_calls(raw_calls)
+        merged_calls = [tool_call_buckets[key] for key in sorted(tool_call_buckets)]
+        tool_calls = _parse_tool_calls(merged_calls)
         content = "".join(content_parts) or None
         if tool_calls:
             return ToolTurnResult(content=content, tool_calls=tool_calls, usage=usage)

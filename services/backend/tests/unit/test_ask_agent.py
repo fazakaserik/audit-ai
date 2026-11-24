@@ -692,7 +692,7 @@ async def test_retry_follow_up_reuses_prior_standalone_question() -> None:
     assert result.answer.status == AnswerStatus.ANSWERED
 
 
-async def test_agent_markers_used_salvages_answer_without_inline_markers() -> None:
+async def test_agent_uncited_draft_with_evidence_is_rejected() -> None:
     engagement_id = EngagementId("northwind-fy2025")
     embedder = FakeEmbedder()
     vector_index = InMemoryVectorIndex()
@@ -710,14 +710,18 @@ async def test_agent_markers_used_salvages_answer_without_inline_markers() -> No
             answer_text="Quercus Audit Kft. audited the company.",
             markers_used=(1,),
         ),
+        # markers_used on structured responses is unused by check; drafts need inline [n].
     )
     result = await run_graph(
         engagement_id=engagement_id,
         question=Question(text="Who audited them?"),
         folder_scope=None,
         prior_turns=(),
-        deps=_deps(chat=chat, embedder=embedder, vector_index=vector_index),
+        deps=_deps(
+            chat=chat,
+            embedder=embedder,
+            vector_index=vector_index,
+            settings=_settings(agent_max_check_restarts=0),
+        ),
     )
-    assert result.answer.status == AnswerStatus.ANSWERED
-    assert "[1]" in result.answer.text
-    assert "Quercus" in result.answer.text
+    assert result.answer.status == AnswerStatus.INSUFFICIENT_EVIDENCE

@@ -27,19 +27,17 @@ def _ensure_markers(
     max_index: int,
     markers_used: Sequence[int],
 ) -> str:
-    """If the answer omitted [n] markers, attach ``markers_used`` or a default [1]."""
+    """If the answer omitted [n] markers, attach explicit ``markers_used`` only.
+
+    Does not invent ``[1]`` — uncited drafts with evidence must fail the check path.
+    """
     if _valid_markers_in_text(answer_text, max_index):
         return answer_text
     salvage = [m for m in markers_used if 1 <= m <= max_index]
-    # Preserve order, drop duplicates.
     unique: list[int] = []
     for marker in salvage:
         if marker not in unique:
             unique.append(marker)
-    # Grounded answers with evidence must keep a citation (FR-016a) — default to [1]
-    # when the model forgot both inline markers and markers_used.
-    if not unique and max_index >= 1:
-        unique = [1]
     if not unique:
         return answer_text
     suffix = " " + " ".join(f"[{m}]" for m in unique)
@@ -54,8 +52,8 @@ def filter_and_build_citations(
 ) -> tuple[str, tuple[Citation, ...]] | None:
     """Keep only markers that reference retrieved chunks, renumber, build citations.
 
-    When the model answers with evidence but forgets inline [n] markers, attach
-    ``markers_used`` (or ``[1]``) so a grounded answer is not discarded.
+    When the model forgets inline ``[n]`` markers but provides ``markers_used``,
+    those markers are attached. Completely uncited drafts return ``None``.
     """
     if not scored:
         return None

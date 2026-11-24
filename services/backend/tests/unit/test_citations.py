@@ -55,13 +55,9 @@ def test_empty_when_no_evidence() -> None:
     assert filter_and_build_citations("No markers here.", ()) is None
 
 
-def test_missing_markers_default_to_first_chunk() -> None:
+def test_missing_markers_without_markers_used_rejected() -> None:
     scored = (_scored("Only chunk."),)
-    result = filter_and_build_citations("Answer grounded in the only chunk.", scored)
-    assert result is not None
-    text, citations = result
-    assert "[1]" in text
-    assert len(citations) == 1
+    assert filter_and_build_citations("Answer grounded in the only chunk.", scored) is None
 
 
 def test_markers_used_salvages_missing_inline_markers() -> None:

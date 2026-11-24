@@ -185,6 +185,79 @@ async def test_tool_turn_keeps_reading_after_thinking_budget() -> None:
 
 
 @pytest.mark.asyncio
+async def test_tool_turn_merges_fragmented_tool_call_deltas() -> None:
+    chat = _chat()
+
+    async def stream_fragmented() -> Any:
+        yield SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        reasoning_content=None,
+                        content=None,
+                        tool_calls=[
+                            SimpleNamespace(
+                                index=0,
+                                id="call_frag",
+                                function=SimpleNamespace(
+                                    name="search_relevant_chunks", arguments=""
+                                ),
+                            )
+                        ],
+                    ),
+                    finish_reason=None,
+                )
+            ],
+            usage=None,
+        )
+        yield SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(
+                        reasoning_content=None,
+                        content=None,
+                        tool_calls=[
+                            SimpleNamespace(
+                                index=0,
+                                id=None,
+                                function=SimpleNamespace(
+                                    name=None,
+                                    arguments='{"query":"Q1 revenue"}',
+                                ),
+                            )
+                        ],
+                    ),
+                    finish_reason=None,
+                )
+            ],
+            usage=None,
+        )
+        yield SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    delta=SimpleNamespace(reasoning_content=None, content=None, tool_calls=None),
+                    finish_reason="tool_calls",
+                )
+            ],
+            usage=SimpleNamespace(prompt_tokens=2, completion_tokens=2, total_tokens=4),
+        )
+
+    mock = AsyncMock(side_effect=[stream_fragmented()])
+    with patch.object(chat, "_acompletion", new=mock):
+        result = await chat.complete_tool_turn(
+            [ChatMessage(role="user", content="Q1?")],
+            [_tool_spec()],
+            thinking=ThinkingCallbacks(on_delta=_collect_deltas, on_seconds=lambda _: None),
+        )
+
+    assert len(result.tool_calls) == 1
+    assert result.tool_calls[0].id == "call_frag"
+    assert result.tool_calls[0].name == "search_relevant_chunks"
+    assert "Q1 revenue" in result.tool_calls[0].arguments
+    assert mock.await_count == 1
+
+
+@pytest.mark.asyncio
 async def test_tool_turn_keeps_tool_calls_from_earlier_stream_chunk() -> None:
     chat = _chat()
 

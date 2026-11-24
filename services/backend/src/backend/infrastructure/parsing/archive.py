@@ -42,7 +42,20 @@ def _reject_symlink(info: zipfile.ZipInfo) -> None:
         raise UnsafeUploadError(f"archive entry is a symlink: {info.filename}")
 
 
-def list_zip_member_paths(data: bytes) -> tuple[str, ...]:
+def _file_infos(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
+    return [info for info in archive.infolist() if not info.is_dir()]
+
+
+def _enforce_max_files(infos: list[zipfile.ZipInfo], max_files: int | None) -> None:
+    if max_files is not None and len(infos) > max_files:
+        raise PayloadTooLargeError(f"upload exceeds max file count ({max_files})")
+
+
+def list_zip_member_paths(
+    data: bytes,
+    *,
+    max_files: int | None = None,
+) -> tuple[str, ...]:
     """List safe member paths without extracting file bytes."""
     try:
         archive = zipfile.ZipFile(io.BytesIO(data))
@@ -50,9 +63,9 @@ def list_zip_member_paths(data: bytes) -> tuple[str, ...]:
         raise ValidationError("archive is corrupted or not a zip file") from exc
     paths: list[str] = []
     with archive:
-        for info in archive.infolist():
-            if info.is_dir():
-                continue
+        infos = _file_infos(archive)
+        _enforce_max_files(infos, max_files)
+        for info in infos:
             _reject_symlink(info)
             paths.append(_safe_member_path(info.filename))
     return tuple(paths)
@@ -63,6 +76,7 @@ def extract_zip_files(
     *,
     max_file_bytes: int | None = None,
     max_total_bytes: int | None = None,
+    max_files: int | None = None,
 ) -> list[tuple[str, bytes]]:
     """Extract file members as ``(relative_path, bytes)`` pairs."""
     try:
@@ -72,9 +86,9 @@ def extract_zip_files(
     extracted: list[tuple[str, bytes]] = []
     total = 0
     with archive:
-        for info in archive.infolist():
-            if info.is_dir():
-                continue
+        infos = _file_infos(archive)
+        _enforce_max_files(infos, max_files)
+        for info in infos:
             _reject_symlink(info)
             relative = _safe_member_path(info.filename)
             declared = int(info.file_size)
@@ -109,8 +123,13 @@ class DefaultArchiveExtractor:
     def is_zip_upload(self, *, filename: str, data: bytes) -> bool:
         return is_zip_upload(filename=filename, data=data)
 
-    def list_zip_member_paths(self, data: bytes) -> tuple[str, ...]:
-        return list_zip_member_paths(data)
+    def list_zip_member_paths(
+        self,
+        data: bytes,
+        *,
+        max_files: int | None = None,
+    ) -> tuple[str, ...]:
+        return list_zip_member_paths(data, max_files=max_files)
 
     def extract_zip_files(
         self,
@@ -118,11 +137,13 @@ class DefaultArchiveExtractor:
         *,
         max_file_bytes: int | None = None,
         max_total_bytes: int | None = None,
+        max_files: int | None = None,
     ) -> list[tuple[str, bytes]]:
         return extract_zip_files(
             data,
             max_file_bytes=max_file_bytes,
             max_total_bytes=max_total_bytes,
+            max_files=max_files,
         )
 
 

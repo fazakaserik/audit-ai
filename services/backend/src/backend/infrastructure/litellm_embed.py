@@ -62,6 +62,7 @@ class LiteLLMEmbedder:
         self._api_key = api_key
         self._api_base = api_base
         self._timeout_seconds = timeout_seconds
+        self._dimensions_override = dimensions_override
         self._dimensions = dimensions_for(model, override=dimensions_override)
         self._semaphore = asyncio.Semaphore(max_concurrent_calls)
 
@@ -101,6 +102,8 @@ class LiteLLMEmbedder:
             kwargs["api_key"] = self._api_key
         if self._api_base:
             kwargs["api_base"] = self._api_base
+        if self._dimensions_override is not None:
+            kwargs["dimensions"] = self._dimensions_override
         response = await litellm.aembedding(**cast(Any, kwargs))
         data = getattr(response, "data", None)
         if not isinstance(data, list):
@@ -118,6 +121,10 @@ class LiteLLMEmbedder:
                 if not isinstance(value, (int, float)):
                     raise ModelUnavailableError("Embedding response has non-numeric values")
                 row.append(float(value))
+            if len(row) != self._dimensions:
+                raise ModelUnavailableError(
+                    f"Embedding length {len(row)} does not match expected {self._dimensions}"
+                )
             vectors.append(row)
         usage = _usage_from_litellm(getattr(response, "usage", None))
         return EmbedResult(vectors=vectors, usage=usage)
