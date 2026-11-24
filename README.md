@@ -11,6 +11,8 @@ Auditálás során segít megbízható, hivatkozott válaszokat adni az auditorn
 
 Az auditor megbízásonként fel tud tölteni dokumentumokat, majd kérdezni tud egy AI agenttől, ami a forrásokra hivatkozva megbízhatóan választ ad. Ha nem tud megbízható választ adni, akkor ezt jelzi az auditor felé és további forrásokat kér, meg is nevezi mire van szüksége.
 
+Angol specifikáció és setup: [specs/001-audit-assistant-rag/](specs/001-audit-assistant-rag/) · [quickstart](specs/001-audit-assistant-rag/quickstart.md).
+
 ## TL;DR
 
 Előfeltétel: Docker, [uv](https://docs.astral.sh/uv/), [just](https://github.com/casey/just), és **host Ollama** (vagy OpenAI kulcs).
@@ -47,7 +49,7 @@ OpenAPI: [http://localhost:8000/docs](http://localhost:8000/docs)
 | Fogalom          | Magyarázat                                                                                                                                                                                        |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Document         | Információt tartalmazó fájl, amit indexelni tud a rendszer. Jelenleg a `.md`, `.markdown`, `.txt`, `.pdf`, `.docx`, `.xlsx`, `.pptx`, `.html`, `.htm`, `.csv` fájlformátumokat tudja feldolgozni. |
-| Upload           | Egy `Document` feltöltődik és indexelése.                                                                                                                                                         |
+| Upload           | Egy `Document` feltöltése és indexelése.                                                                                                                                                          |
 | Upload Processor | Figyeli, hogy van-e feldolgozatlan `Upload`, és ha van, akkor lefoglalja és feldolgozza.                                                                                                          |
 | Session          | Egy chat kontextusa.                                                                                                                                                                              |
 | Engagement       | Auditálási megbízás. Kontextus szeparációt biztosít a `Document`-ek, `Upload`-ok és `Session`-ök között.                                                                                          |
@@ -295,8 +297,10 @@ A stack felhúzása után három felületen érhető el a rendszer. Mindhárom u
 
 Interaktív dokumentációk elérhetőek:
 
-![OpenAPI](https://img.shields.io/badge/OpenAPI-docs-85EA2D?style=for-the-badge&logo=openapiinitiative&logoColor=white)
-![ReDoc](https://img.shields.io/badge/ReDoc-docs-BF0A2B?style=for-the-badge)
+[![OpenAPI](https://img.shields.io/badge/OpenAPI-docs-85EA2D?style=for-the-badge&logo=openapiinitiative&logoColor=white)](http://localhost:8000/docs)
+[![ReDoc](https://img.shields.io/badge/ReDoc-docs-BF0A2B?style=for-the-badge)](http://localhost:8000/redoc)
+
+`/docs` és `/redoc` csak akkor garantált, ha `ENABLE_API_DOCS=true` (vagy `just compose-dev-up`).
 
 #### Életjelek
 ```bash
@@ -658,6 +662,13 @@ Zip: path escape és symlink elutasítva; fájlszám / méret / ingest represent
 Retrieval és toolok Engagement-scopedok; tool allowlist; `AGENT_MAX_TOOL_ROUNDS` / check restart korlát.
 
 A lokális compose-ban **nincs** application authentication — trusted network / loopback.
+
+### Lokális biztonság
+
+- A default Compose az API-t (és a dev Postgres/Ollama portokat) **csak loopbackre** (`127.0.0.1`) publikálja.
+- Másold az `.env.example`-t `.env`-re, és tarts explicit `POSTGRES_PASSWORD`-öt (a Compose nem esik vissza csendben).
+- A példa credentialök helyi demóra valók — nem loopbackes kitettség előtt cseréld őket.
+- Validáció: [specs/002-harden-local-security/quickstart.md](specs/002-harden-local-security/quickstart.md).
 
 ## Korlátok
 
