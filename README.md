@@ -1,127 +1,372 @@
-# AIditor
-
-Document-grounded Q&A for auditors. Upload engagement documents, ask questions, and get
-cited answers — or suggested client questions when evidence is missing.
-
-**Core deliverable:** a FastAPI + LangGraph RAG HTTP backend (citations, health, validation,
-OpenAI or free local Ollama). The CLI and TUI are optional clients over the same API; they are
-not required to evaluate the backend.
-
-See [specs/001-audit-assistant-rag/](specs/001-audit-assistant-rag/) for the full specification.
-
-### Local security posture
-
-Default Compose publishes the API (and dev Postgres/Ollama ports) on **loopback only** (`127.0.0.1`). Copy `.env.example` → `.env` and keep an explicit `POSTGRES_PASSWORD` (Compose does not fall back silently). Example credentials are for local demo on this machine — change them before any non-loopback exposure. Validation steps: [specs/002-harden-local-security/quickstart.md](specs/002-harden-local-security/quickstart.md).
-
-## Workspace
-
-| Path               | Package   | Role                                                                                          |
-| ------------------ | --------- | --------------------------------------------------------------------------------------------- |
-| `services/backend` | `backend` | Domain, application, infrastructure layers; HTTP API + upload processor; tests under `tests/` |
-| `cli`              | `cli`     | `aiditor` non-interactive CLI + shared HTTP client; tests in `cli/tests/`                     |
-| `tui`              | `tui`     | `aiditor-tui` fullscreen Textual client; tests in `tui/tests/`                                |
-
-### Docker Compose recipes
-
-| Recipe                                                                                   | Files                                    | Use when                                                                 |
-| ---------------------------------------------------------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------ |
-| `just compose-up` / `compose-down` / `compose-restart` / `compose-clean`                 | `deployment/docker-compose/compose.yaml` | Production-like local deploy                                             |
-| `just compose-dev-up` / `compose-dev-down` / `compose-dev-restart` / `compose-dev-clean` | `compose.yaml` + `compose.dev.yaml`      | Dev overrides (Postgres `:5432`, readable logs; `/docs` forced on `api`) |
-
-`compose-clean` / `compose-dev-clean` also remove volumes (indexed data is wiped).
-
-Compose services (same app image, different commands — except the load balancer):
-
-| Service            | Role                                                                           |
-| ------------------ | ------------------------------------------------------------------------------ |
-| `migrate`          | One-shot Alembic `upgrade head`, then exits                                    |
-| `api`              | HTTP + ask agent (migrations via `migrate` service); **2 replicas** by default |
-| `upload-processor` | Claims upload jobs and indexes documents; **2 replicas** by default            |
-| `load-balancer`    | Caddy reverse proxy; host `127.0.0.1:8000` → `api:8000`                        |
-| `postgres`         | Metadata, sessions, job queue, pgvector                                        |
-
-## Prerequisites
-
-- Docker
-- [uv](https://docs.astral.sh/uv/) and [just](https://github.com/casey/just)
-- Python 3.13 (for host `uv sync` / CLI / seed)
-- Either **host Ollama** (default) or an OpenAI API key
-
-## Local models (Ollama) — default
-
-On the host:
-
-```bash
-ollama pull qwen3.5:4b
-ollama pull nomic-embed-text
+```text
+  █████╗ ██╗██████╗ ██╗████████╗ ██████╗ ██████╗
+ ██╔══██╗██║██╔══██╗██║╚══██╔══╝██╔═══██╗██╔══██╗
+ ███████║██║██║  ██║██║   ██║   ██║   ██║██████╔╝
+ ██╔══██║██║██║  ██║██║   ██║   ██║   ██║██╔══██╗
+ ██║  ██║██║██████╔╝██║   ██║   ╚██████╔╝██║  ██║
+ ╚═╝  ╚═╝╚═════╝ ╚═╝   ╚═╝    ╚═════╝ ╚═╝  ╚═╝
 ```
 
-Defaults (`deployment/docker-compose/.env.example`):
+Auditálás során segít megbízható, hivatkozott válaszokat adni az auditornak.
 
-- `LLM_MODEL=ollama_chat/qwen3.5:4b`
-- `EMBEDDING_MODEL=ollama/nomic-embed-text`
-- `LLM_API_BASE=http://host.docker.internal:11434`
+Az auditor megbízásonként fel tud tölteni dokumentumokat, majd kérdezni tud egy AI agenttől, ami a forrásokra hivatkozva megbízhatóan választ ad. Ha nem tud megbízható választ adni, akkor ezt jelzi az auditor felé és további forrásokat kér, meg is nevezi mire van szüksége.
 
-Containers reach host Ollama via `host.docker.internal`.
+## TL;DR
 
-### Hardware and limits
-
-| Setup                        | What to expect                                                                                                                                                                                                      |
-| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **NVIDIA GPU (recommended)** | `qwen3.5:4b` + `nomic-embed-text`; roughly **6–8 GB VRAM** free for comfortable use. Answers in seconds to tens of seconds.                                                                                         |
-| **CPU-only**                 | Same models work; expect **minutes** per ask and high RAM use (plan on **16 GB+** system RAM). Prefer a smaller chat model if the machine struggles (e.g. `qwen2.5:3b`) and keep `nomic-embed-text` for embeddings. |
-| **Quality**                  | Local mode is slower and less consistent than cloud; still exercises the full RAG path with no paid API key.                                                                                                        |
-| **Timeouts**                 | Default `MODEL_TIMEOUT_SECONDS=120`. Raise it on CPU-only hosts if asks time out.                                                                                                                                   |
-| **Context**                  | Chat calls set `OLLAMA_NUM_CTX` (default **32768**). If asks return `413 context_too_large`, raise it; if Ollama OOMs, lower it.                                                                                    |
-
-Optional in-compose Ollama (GPU via NVIDIA Container Toolkit):  
-`docker compose -f deployment/docker-compose/compose.yaml --profile local up -d` — prefer host Ollama for day-to-day GPU use.
-
-## OpenAI mode
-
-In `deployment/docker-compose/.env`:
+Előfeltétel: Docker, [uv](https://docs.astral.sh/uv/), [just](https://github.com/casey/just), és **host Ollama** (vagy OpenAI kulcs).
 
 ```bash
+# 0) (Opcionális) Lokális modellek
+ollama pull qwen3.5:4b
+ollama pull nomic-embed-text
+
+# 1) Stack
+cp deployment/docker-compose/.env.example deployment/docker-compose/.env
+just compose-dev-up      # migrate → 2× api + 2× upload-processor + Caddy + Postgres
+just seed                # fiktív audit minták (northwind / fabrikam / adventureworks)
+
+# 2) Ellenőrzés + kérdés
+curl -s http://localhost:8000/health/live
+curl -s http://localhost:8000/health/ready
+curl -s -X POST http://localhost:8000/api/v1/engagements/northwind-fy2025/ask \
+  -H "Content-Type: application/json" \
+  -d "{\"question\": \"What are Contoso payment terms?\"}"
+
+# 3) UI
+just sync
+just tui
+
+# 4) Offline quality gate
+just check
+```
+
+OpenAPI: [http://localhost:8000/docs](http://localhost:8000/docs)
+
+## Szószedet
+
+| Fogalom          | Magyarázat                                                                                                                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Document         | Információt tartalmazó fájl, amit indexelni tud a rendszer. Jelenleg a `.md`, `.markdown`, `.txt`, `.pdf`, `.docx`, `.xlsx`, `.pptx`, `.html`, `.htm`, `.csv` fájlformátumokat tudja feldolgozni. |
+| Upload           | Egy `Document` feltöltődik és indexelése.                                                                                                                                                         |
+| Upload Processor | Figyeli, hogy van-e feldolgozatlan `Upload`, és ha van, akkor lefoglalja és feldolgozza.                                                                                                          |
+| Session          | Egy chat kontextusa.                                                                                                                                                                              |
+| Engagement       | Auditálási megbízás. Kontextus szeparációt biztosít a `Document`-ek, `Upload`-ok és `Session`-ök között.                                                                                          |
+| Research Agent   | LangGraph állapotgép toolokkal: Engagement dokumentumokból hivatkozott választ ad, vagy hiányzó forrásokat jelez.                                                                                 |
+
+## Hogyan működik?
+
+### Termék
+
+1. Az auditor létrehozza a megbízást.
+
+   ![Megbízás létrehozása](docs/images/screenshots/create-engagement.png)
+
+2. Az auditor feltölti a megbízáshoz tartozó dokumentumokat. A rendszer a háttérben feldolgozza őket, és kereshető formában elmenti a megbízás tudásbázisába.
+
+   ![Dokumentum feltöltése](docs/images/screenshots/upload-document.png)
+
+3. Az auditor kérdez a megbízásról. A Research Agent a tudásbázisban keres, majd vagy forrásokra hivatkozva válaszol, vagy jelzi, milyen további dokumentumokra van szükség.
+
+   ![Kérdés a megbízásról](docs/images/screenshots/ask-1.png)
+
+### Technikailag
+
+```mermaid
+flowchart TB
+  user([Auditor])
+
+  subgraph rendszer [AIditor]
+    api[API]
+    processor[Upload Processor]
+    agent[Research Agent]
+    docs[(Dokumentumok)]
+    kb[(Vektor Adatbázis)]
+  end
+
+  user -->|feltöltés / kérdés| api
+  api -->|nyers fájlok| docs
+  api -->|kérdés| agent
+  processor -->|feldolgozza| docs
+  processor -->|indexeli| kb
+  agent -->|keres| kb
+  agent -->|hivatkozott válasz<br/>vagy hiányzó források| user
+```
+
+## Dependenciák
+
+- [uv](https://docs.astral.sh/uv/)
+- [just](https://github.com/casey/just)
+- Python 3.13
+- Docker (Compose stack)
+- LLM: host [Ollama](https://ollama.com/) **vagy** OpenAI-kompatibilis API kulcs
+
+### Hardver (lokális Ollama)
+
+| Üzemmód                                             | Ajánlás                                                                                  |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| Alapértelmezett (`qwen3.5:4b` + `nomic-embed-text`) | ~**8 GB** szabad RAM; GPU ajánlott, CPU megy, de lassú                                   |
+| Kis gép (fallback chat)                             | `ollama_chat/qwen2.5:1.5b` + ugyanaz az embedding; tool-calling / válaszminőség gyengébb |
+| Embed only                                          | `nomic-embed-text` ~274 MB; önmagában kevés RAM                                          |
+
+A modellek első letöltéséhez internet kell. A lokális mód lehet lassabb és gyengébb minőségű, mint a felhős; a teljes RAG-folyamat (embedding + retrieval + válasz) API-kulcs nélkül is működik.
+
+## Deployment
+
+### Docker Compose
+
+Jelenleg lokális Docker Compose deployment scriptek találhatóak a kódbázisban a [deployment/docker-compose](./deployment/docker-compose) mappában.
+
+A használathoz, azonban segítenek a Just recipe-k:
+
+| Parancs                | Magyarázat                              |
+| ---------------------- | --------------------------------------- |
+| `just compose-up`      | Build, majd stack felépítés.            |
+| `just compose-down`    | Leállítás.                              |
+| `just compose-clean`   | Leállítás, Docker volume-ok törlésével. |
+| `just compose-restart` | Leállítás, majd felépítés.              |
+
+> Elérhetőek fejlesztői deploymentek is, ezek pár környezeti változót másképp állítanak be, és pár portot publikussá tesznek, pl.: adatbázishoz való csatlakozáshoz. Ezekhez a `compose-` helyett `compose-dev-`-et kell írni.
+
+A konfiguráció a [deployment/docker-compose/.env](./deployment/docker-compose/.env) fájlal lehetséges, amelyhez sablont ad a [deployment/docker-compose/.env.example](./deployment/docker-compose/.env.example). A paraméterek leírása a sablonban szerepel.
+
+```mermaid
+flowchart TB
+  host(["localhost:8000"])
+
+  subgraph stack [Docker Compose]
+    lb[load-balancer<br/>Caddy]
+
+    subgraph apis ["api ×N"]
+      api1[api]
+      api2[api]
+    end
+
+    subgraph workers ["upload-processor ×N"]
+      w1[upload-processor]
+      w2[upload-processor]
+    end
+
+    migrate([migrate<br/>egyszer fut])
+    pg[(postgres<br/>+ pgvector)]
+    docs[("document_storage<br/>volume")]
+  end
+
+  host --> lb
+  lb --> api1
+  lb --> api2
+
+  migrate -.->|előbb| api1
+  migrate -.->|előbb| w1
+  migrate --> pg
+
+  api1 <--> pg
+  api2 <--> pg
+  api1 <--> docs
+  api2 <--> docs
+
+  w1 <--> pg
+  w2 <--> pg
+  w1 <--> docs
+  w2 <--> docs
+```
+
+Az LLM jöhet felhő (pl.: OpenAI) vagy lokális (pl.: Ollama) szolgáltatásból is. Ezt a [deployment/docker-compose/.env](./deployment/docker-compose/.env) fájlban tudjuk konfigurálni.
+
+OpenAI-val példa konfiguráció:
+
+```text
 LLM_MODEL=openai/gpt-6-luna
 LLM_API_KEY=sk-...
 LLM_API_BASE=
 EMBEDDING_MODEL=openai/text-embedding-3-small
+EMBEDDING_API_KEY=sk-...
+EMBEDDING_API_BASE=
 ```
 
-## Run (HTTP-first)
+Ollama-val példa konfiguráció:
+
+```text
+LLM_MODEL=ollama_chat/qwen3.5:4b
+LLM_API_KEY=
+LLM_API_BASE=http://host.docker.internal:11434
+EMBEDDING_MODEL=ollama/nomic-embed-text
+EMBEDDING_API_KEY=
+EMBEDDING_API_BASE=
+```
+
+### Cloud
+
+Ez jelenleg **csak célterv**, nincs implementálva; a futtatható deployment a Docker Compose. Azure-ben az application logika maradna, a változás főleg új `backend.infrastructure` adapterek és konfiguráció.
+
+A lényegi mapping:
+
+| Lokálisan                               | Azure-ben                                                         | Mi változik                  |
+| --------------------------------------- | ----------------------------------------------------------------- | ---------------------------- |
+| `api` + Caddy                           | Container Apps (autoscaled, stateless)                            | gyakorlatilag semmi a kódban |
+| `upload-processor` + Postgres job tábla | **Azure Service Bus** + Container Apps Jobs (KEDA, scale-to-zero) | új `JobQueue` adapter        |
+| `document_storage` volume               | Azure Blob Storage                                                | új `DocumentStorage` adapter |
+| Postgres + pgvector                     | Azure Database for PostgreSQL + **Azure AI Search**               | új `VectorIndex` adapter     |
+| OpenAI / Ollama                         | Azure OpenAI (vagy LiteLLM-kompatibilis provider)                 | config / adapter             |
+| `.env`                                  | Key Vault + managed identity                                      | config                       |
+| stdout logok                            | Application Insights (OpenTelemetry)                              | exporter                     |
+
+A jobok ma Postgres `UploadItem` sorok (`FOR UPDATE SKIP LOCKED`). Cloudban ezek **Azure Service Bus** üzenetek lennének: az API enqueue-ol, a worker a queue hosszára skálázódik, nem kell állandóan futó processor VM feltöltésenként.
+
+```mermaid
+flowchart TB
+  client([HTTP kliens])
+
+  subgraph edge [Edge]
+    apim[API Management / Front Door]
+  end
+
+  subgraph compute [Compute]
+    api["Container Apps<br/>API ×N"]
+    worker["Container Apps Jobs<br/>upload-processor ×N<br/>KEDA / scale-to-zero"]
+  end
+
+  subgraph messaging [Messaging]
+    bus[Azure Service Bus]
+  end
+
+  subgraph data [Data]
+    pg[(Azure Database for PostgreSQL)]
+    search[Azure AI Search]
+    blob[(Azure Blob Storage)]
+  end
+
+  subgraph ai [AI]
+    aoai[Azure OpenAI]
+  end
+
+  subgraph security [Security / Ops]
+    kv[Key Vault]
+    aiops[Application Insights]
+  end
+
+  client --> apim --> api
+  api --> bus --> worker
+
+  api <--> pg
+  api <--> search
+  api <--> blob
+  api <--> aoai
+
+  worker <--> pg
+  worker <--> search
+  worker <--> blob
+  worker <--> aoai
+
+  api -.-> kv
+  worker -.-> kv
+  api -.-> aiops
+  worker -.-> aiops
+```
+
+## Minta Adatok
+
+A stack futása után a `just seed` feltölti az AI-generált, fiktív audit mintákat a [docs/samples/ai-generated/](docs/samples/ai-generated/) alól. Három Engagement jön létre (`northwind-fy2025`, `fabrikam-sox-fy2025`, `adventureworks-itgc-fy2025`); az indexelés a háttérben fut.
 
 ```bash
-cp deployment/docker-compose/.env.example deployment/docker-compose/.env
-just sync         # uv sync --all-packages (backend + cli + tui)
-just compose-up   # migrate → 2× api + 2× upload-processor + load-balancer + postgres
-just seed         # creates sample engagements and indexes AI-generated docs
+just seed
 ```
 
-For day-to-day coding against published DB ports and readable logs, use `just compose-dev-up` instead.
+Példakérdések Engagementenként: az adott mappa `README.md`-je (pl. [northwind-fy2025](docs/samples/ai-generated/northwind-fy2025/README.md)).
 
-API base URL: `http://localhost:8000` (via `load-balancer`)  
-Interactive docs (enabled by default): [http://localhost:8000/docs](http://localhost:8000/docs)
+### Valódi audit report (4iG)
 
-### Health
+A [docs/samples/real/4ig/](docs/samples/real/4ig/) alatt van egy nyilvános 4iG audit report PDF. Ezt a `just seed` **nem** tölti be.
 
+```bash
+aiditor engagements create --id 4ig-vmt-20240630 --name "4iG VMT 2024"
+aiditor upload docs/samples/real/4ig/AGENDA_2_KVJ_4iG_VMT_20240630_signed_EN.pdf \
+  --engagement 4ig-vmt-20240630 \
+  --folder reports \
+  --wait
+```
+
+Forrás / licenc: [docs/samples/real/4ig/LICENSE.md](docs/samples/real/4ig/LICENSE.md).
+
+## Interfészek
+
+A stack felhúzása után három felületen érhető el a rendszer. Mindhárom ugyanazt a REST API-t használja.
+
+### REST API
+
+Interaktív dokumentációk elérhetőek:
+
+![OpenAPI](https://img.shields.io/badge/OpenAPI-docs-85EA2D?style=for-the-badge&logo=openapiinitiative&logoColor=white)
+![ReDoc](https://img.shields.io/badge/ReDoc-docs-BF0A2B?style=for-the-badge)
+
+#### Életjelek
 ```bash
 curl -s http://localhost:8000/health/live
+# {"status":"ok"}
+
 curl -s http://localhost:8000/health/ready
+# {"status":"ready","checks":{"postgres":{"ok":true},"embeddings":{"ok":true}}}
 ```
 
-Live returns `{"status":"ok"}`. Ready includes `postgres` and `embeddings` checks.
-
-### Ask (after `just seed`)
-
+#### RAG kérdezés
 ```bash
 curl -s -X POST http://localhost:8000/api/v1/engagements/northwind-fy2025/ask \
   -H "Content-Type: application/json" \
   -d "{\"question\": \"What are Contoso payment terms?\"}"
 ```
 
-Expect `kind: "answered"` with numbered `citations` (e.g. `contracts/contoso-msa.md`).
+Válasz:
+```json
+{
+  "status": "answered",
+  "answer": "Contoso’s terms are **Net-30**: payment is due within 30 days of the invoice date, by ACH or wire to the account specified on the invoice. [1]",
+  "citations": [
+    {
+      "marker": 1,
+      "chunk_id": "0f8a0aa9-959d-497e-9d2d-c01e094c14df",
+      "document_id": "b7f380b8-0ae9-40c8-a99d-4554b3b8e3d4",
+      "document_path": "contracts/contoso-msa.md",
+      "page": null,
+      "heading_path": [
+        "Master Services Agreement",
+        "3. Payment terms",
+        "3.2 Payment due date"
+      ],
+      "snippet": "Payment is due within **30 days** of the invoice date (\"**Net-30**\"). Customer shall pay by ACH or wire to the account designated on the invoice.",
+      "score": 0.6043246298579887
+    }
+  ],
+  "session_id": "ac116a83-22f7-4502-a048-388f41e2a135",
+  "turn_id": "badb693c-2bb1-4edd-a1fc-111c101ed8f1",
+  "request_id": "4ddac7fe-6317-4cdd-8383-fc3ab0c99894",
+  "usage": {
+    "prompt_tokens": 5801,
+    "completion_tokens": 71,
+    "total_tokens": 5872
+  },
+  "session_total_tokens": 5872
+}
+```
 
-Insufficient-evidence example:
+#### Hibás / üres bemenet → 422
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/engagements/northwind-fy2025/ask \
+  -H "Content-Type: application/json" \
+  -d "{\"question\": \"   \"}"
+```
+
+```json
+{
+  "type": "https://audit-ai.local/problems/validation_error",
+  "title": "Validation Error",
+  "status": 422,
+  "detail": "Request validation failed",
+  "code": "validation_error",
+  "request_id": "…"
+}
+```
+
+#### Nincs releváns találat → `insufficient_evidence`
 
 ```bash
 curl -s -X POST http://localhost:8000/api/v1/engagements/northwind-fy2025/ask \
@@ -129,135 +374,321 @@ curl -s -X POST http://localhost:8000/api/v1/engagements/northwind-fy2025/ask \
   -d "{\"question\": \"What is the SOC 2 Type II opinion date for Contoso?\"}"
 ```
 
-Sample engagements and prompts: [docs/samples/ai-generated/README.md](docs/samples/ai-generated/README.md).  
-End-to-end scenarios: [specs/001-audit-assistant-rag/quickstart.md](specs/001-audit-assistant-rag/quickstart.md).
-
-### Optional clients
-
-```bash
-aiditor-tui                # fullscreen interactive UI
-aiditor engagements list   # non-interactive CLI
+```json
+{
+  "status": "insufficient_evidence",
+  "reason": "no_relevant_chunks",
+  "suggested_client_questions": [
+    {
+      "question": "…",
+      "rationale": "…"
+    }
+  ],
+  "session_id": "…",
+  "turn_id": "…",
+  "request_id": "…"
+}
 ```
 
-To author a new DB migration after changing SQLAlchemy models: `just migration "describe change"`.  
-Compose applies pending revisions via the `migrate` service on the next `compose-up`.
+#### Modell timeout / elérhetetlenség
 
-## Quality assurance
+A provider időtúllépése **504** `model_timeout`, az elérhetetlenség **502** `model_unavailable` (RFC7807 Problem Details, `request_id`-vel). A timeout a `MODEL_TIMEOUT_SECONDS` env-ből jön (alap: 120 s).
+
+### CLI
+
+Nem interaktív CLI, automatizációkhoz és AI-nak:
 
 ```bash
-just check   # ruff + basedpyright + import-linter + offline pytest (no paid APIs)
+aiditor engagements list
+aiditor --help
 ```
 
-Optional layers: `just test-db` (Postgres + pgvector via testcontainers); `just test-integration` with `RUN_INTEGRATION=1` (live Ollama/OpenAI).
+### TUI
 
-What is enforced:
+Teljes képernyős, interaktív terminál UI az Engagement-ekhez, feltöltéshez és kérdezéshez:
 
-- **Local quality gate** — `just check` runs lint, format check, typecheck, import-linter, and offline unit tests before merge-worthy work leaves the laptop.
-- **CI on every PR** — `.github/workflows/check.yml` path-filters `backend` / `cli` / `tui` and runs the matching `just check-*` job; an aggregate `check` job is the required status. Release builds on `main` re-run the full `just check` before tagging/publishing (`.github/workflows/release.yml`).
-- **Lint and format** — Ruff for style, imports, and common bug classes; format is checked in CI (`ruff format --check`).
-- **Static types** — basedpyright on application sources; domain models are frozen/strict pydantic with typed ids and exhaustive union handling (see `.specify/memory/constitution.md`).
-- **Layering contracts** — `importlinter.ini` blocks illegal imports (domain independence, application vs infrastructure, CLI/TUI HTTP-only boundaries).
-- **Tests by default offline** — pytest markers: `unit` (default, no paid APIs), `db` (testcontainers Postgres), `integration` (opt-in live models). Default `just test` / CI exclude `db` and `integration`.
-- **Spec-driven delivery** — feature work is specified under `specs/` (spec, plan, tasks, contracts) and governed by the project constitution so behaviour and architecture stay reviewable.
+```bash
+aiditor-tui
+```
 
-## Architecture
+![Engagement lista](docs/images/screenshots/engagement-list.png)
+
+## Architektúra
+
+### Tervezési döntések
+
+- Single-user lokális scope → autentikáció szándékosan nincs.
+- Egy image, két processz: `api` + `upload-processor` (később szétválasztható).
+- Feltöltés aszinkron (`202` + háttérworker), hogy az HTTP ne várjon a parse/embedre.
+- Lokálisan egy datastore: Postgres + pgvector (meta, chunk, embedding, session, job). Cloud cél: keresés leválasztása (Azure AI Search).
+- Hybrid retrieval (vektor + full-text, RRF).
+- Külső LLM/embedding a `ChatModel` / `Embedder` portokon + LiteLLM; provider váltás config.
+
+### Rétegek
+
+Az API, az alkalmazáslogika, a RAG/agent, a modell-/tárolóintegrációk és a konfiguráció szétválasztva. Az `importlinter` őrzi a határokat.
+
+```mermaid
+flowchart LR
+  api[application.api] --> services[application.services]
+  services --> agents[application.agents<br/>LangGraph]
+  services --> rag[application.rag]
+  agents --> ports[ports / protocols]
+  rag --> ports
+  ports --> infra[infrastructure<br/>LiteLLM, Postgres, storage]
+  api --> config[config.py]
+  infra --> config
+```
 
 ```text
-upload / seed  →  job queue + upload-processor  →  parse → chunk → embed → pgvector
-                                              ↓
-ask HTTP (via load-balancer)  →  LangGraph  →  cited answer
+services/backend/src/backend/
+├── application/
+│   ├── api/           # HTTP, Problem Details, health
+│   ├── agents/        # Research Agent (LangGraph)
+│   ├── rag/           # ingest worker, indexelés
+│   ├── services/      # use-case-ek (ask, documents, …)
+│   ├── repositories/  # portok
+│   └── storage/       # VectorIndex, JobQueue, DocumentStorage portok
+├── domain/            # entitások, hibák (nincs kifelé függés)
+├── infrastructure/    # Postgres, LiteLLM/Ollama, parserek
+├── config.py
+└── bootstrap.py       # DI / wiring
 ```
 
-- **`backend.domain`** — frozen pydantic feature models
-- **`backend.application`** — Protocols (`llm`, `parsing`, `repositories`, `storage`), services, RAG, HTTP API (controllers), upload-processor entrypoints
-- **`backend.infrastructure`** — Postgres/pgvector, LiteLLM chat/embed adapters, local FS, parsing
-- **`cli` / `tui`** — HTTP clients only (same contracts as `/docs`)
+### Monorepo
 
-Chat and embeddings are configured with LiteLLM model ids (`LLM_MODEL` / `EMBEDDING_MODEL`) plus optional API key and base URL; application logic does not change.
+Monorepót választottam, mivel agentic fejlesztéshez kifejezetten jól működik, gyors dev cyclet és közös toolingot biztosít.
 
-### Research agent
+```text
+audit-ai/
+├── services/backend/     # HTTP API + upload-processor
+├── cli/
+├── tui/
+├── deployment/
+│   ├── docker-compose/
+│   └── cloud/            # Azure célterv
+├── specs/                # Speckit
+├── docs/
+├── scripts/              # pl. seed
+├── justfile
+└── .github/workflows/
+```
 
-When you ask a question, the agent researches the engagement documents, then either
-returns a cited answer or explains what is missing and suggests follow-ups for the client.
+### Rendszerdiagram
+
+```mermaid
+flowchart TB
+  subgraph clients [Kliensek]
+    curl["curl / HTTP"]
+    cli[CLI]
+    tui[TUI]
+  end
+
+  lb[load-balancer]
+
+  subgraph backend [backend]
+    api[REST API]
+    processor[upload-processor]
+    agent[Research Agent]
+    litellm[LiteLLM]
+  end
+
+  subgraph fs ["Blob Storage"]
+    docs[("Nyers Fájlok")]
+  end
+
+  subgraph pgblock ["Postgres + pgvector"]
+    jobs[("Upload Jobok")]
+    pg[("Metadata, Chunkok, Sessionök")]
+  end
+
+  ollama[Ollama]
+  openai[OpenAI]
+
+  curl --> lb
+  cli --> lb
+  tui --> lb
+  lb <--> api
+
+  api <--> docs
+  api <--> jobs
+  api <--> agent
+
+  processor <--> jobs
+  processor <--> docs
+  processor <--> pg
+  processor <--> litellm
+
+  agent <--> pg
+  agent <--> litellm
+
+  litellm <--> ollama
+  litellm <--> openai
+```
+
+### Dokumentumfeldolgozás
+
+A dokumentum feltöltés egy aszinkron folyamat. Az API `202`-t ad vissza, és a feldolgozás a háttérben fut. Persze le lehet az állapotát kérdezni.
+
+```mermaid
+flowchart TB
+  upload([Dokumentum feltöltése])
+
+  subgraph receive [1. Fogadás]
+    store[Nyers fájl mentése<br/>Blob Storage]
+    enqueue[Job a Postgresbe]
+    accept["API: 202 Accepted"]
+  end
+
+  subgraph process [2. Feldolgozás]
+    claim[Upload Processor lefoglalja]
+    parse[Parse]
+    chunk[Chunk]
+    embed[Embed]
+  end
+
+  subgraph publish [3. Indexelés]
+    index[Indexelés pgvectorbe]
+    done([Kereshető a megbízásban])
+  end
+
+  upload --> store
+  store --> enqueue
+  enqueue --> accept
+  accept --> claim
+  claim --> parse
+  parse --> chunk
+  chunk --> embed
+  embed --> index
+  index --> done
+```
+
+### Research Agent
+
+Az agent az Engagement dokumentumait kutatja, majd vagy hivatkozott választ ad, vagy elmagyarázza, mi hiányzik.
 
 ```mermaid
 flowchart TD
-  Q([Question]) --> think
-
-  think{Decide what to look up}
-  think -->|needs documents| lookup[Search, list, or read documents]
-  think -->|enough context already| check
-
-  lookup --> think
-
-  check{Did we find useful evidence?}
-  check -->|no| missing([Insufficient evidence<br/>suggest questions for the client])
-  check -->|yes| draft
-
-  draft{Can we answer from the evidence?}
-  draft -->|no| missing
-  draft -->|yes| cite[Attach citations from the source documents]
-
-  cite --> done([Cited answer])
+  start([START]) --> think[Gondolkodás]
+  think -->|eszköz kell| tools[Eszközök futtatása]
+  think -->|van választervezet| check[Bizonyíték ellenőrzése]
+  tools --> think
+  check -->|újrapróbál| think
+  check --> valasz[Válasz]
+  valasz --> finish([END])
 ```
 
-## Concurrency and scaling
+Implementáció: `services/backend/src/backend/application/agents/research_agent/graph.py`.
 
-### What this app does today
+### Skálázódás
 
-- **Isolation:** Engagement-scoped data and chat sessions live in Postgres. Ask handlers do not keep mutable per-user state in process memory. Logs carry `request_id` for correlation.
-- **Roles:** `api` serves HTTP; `upload-processor` claims ingest jobs with `SELECT … FOR UPDATE SKIP LOCKED`; `migrate` runs once before either starts; `load-balancer` fronts `api`.
-- **Shared data:** Postgres (metadata, chunks, jobs) and the `document_storage` volume (raw uploads). Every `api` / `upload-processor` replica must see the same files.
-- **Model concurrency:** `MAX_CONCURRENT_MODEL_CALLS` is a **per-process** semaphore (each replica has its own cap).
-- **Ask path:** FastAPI async; ingest is off the request path (upload returns `202`, processors index in the background).
+#### Megvalósítva most
 
-`just compose-up` / `just compose-dev-up` start **2 `api` and 2 `upload-processor` replicas**, then restart `load-balancer` so Caddy refreshes Docker DNS upstreams. No sticky sessions are required (session state is in Postgres). Long ask / SSE timeouts are set on the proxy.
-
-To change replica counts:
+| Téma                   | Megoldás                                                                                                                          |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Kérések elkülönítése   | Nincs mutable per-user state a memóriában; Session / job / meta Postgresben; Engagement-scoped retrieval; `request_id` a logokban |
+| Párhuzamos végrehajtás | FastAPI async Ask; upload nem blokkolja a HTTP-t (`202` + worker); több `upload-processor` `FOR UPDATE SKIP LOCKED`-dal           |
+| Erőforráskorlátok      | `MAX_CONCURRENT_MODEL_CALLS` per process; `MODEL_TIMEOUT_SECONDS`; Problem Details timeout/unavailable esetén                     |
+| Több példány           | Állapotmentes `api` / worker; Caddy LB; `just compose-up` alapból 2× api + 2× worker; sticky session nem kell                     |
+| Szűk keresztmetszet    | Gyakorlatban először az LLM/embedding, aztán Postgres/pgvector, csak utána érdemes tovább scale-elni                              |
 
 ```bash
-docker compose -f deployment/docker-compose/compose.yaml up -d --scale api=3 --scale upload-processor=2
+docker compose -f deployment/docker-compose/compose.yaml up -d --scale upload-processor=4
+docker compose -f deployment/docker-compose/compose.yaml up -d --scale api=3
 docker compose -f deployment/docker-compose/compose.yaml restart load-balancer
 ```
 
-### Bottlenecks (in order)
+#### Következő lépés (nincs a demo scope-ban)
 
-1. **LLM / embeddings** (local Ollama GPU/CPU, or OpenAI rate limits and latency)
-2. **Postgres + pgvector** under heavy hybrid search and job claiming
-3. Only then more `api` replicas (more concurrent asks) or `upload-processor` replicas (deeper ingest queue)
+- Job queue → Azure Service Bus + KEDA scale-to-zero
+- Vektoros keresés → Azure AI Search (tranzakciós DB leválasztása)
+- Rate limit / WAF az edge-en; auth (Entra ID)
+- Metrikák: model latency, token usage, `insufficient_evidence` arány, queue depth — Application Insights
 
-### Local vs cloud next step
+Részletek: [deployment/cloud/README.md](deployment/cloud/README.md).
 
-| Concern | Local compose (built)                                | Cloud target                                                                                                                                     |
-| ------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| HTTP    | `api` behind `load-balancer`                         | Autoscaled Container Apps replicas                                                                                                               |
-| Ingest  | Long-lived `upload-processor` (scale with `--scale`) | Same claim/process code; **queue-depth autoscaling** (KEDA / Container Apps Jobs / Service Bus), including scale-to-zero — not one VM per upload |
-| Schema  | One-shot `migrate`                                   | Same idea (job/init), not on every replica start                                                                                                 |
-| Files   | Shared Docker volume                                 | Blob storage adapter                                                                                                                             |
-| Search  | pgvector in Postgres                                 | Often Azure AI Search (independent scale)                                                                                                        |
+## Minőségbiztosítás
 
-Details: [deployment/cloud/README.md](deployment/cloud/README.md).
+### Lokális quality gate
 
-## Cybersecurity
+```bash
+just check
+# opcionális: just test-db
+# opcionális: RUN_INTEGRATION=1 just test-integration
+```
 
-Supply-chain and application controls in place today:
+`just check` = lint + typecheck + import-linter + **offline** unit tesztek (mockolt modell / retrieval; nincs fizetős API).
 
-- **Patch-only dependency ranges** — every direct dependency in the workspace `pyproject.toml` files is capped at the next minor (`>=X.Y,<X.(Y+1)`). Patch releases can land; minor/major upgrades require an intentional pin bump.
-- **Minimum package release age** — root `[tool.uv] exclude-newer = "7 days"` applies a dependency cooldown so freshly published (and potentially compromised) uploads cannot enter `uv.lock` until they have aged. Requires uv `>=0.9.17`.
-- **Locked, reproducible installs** — a single committed `uv.lock` pins the full transitive tree for CI and local sync.
-- **Security audit skill** — Cloudflare’s [security-audit-skill](https://github.com/cloudflare/security-audit-skill) is vendored under `.agents/skills/security-audit/` and pinned by commit hash in `skills-lock.json` for agent-led vulnerability reviews.
-- **Engagement isolation** — retrieval, document reads, and agent tools are scoped to one engagement id; path types reject `..` and absolute paths.
-- **Safe uploads** — zip extraction blocks path escape and symlinks; upload byte/file count caps limit resource exhaustion.
-- **Agent bounds** — tool allowlist with engagement-locked context, max tool rounds / check restarts, and prompt/evidence character caps.
-- **Secrets handling** — API keys use `SecretStr`; `.env` is gitignored (only `.env.example` is committed).
+### Tesztrétegek
 
-Local compose still has no application authentication by design for this phase; treat published ports as trusted-network only. See Limitations below.
+| Marker        | Mikor               | Példa                                                                            |
+| ------------- | ------------------- | -------------------------------------------------------------------------------- |
+| `unit` (alap) | CI / `just check`   | üres kérdés → 422; üres találat → insufficient; model timeout → 504; sikeres ask |
+| `db`          | `just test-db`      | Postgres + pgvector testcontainers (`SKIP LOCKED`, hybrid search)                |
+| `integration` | `RUN_INTEGRATION=1` | élő Ollama / OpenAI smoke                                                        |
 
-## Limitations / next steps
+### CI
 
-- No authentication or user management
-- Ask flow is a LangGraph `StateGraph` (tool loop → grade → generate → finalize); a minimal retrieve→generate graph would also satisfy the brief
-- Sessions keep the last `SESSION_CONTEXT_TURNS` (default 5) turns verbatim and summarize older turns before Ask; generate prompts also cap evidence via `AGENT_EVIDENCE_MAX_CHARS`. If the provider still rejects the prompt as too large, the API returns `413 context_too_large` (start a new session or shorten the question).
-- Chunk sizes not corpus-tuned; OCR out of scope
-- Local compose does not autoscale ingest; cloud would scale processors from queue depth
-- Cloud mapping: [deployment/cloud/README.md](deployment/cloud/README.md)
+A `.github/workflows/check.yml` path-filtereli a `backend` / `cli` / `tui` változásokat. A `main` release újrafuttatja a teljes `just check`-et.
+
+### Import határok
+
+Az `importlinter.ini` blokkolja az illegális importokat (domain függetlenség, application ≠ infrastructure, CLI/TUI csak HTTP).
+
+## Naplózás
+
+Structlog a stdout-ra (`LOG_LEVEL`, `LOG_JSON` az `.env.example`-ben). Minden HTTP válaszhoz tartozik `request_id`; a worker logok `upload_id` / job id alapján korrelálhatók. Dokumentumtartalom és API kulcsok nem mennek a logba.
+
+## Kiberbiztonság
+
+### Supply chain
+
+Közvetlen függőségek minorra pinelve; 7 napos `exclude-newer` cooldown; commitolt `uv.lock`. A security-audit skill commit hash-re pinelve.
+
+### Secret kezelés
+
+API kulcsok `SecretStr`; `.env` gitignore-olt (csak `.env.example` a repóban).
+
+### Biztonságos feltöltések
+
+Zip: path escape és symlink elutasítva; fájlszám / méret / ingest representation limitek.
+
+### Agent határok
+
+Retrieval és toolok Engagement-scopedok; tool allowlist; `AGENT_MAX_TOOL_ROUNDS` / check restart korlát.
+
+A lokális compose-ban **nincs** application authentication — trusted network / loopback.
+
+## Korlátok
+
+- Nincs user / auth / role: aki eléri az API-t, bármelyik Engagementen dolgozhat.
+- Nincs OCR: scanned PDF → `not_searchable` / skipped.
+- Lokális modell lassabb / gyengébb lehet; a kisebb fallback tovább rontja a tool-callingot.
+- A mai tesztek a graph, retrieval és hibautak helyességét mérik, nem labelles válaszminőséget élő modellel.
+
+## Következő lépések
+
+### User management és authentikáció
+
+Auditor team + ügyfélkapcsolatok; Engagement ACL; cloud cél: Entra ID. Az `insufficient_evidence` javaslatok így konkrét kapcsolattartóra címezhetők.
+
+### OCR és több fájltípus
+
+Scanned PDF / kép OCR; jobb representation limitek nagy táblázatokra.
+
+### Infrastructure as code
+
+A cloud mapping ismételhető provisioningja (Bicep / Terraform) — lásd [deployment/cloud/README.md](deployment/cloud/README.md).
+
+### Adatbázis / keresés szétválasztása
+
+1. Keresés leválasztása (`VectorIndex` → Azure AI Search).
+2. Read replica a nehéz olvasásokhoz.
+3. Connection pooling.
+4. Engagement szerinti particionálás, ha kell.
+
+Az application Protocolok miatt ez adapter-váltás, nem Ask / ingest újraírás.
+
+### Agent válaszminőség automata tesztek
+
+Labelles kérdéshalmaz (answered / insufficient_evidence, elvárt citation path-ek) CI-ben: grounding regresszió, hallucination detektálás.
