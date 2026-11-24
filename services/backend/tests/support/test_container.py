@@ -70,7 +70,10 @@ def build_fakes_bound(
     archive_extractor = archives or build_archive_extractor()
     chat_model = chat or FakeChatModel(tool_turns=agent_search_tool_turns())
     emb = embedder or FakeEmbedder()
-    parser = document_parser or build_document_parser()
+    parser = document_parser or build_document_parser(
+        max_pages=cfg.ingest_max_pages,
+        max_expanded_chars=cfg.ingest_max_expanded_chars,
+    )
     return wire_session_bound(
         engagements=eng,
         documents=docs,
@@ -107,7 +110,10 @@ def build_test_container(
         chat_model=chat or FakeChatModel(),
         embedder=embedder or FakeEmbedder(),
         document_storage=document_storage or InMemoryDocumentStorage(),
-        document_parser=build_document_parser(),
+        document_parser=build_document_parser(
+            max_pages=cfg.ingest_max_pages,
+            max_expanded_chars=cfg.ingest_max_expanded_chars,
+        ),
         document_chunker=build_document_chunker(),
         archive_extractor=build_archive_extractor(),
     )

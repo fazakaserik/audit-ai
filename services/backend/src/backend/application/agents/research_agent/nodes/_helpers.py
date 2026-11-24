@@ -36,7 +36,9 @@ def partial_citations_from_evidence(
     citations: list[Citation] = []
     for marker, row in enumerate(evidence[:limit], start=1):
         chunk = row.chunk
-        snippet = chunk.text[:_PARTIAL_CITATION_SNIPPET].strip() or chunk.text[:_PARTIAL_CITATION_SNIPPET]
+        snippet = (
+            chunk.text[:_PARTIAL_CITATION_SNIPPET].strip() or chunk.text[:_PARTIAL_CITATION_SNIPPET]
+        )
         if not snippet:
             continue
         citations.append(

@@ -15,9 +15,7 @@ def test_runtime_chat_model_rewrites_openai_to_responses() -> None:
 
 
 def test_runtime_chat_model_keeps_responses_prefix() -> None:
-    assert (
-        runtime_chat_model("openai/responses/gpt-6-luna") == "openai/responses/gpt-6-luna"
-    )
+    assert runtime_chat_model("openai/responses/gpt-6-luna") == "openai/responses/gpt-6-luna"
 
 
 def test_runtime_chat_model_leaves_ollama() -> None:

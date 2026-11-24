@@ -83,8 +83,7 @@ class InMemoryVectorIndex:
         ]
         rows.sort(key=lambda row: row.chunk.ordinal)
         return [
-            ScoredChunk(chunk=row.chunk, document_path=row.document_path, score=1.0)
-            for row in rows
+            ScoredChunk(chunk=row.chunk, document_path=row.document_path, score=1.0) for row in rows
         ]
 
     async def search(

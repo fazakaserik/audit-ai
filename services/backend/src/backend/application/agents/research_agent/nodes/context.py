@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from backend.application.agents.progress import AskProgress
 from backend.application.agents.research_agent.history import SessionPromptContext
@@ -18,10 +18,14 @@ TOOL_NAMES: tuple[str, ...] = (
 )
 
 
+def _empty_session_context() -> SessionPromptContext:
+    return SessionPromptContext(recent_turns=())
+
+
 @dataclass(frozen=True, slots=True)
 class NodeContext:
     chat: ChatModel
     settings: Settings
     tool_ctx: ToolContext
     progress: AskProgress | None
-    session_context: SessionPromptContext = SessionPromptContext(recent_turns=())
+    session_context: SessionPromptContext = field(default_factory=_empty_session_context)

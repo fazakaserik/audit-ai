@@ -105,7 +105,10 @@ def build_container(settings: Settings) -> Container:
         chat_model=_build_chat(settings),
         embedder=_build_embedder(settings),
         document_storage=LocalDocumentStorage(settings.document_storage_path),
-        document_parser=build_document_parser(),
+        document_parser=build_document_parser(
+            max_pages=settings.ingest_max_pages,
+            max_expanded_chars=settings.ingest_max_expanded_chars,
+        ),
         document_chunker=build_document_chunker(),
         archive_extractor=build_archive_extractor(),
     )

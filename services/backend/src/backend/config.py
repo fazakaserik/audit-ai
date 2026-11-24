@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from backend.infrastructure.llm.litellm_models import (
+from backend.llm_model_ids import (
     is_ollama_provider,
     provider_segment,
     require_litellm_model_id,
@@ -47,11 +47,16 @@ class Settings(BaseSettings):
     agent_read_max_chars: int = Field(default=12_000, ge=500, le=200_000)
     agent_search_snippet_chars: int = Field(default=2_000, ge=240, le=20_000)
     session_context_turns: int = Field(default=5, ge=1, le=50)
+    session_max_turns: int = Field(default=100, ge=1, le=500)
     agent_evidence_max_chars: int = Field(default=24_000, ge=2_000, le=200_000)
 
     upload_max_bytes: int = Field(default=50 * 1024 * 1024, ge=1)
     upload_max_files: int = Field(default=200, ge=1)
     upload_max_file_bytes: int = Field(default=20 * 1024 * 1024, ge=1)
+
+    ingest_max_expanded_chars: int = Field(default=2_000_000, ge=1_000)
+    ingest_max_pages: int = Field(default=500, ge=1)
+    ingest_max_chunks: int = Field(default=5_000, ge=1)
 
     api_host: str = "0.0.0.0"
     api_port: int = Field(default=8000, ge=1, le=65535)
@@ -86,6 +91,9 @@ class Settings(BaseSettings):
                 "EMBEDDING_API_KEY or LLM_API_KEY is required when EMBEDDING_MODEL "
                 "is not an ollama / ollama_chat model"
             )
+            raise ValueError(msg)
+        if self.session_max_turns < self.session_context_turns:
+            msg = "SESSION_MAX_TURNS must be >= SESSION_CONTEXT_TURNS"
             raise ValueError(msg)
         return self
 

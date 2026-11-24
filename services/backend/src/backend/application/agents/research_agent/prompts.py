@@ -168,9 +168,7 @@ def build_agent_messages(
 ) -> tuple[ChatMessage, ...]:
     lines: list[str] = []
     if prior_turns or older_summary:
-        lines.extend(
-            _format_conversation_history(prior_turns, older_summary=older_summary)
-        )
+        lines.extend(_format_conversation_history(prior_turns, older_summary=older_summary))
     lines.append(f"Question: {question}")
     if auditor_role:
         lines.append(f"Auditor role: {auditor_role}")
@@ -180,8 +178,7 @@ def build_agent_messages(
         lines.append(f"Folder scope: {folder_scope}")
     lines.append("")
     lines.append(
-        "Call tools if you need engagement data or the current time; "
-        "otherwise answer directly."
+        "Call tools if you need engagement data or the current time; otherwise answer directly."
     )
     return (
         ChatMessage(role="system", content=_AGENT_SYSTEM),
@@ -203,9 +200,7 @@ def build_generation_messages(
     """Build messages for structured generation (used by history/unit tests)."""
     context_lines: list[str] = []
     if prior_turns or older_summary:
-        context_lines.extend(
-            _format_conversation_history(prior_turns, older_summary=older_summary)
-        )
+        context_lines.extend(_format_conversation_history(prior_turns, older_summary=older_summary))
     context_lines.append(f"Question: {question}")
     if auditor_role:
         context_lines.append(f"Auditor role: {auditor_role}")

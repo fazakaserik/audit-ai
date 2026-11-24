@@ -13,17 +13,25 @@ from pypdf import PdfReader, PdfWriter
 from pypdf.errors import PdfReadError
 
 from backend.application.dto import ParsedSection
-from backend.domain.errors import ValidationError
+from backend.domain.errors import RepresentationLimitExceededError, ValidationError
 from backend.infrastructure.parsing.parsers.markdown import parse_markdown
 from backend.infrastructure.parsing.parsers.markitdown_convert import convert_to_markdown
 
 
-def iter_pdf_page_bytes(data: bytes) -> Iterator[tuple[int, bytes]]:
+def iter_pdf_page_bytes(
+    data: bytes,
+    *,
+    max_pages: int | None = None,
+) -> Iterator[tuple[int, bytes]]:
     """Yield (1-based page number, single-page PDF bytes)."""
     try:
         reader = PdfReader(io.BytesIO(data))
     except PdfReadError as exc:
         raise ValidationError("PDF could not be read") from exc
+
+    page_count = len(reader.pages)
+    if max_pages is not None and page_count > max_pages:
+        raise RepresentationLimitExceededError(f"PDF exceeds max pages ({max_pages}): {page_count}")
 
     for page_number, page in enumerate(reader.pages, start=1):
         writer = PdfWriter()
@@ -33,19 +41,19 @@ def iter_pdf_page_bytes(data: bytes) -> Iterator[tuple[int, bytes]]:
         yield page_number, buffer.getvalue()
 
 
-def pdf_to_markdown(data: bytes) -> str:
+def pdf_to_markdown(data: bytes, *, max_pages: int | None = None) -> str:
     """Convert a PDF to Markdown with ``## Page N`` section markers."""
     parts: list[str] = []
-    for page_number, page_bytes in iter_pdf_page_bytes(data):
+    for page_number, page_bytes in iter_pdf_page_bytes(data, max_pages=max_pages):
         markdown = convert_to_markdown(page_bytes, file_extension=".pdf")
         if markdown:
             parts.append(f"## Page {page_number}\n\n{markdown}")
     return "\n\n".join(parts)
 
 
-def parse_pdf(data: bytes) -> tuple[ParsedSection, ...]:
+def parse_pdf(data: bytes, *, max_pages: int | None = None) -> tuple[ParsedSection, ...]:
     sections: list[ParsedSection] = []
-    for page_number, page_bytes in iter_pdf_page_bytes(data):
+    for page_number, page_bytes in iter_pdf_page_bytes(data, max_pages=max_pages):
         markdown = convert_to_markdown(page_bytes, file_extension=".pdf")
         if not markdown:
             sections.append(

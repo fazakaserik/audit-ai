@@ -159,7 +159,9 @@ async def test_greeting_answers_without_tools() -> None:
     chat = FakeChatModel(
         auto_search=False,
         tool_turns=[
-            ToolTurnResult(content="Hi! How can I help with this engagement?", tool_calls=(), usage=LlmUsage()),
+            ToolTurnResult(
+                content="Hi! How can I help with this engagement?", tool_calls=(), usage=LlmUsage()
+            ),
         ],
     )
     result = await run_graph(

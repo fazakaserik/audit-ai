@@ -44,3 +44,17 @@ def test_embedding_key_falls_back_to_llm_key() -> None:
         embedding_api_key=None,
     )
     assert settings.llm_api_key is not None
+
+
+def test_representation_and_session_budget_defaults() -> None:
+    settings = Settings()
+    assert settings.ingest_max_expanded_chars == 2_000_000
+    assert settings.ingest_max_pages == 500
+    assert settings.ingest_max_chunks == 5_000
+    assert settings.session_max_turns == 100
+    assert settings.session_max_turns >= settings.session_context_turns
+
+
+def test_session_max_turns_must_be_at_least_context_turns() -> None:
+    with pytest.raises(ValidationError):
+        Settings(session_context_turns=20, session_max_turns=5)

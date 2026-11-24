@@ -89,9 +89,7 @@ async def test_context_too_large_returns_413() -> None:
         engagements=engagements,
         vector_index=vector_index,
         embedder=embedder,
-        chat=FakeChatModel(
-            error=ContextTooLargeError("Prompt exceeds the model context window.")
-        ),
+        chat=FakeChatModel(error=ContextTooLargeError("Prompt exceeds the model context window.")),
     )
     response = await post_ask(app, engagement_id, {"question": "What are payment terms?"})
     assert response.status_code == 413

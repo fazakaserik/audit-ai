@@ -11,6 +11,7 @@ class ErrorCode(StrEnum):
     CONFLICT = "conflict"
     PAYLOAD_TOO_LARGE = "payload_too_large"
     UNSAFE_UPLOAD = "unsafe_upload"
+    REPRESENTATION_LIMIT_EXCEEDED = "representation_limit_exceeded"
     MODEL_TIMEOUT = "model_timeout"
     MODEL_UNAVAILABLE = "model_unavailable"
     CONTEXT_TOO_LARGE = "context_too_large"
@@ -52,6 +53,12 @@ class PayloadTooLargeError(DomainError):
 
 class UnsafeUploadError(DomainError):
     code = ErrorCode.UNSAFE_UPLOAD
+
+
+class RepresentationLimitExceededError(DomainError):
+    """Parsed or chunked document exceeds configured representation ceilings."""
+
+    code = ErrorCode.REPRESENTATION_LIMIT_EXCEEDED
 
 
 class ModelTimeoutError(DomainError):

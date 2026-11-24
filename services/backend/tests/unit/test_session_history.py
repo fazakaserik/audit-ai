@@ -36,9 +36,7 @@ def _turn(ordinal: int, *, question: str, answer: str) -> Turn:
 
 
 async def test_prepare_session_context_keeps_recent_and_summarizes_older() -> None:
-    turns = tuple(
-        _turn(i, question=f"Q{i}", answer=f"A{i} " + ("x" * 80)) for i in range(7)
-    )
+    turns = tuple(_turn(i, question=f"Q{i}", answer=f"A{i} " + ("x" * 80)) for i in range(7))
     chat = FakeChatModel(response=HistorySummaryResult(summary="Earlier covered Q0-Q1."))
     context, usage = await prepare_session_context(turns, max_recent=5, chat=chat)
     assert len(context.recent_turns) == 5

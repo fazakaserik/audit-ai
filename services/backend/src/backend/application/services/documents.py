@@ -42,15 +42,9 @@ _CONTENT_TYPE_TO_MEDIA: dict[ContentType, str] = {
     ContentType.MARKDOWN: "text/markdown",
     ContentType.TEXT: "text/plain",
     ContentType.PDF: "application/pdf",
-    ContentType.DOCX: (
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-    ),
-    ContentType.XLSX: (
-        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    ),
-    ContentType.PPTX: (
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-    ),
+    ContentType.DOCX: ("application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+    ContentType.XLSX: ("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
+    ContentType.PPTX: ("application/vnd.openxmlformats-officedocument.presentationml.presentation"),
     ContentType.HTML: "text/html",
     ContentType.CSV: "text/csv",
 }
@@ -92,12 +86,18 @@ def _expand_incoming(
     files: Sequence[IncomingUploadFile],
     target_folder: FolderPath,
     archives: ArchiveExtractor,
+    *,
+    settings: Settings,
 ) -> list[tuple[DocumentPath, bytes]]:
     planned: list[tuple[DocumentPath, bytes]] = []
     for incoming in files:
         if archives.is_zip_upload(filename=incoming.filename, data=incoming.data):
             archives.list_zip_member_paths(incoming.data)
-            for rel, payload in archives.extract_zip_files(incoming.data):
+            for rel, payload in archives.extract_zip_files(
+                incoming.data,
+                max_file_bytes=settings.upload_max_file_bytes,
+                max_total_bytes=settings.upload_max_bytes,
+            ):
                 planned.append((_join_folder(target_folder, rel), payload))
         else:
             rel = _basename(incoming.filename)
@@ -232,7 +232,12 @@ class DocumentService:
         if not files:
             raise ValidationError("upload must include at least one file")
 
-        planned = _expand_incoming(files, folder, self._archives)
+        planned = _expand_incoming(
+            files,
+            folder,
+            self._archives,
+            settings=self._settings,
+        )
         _enforce_limits(planned, settings=self._settings)
 
         now = utc_now()

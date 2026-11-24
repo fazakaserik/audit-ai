@@ -27,13 +27,32 @@ from backend.application.api.contracts.v1.responses import (
     DocumentListingResponse,
     UploadAcceptedResponse,
 )
-from backend.application.api.dependencies import get_bound
+from backend.application.api.dependencies import get_bound, get_container
 from backend.application.services.documents import IncomingUploadFile
 from backend.application.wiring import SessionBound
+from backend.bootstrap import Container
+from backend.config import Settings
 from backend.domain.common import RequestId
 from backend.domain.document import DocumentPath, FolderPath, validate_folder_path
 from backend.domain.engagement import EngagementId
-from backend.domain.errors import ValidationError
+from backend.domain.errors import PayloadTooLargeError, ValidationError
+
+_READ_CHUNK_SIZE = 64 * 1024
+
+
+async def _read_upload_capped(upload: UploadFile, *, max_bytes: int) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        piece = await upload.read(_READ_CHUNK_SIZE)
+        if not piece:
+            break
+        total += len(piece)
+        if total > max_bytes:
+            raise PayloadTooLargeError(f"file exceeds max size ({max_bytes} bytes)")
+        chunks.append(piece)
+    return b"".join(chunks)
+
 
 router = APIRouter(prefix="/api/v1/engagements", tags=["documents", "uploads"])
 
@@ -161,6 +180,7 @@ async def post_documents_upload(
     ],
     request: Request,
     bound: Annotated[SessionBound, Depends(get_bound)],
+    container: Annotated[Container, Depends(get_container)],
     folder: Annotated[
         str,
         Form(description="Target folder prefix where uploaded files are stored"),
@@ -174,9 +194,22 @@ async def post_documents_upload(
     if not files:
         raise ValidationError("upload must include at least one file")
 
+    settings: Settings = container.settings
+    if len(files) > settings.upload_max_files:
+        raise PayloadTooLargeError(f"upload exceeds max file count ({settings.upload_max_files})")
+
     incoming: list[IncomingUploadFile] = []
+    total = 0
     for upload in files:
-        payload = await upload.read()
+        payload = await _read_upload_capped(
+            upload,
+            max_bytes=settings.upload_max_file_bytes,
+        )
+        total += len(payload)
+        if total > settings.upload_max_bytes:
+            raise PayloadTooLargeError(
+                f"upload exceeds max total size ({settings.upload_max_bytes} bytes)"
+            )
         filename = upload.filename or "upload.bin"
         incoming.append(IncomingUploadFile(filename=filename, data=payload))
 

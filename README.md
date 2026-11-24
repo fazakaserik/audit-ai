@@ -9,6 +9,10 @@ not required to evaluate the backend.
 
 See [specs/001-audit-assistant-rag/](specs/001-audit-assistant-rag/) for the full specification.
 
+### Local security posture
+
+Default Compose publishes the API (and dev Postgres/Ollama ports) on **loopback only** (`127.0.0.1`). Copy `.env.example` → `.env` and keep an explicit `POSTGRES_PASSWORD` (Compose does not fall back silently). Example credentials are for local demo on this machine — change them before any non-loopback exposure. Validation steps: [specs/002-harden-local-security/quickstart.md](specs/002-harden-local-security/quickstart.md).
+
 ## Workspace
 
 | Path               | Package   | Role                                                                                          |
@@ -33,7 +37,7 @@ Compose services (same app image, different commands — except the load balance
 | `migrate`          | One-shot Alembic `upgrade head`, then exits                                    |
 | `api`              | HTTP + ask agent (migrations via `migrate` service); **2 replicas** by default |
 | `upload-processor` | Claims upload jobs and indexes documents; **2 replicas** by default            |
-| `load-balancer`    | Caddy reverse proxy; host port `8000` → `api:8000`                             |
+| `load-balancer`    | Caddy reverse proxy; host `127.0.0.1:8000` → `api:8000`                        |
 | `postgres`         | Metadata, sessions, job queue, pgvector                                        |
 
 ## Prerequisites
@@ -138,13 +142,23 @@ aiditor engagements list   # non-interactive CLI
 To author a new DB migration after changing SQLAlchemy models: `just migration "describe change"`.  
 Compose applies pending revisions via the `migrate` service on the next `compose-up`.
 
-## Quality gate
+## Quality assurance
 
 ```bash
 just check   # ruff + basedpyright + import-linter + offline pytest (no paid APIs)
 ```
 
-Integration smoke against a live Ollama (optional): `just test-integration` with `RUN_INTEGRATION=1`.
+Optional layers: `just test-db` (Postgres + pgvector via testcontainers); `just test-integration` with `RUN_INTEGRATION=1` (live Ollama/OpenAI).
+
+What is enforced:
+
+- **Local quality gate** — `just check` runs lint, format check, typecheck, import-linter, and offline unit tests before merge-worthy work leaves the laptop.
+- **CI on every PR** — `.github/workflows/check.yml` path-filters `backend` / `cli` / `tui` and runs the matching `just check-*` job; an aggregate `check` job is the required status. Release builds on `main` re-run the full `just check` before tagging/publishing (`.github/workflows/release.yml`).
+- **Lint and format** — Ruff for style, imports, and common bug classes; format is checked in CI (`ruff format --check`).
+- **Static types** — basedpyright on application sources; domain models are frozen/strict pydantic with typed ids and exhaustive union handling (see `.specify/memory/constitution.md`).
+- **Layering contracts** — `importlinter.ini` blocks illegal imports (domain independence, application vs infrastructure, CLI/TUI HTTP-only boundaries).
+- **Tests by default offline** — pytest markers: `unit` (default, no paid APIs), `db` (testcontainers Postgres), `integration` (opt-in live models). Default `just test` / CI exclude `db` and `integration`.
+- **Spec-driven delivery** — feature work is specified under `specs/` (spec, plan, tasks, contracts) and governed by the project constitution so behaviour and architecture stay reviewable.
 
 ## Architecture
 

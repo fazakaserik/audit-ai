@@ -8,7 +8,7 @@ x-app: &app
   env_file:
     - .env
   environment:
-    DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-audit}:${POSTGRES_PASSWORD:-audit}@postgres:5432/${POSTGRES_DB:-audit}
+    DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
     DOCUMENT_STORAGE_PATH: /data/storage
   extra_hosts:
     - "host.docker.internal:host-gateway"
@@ -18,9 +18,9 @@ services:
     image: pgvector/pgvector:pg16
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-audit}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-audit}
-      POSTGRES_DB: ${POSTGRES_DB:-audit}
+      POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -33,7 +33,7 @@ services:
     <<: *app
     restart: "no"
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-audit}:${POSTGRES_PASSWORD:-audit}@postgres:5432/${POSTGRES_DB:-audit}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       DOCUMENT_STORAGE_PATH: /data/storage
       # No model calls; keep provider defaults from env_file without requiring GPU.
     command:
@@ -57,7 +57,7 @@ services:
     <<: *app
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-audit}:${POSTGRES_PASSWORD:-audit}@postgres:5432/${POSTGRES_DB:-audit}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       DOCUMENT_STORAGE_PATH: /data/storage
     volumes:
       - document_storage:/data/storage
@@ -86,7 +86,7 @@ services:
     <<: *app
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-audit}:${POSTGRES_PASSWORD:-audit}@postgres:5432/${POSTGRES_DB:-audit}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       DOCUMENT_STORAGE_PATH: /data/storage
     command: ["audit-worker"]
     volumes:
@@ -101,7 +101,7 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
     depends_on:

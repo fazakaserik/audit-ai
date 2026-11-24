@@ -7,7 +7,7 @@ import zipfile
 
 import pytest
 
-from backend.domain.errors import UnsafeUploadError
+from backend.domain.errors import PayloadTooLargeError, UnsafeUploadError
 from backend.infrastructure.parsing.archive import extract_zip_files, list_zip_member_paths
 
 
@@ -37,3 +37,15 @@ def test_safe_zip_lists_and_extracts() -> None:
     assert paths == ("notes/readme.md",)
     extracted = extract_zip_files(payload)
     assert extracted == [("notes/readme.md", b"# Hello")]
+
+
+def test_extract_zip_rejects_member_over_max_file_bytes() -> None:
+    payload = _zip_bytes({"big.txt": b"x" * 200})
+    with pytest.raises(PayloadTooLargeError, match="exceeds max size"):
+        extract_zip_files(payload, max_file_bytes=50)
+
+
+def test_extract_zip_rejects_total_over_max_total_bytes() -> None:
+    payload = _zip_bytes({"a.txt": b"x" * 40, "b.txt": b"y" * 40})
+    with pytest.raises(PayloadTooLargeError, match="max total size"):
+        extract_zip_files(payload, max_file_bytes=100, max_total_bytes=50)

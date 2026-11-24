@@ -101,6 +101,9 @@ class AskService:
                 raise NotFoundError(f"session not found: {session_id}")
 
         prior_turns = await self._sessions.list_turns(session.id)
+        max_turns = self._settings.session_max_turns
+        if len(prior_turns) > max_turns:
+            prior_turns = prior_turns[-max_turns:]
         return session, prior_turns
 
     async def _persist_turn(

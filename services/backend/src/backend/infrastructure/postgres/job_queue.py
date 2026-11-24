@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.domain.errors import ConflictError
 from backend.domain.upload import UploadItem, UploadItemId, UploadItemStatus
 from backend.infrastructure.postgres.models import UploadItemRow
 from backend.infrastructure.postgres.repositories._mappers import upload_item_from_row
@@ -64,6 +65,7 @@ class PostgresJobQueue:
         self,
         item_id: UploadItemId,
         *,
+        worker_id: str,
         status: str,
         reason: str | None,
         embedding_prompt_tokens: int | None = None,
@@ -84,7 +86,11 @@ class PostgresJobQueue:
         now = datetime.now(UTC)
         stmt = (
             update(UploadItemRow)
-            .where(UploadItemRow.id == item_id)
+            .where(
+                UploadItemRow.id == item_id,
+                UploadItemRow.locked_by == worker_id,
+                UploadItemRow.status == UploadItemStatus.PROCESSING.value,
+            )
             .values(
                 status=status,
                 reason=reason,
@@ -99,14 +105,31 @@ class PostgresJobQueue:
                 updated_at=now,
             )
         )
-        await self._session.execute(stmt)
+        result = await self._session.execute(stmt)
+        if int(getattr(result, "rowcount", 0) or 0) == 0:
+            raise ConflictError(f"stale job lease for item {item_id}")
         await self._session.flush()
 
-    async def fail_for_retry(self, item_id: UploadItemId, *, reason: str) -> None:
+    async def fail_for_retry(
+        self,
+        item_id: UploadItemId,
+        *,
+        worker_id: str,
+        reason: str,
+    ) -> None:
         now = datetime.now(UTC)
-        row = await self._session.get(UploadItemRow, item_id)
+        stmt = (
+            select(UploadItemRow)
+            .where(
+                UploadItemRow.id == item_id,
+                UploadItemRow.locked_by == worker_id,
+                UploadItemRow.status == UploadItemStatus.PROCESSING.value,
+            )
+            .with_for_update()
+        )
+        row = (await self._session.execute(stmt)).scalar_one_or_none()
         if row is None:
-            return
+            raise ConflictError(f"stale job lease for item {item_id}")
 
         attempts: int = int(row.attempts) + 1
         row.attempts = attempts

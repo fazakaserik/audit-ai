@@ -26,7 +26,7 @@ Equivalent without just:
 docker compose -f deployment/docker-compose/compose.yaml up -d --build
 ```
 
-Host traffic hits `load-balancer` on `:8000` (Caddy → `api`).
+Host traffic hits `load-balancer` on `127.0.0.1:8000` (Caddy → `api`). See [002-harden-local-security/quickstart.md](../002-harden-local-security/quickstart.md) for local security posture checks.
 
 Check:
 
