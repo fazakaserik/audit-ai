@@ -18,7 +18,11 @@ from backend.application.dto import (
     ToolSpec,
     ToolTurnResult,
 )
-from backend.domain.errors import ModelTimeoutError, ModelUnavailableError
+from backend.domain.errors import (
+    ContextTooLargeError,
+    ModelTimeoutError,
+    ModelUnavailableError,
+)
 from backend.domain.session import LlmUsage
 
 TModel = TypeVar("TModel", bound=BaseModel)
@@ -88,7 +92,11 @@ class FakeChatModel:
         response: BaseModel | None = None,
         responses: Sequence[BaseModel] | None = None,
         error: (
-            ModelTimeoutError | ModelUnavailableError | IncompleteStructuredOutputError | None
+            ModelTimeoutError
+            | ModelUnavailableError
+            | ContextTooLargeError
+            | IncompleteStructuredOutputError
+            | None
         ) = None,
         supports_thinking: bool = False,
         thinking_text: str = "",
@@ -119,7 +127,11 @@ class FakeChatModel:
         response: BaseModel | None = None,
         responses: Sequence[BaseModel] | None = None,
         error: (
-            ModelTimeoutError | ModelUnavailableError | IncompleteStructuredOutputError | None
+            ModelTimeoutError
+            | ModelUnavailableError
+            | ContextTooLargeError
+            | IncompleteStructuredOutputError
+            | None
         ) = None,
         tool_turns: Sequence[ToolTurnResult] | None = None,
         auto_search: bool | None = None,

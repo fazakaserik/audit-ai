@@ -1042,6 +1042,7 @@ components:
             - unsafe_upload
             - model_timeout
             - model_unavailable
+            - context_too_large
             - dependency_unavailable
             - internal_error
         request_id:

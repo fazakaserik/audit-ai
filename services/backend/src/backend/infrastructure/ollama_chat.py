@@ -24,6 +24,10 @@ from backend.application.dto import (
 )
 from backend.domain.errors import ModelTimeoutError, ModelUnavailableError
 from backend.domain.session import LlmUsage
+from backend.infrastructure.llm.provider_errors import (
+    is_context_overflow_message,
+    map_provider_chat_error,
+)
 from backend.infrastructure.llm.retry import MAX_ATTEMPTS, RETRY_WAIT
 from backend.infrastructure.llm.tools import to_vendor_function_tools
 from backend.infrastructure.ollama_protocols import ollama_chat_client
@@ -46,9 +50,11 @@ _THINKING_BUDGET_CHARS = 12_000
 def _is_transient(exc: BaseException) -> bool:
     if isinstance(exc, (httpx.TimeoutException, ConnectionError, TimeoutError)):
         return True
-    return bool(
-        isinstance(exc, ResponseError) and (exc.status_code >= 500 or exc.status_code == 429)
-    )
+    if isinstance(exc, ResponseError):
+        if is_context_overflow_message(str(exc)):
+            return False
+        return exc.status_code >= 500 or exc.status_code == 429
+    return False
 
 
 def _try_parse_json_object(text: str) -> str | None:
@@ -161,9 +167,11 @@ class OllamaChatModel:
         model: str,
         timeout_seconds: float,
         max_concurrent_calls: int,
+        num_ctx: int = 32_768,
         supports_thinking: bool | None = None,
     ) -> None:
         self._model = model
+        self._num_ctx = num_ctx
         self._semaphore = asyncio.Semaphore(max_concurrent_calls)
         self._client = AsyncClient(host=base_url, timeout=timeout_seconds)
         self._supports_thinking = supports_thinking if supports_thinking is not None else False
@@ -172,6 +180,9 @@ class OllamaChatModel:
     @property
     def supports_thinking(self) -> bool:
         return self._supports_thinking
+
+    def _chat_options(self) -> dict[str, object]:
+        return {"temperature": 0, "num_ctx": self._num_ctx}
 
     async def _ensure_thinking_capability(self) -> None:
         if self._thinking_probed:
@@ -200,8 +211,13 @@ class OllamaChatModel:
                 return await self._generate_structured_once(messages, schema, thinking=thinking)
             except (httpx.TimeoutException, TimeoutError) as exc:
                 raise ModelTimeoutError("Ollama chat request timed out") from exc
-            except (ConnectionError, ResponseError, ValidationError) as exc:
-                raise ModelUnavailableError("Ollama chat request failed") from exc
+            except ValidationError as exc:
+                raise map_provider_chat_error(
+                    "Ollama chat returned invalid structured output",
+                    exc,
+                ) from exc
+            except (ConnectionError, ResponseError) as exc:
+                raise map_provider_chat_error("Ollama chat request failed", exc) from exc
 
     async def complete_tool_turn(
         self,
@@ -216,7 +232,7 @@ class OllamaChatModel:
             except (httpx.TimeoutException, TimeoutError) as exc:
                 raise ModelTimeoutError("Ollama chat request timed out") from exc
             except (ConnectionError, ResponseError) as exc:
-                raise ModelUnavailableError("Ollama chat request failed") from exc
+                raise map_provider_chat_error("Ollama chat request failed", exc) from exc
 
     async def _generate_structured_without_thinking(
         self,
@@ -230,7 +246,7 @@ class OllamaChatModel:
             messages=vendor_messages,
             format=format_schema,
             think=False,
-            options={"temperature": 0},
+            options=self._chat_options(),
         )
         response_obj = cast(object, response)
         response_message = getattr(response_obj, "message", None)
@@ -285,7 +301,7 @@ class OllamaChatModel:
                     format=format_schema,
                     think=True,
                     stream=True,
-                    options={"temperature": 0},
+                    options=self._chat_options(),
                 ),
             )
             async for chunk in stream:
@@ -344,7 +360,7 @@ class OllamaChatModel:
             messages=vendor_messages,
             tools=ollama_tools,
             think=False,
-            options={"temperature": 0},
+            options=self._chat_options(),
         )
         response_obj = cast(object, response)
         message_obj = getattr(response_obj, "message", None)
@@ -394,7 +410,7 @@ class OllamaChatModel:
                 tools=ollama_tools,
                 think=True,
                 stream=True,
-                options={"temperature": 0},
+                options=self._chat_options(),
             ),
         )
         async for chunk in stream:

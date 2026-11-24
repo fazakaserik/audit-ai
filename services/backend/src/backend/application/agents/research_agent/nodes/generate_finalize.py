@@ -60,7 +60,9 @@ def make_generate_node(ctx: NodeContext):
             auditor_role=question.auditor_role,
             topic=question.topic,
             tool_facts=ctx.tool_ctx.tool_facts,
-            prior_turns=ctx.prior_turns,
+            prior_turns=ctx.session_context.recent_turns,
+            older_summary=ctx.session_context.older_summary,
+            evidence_max_chars=ctx.settings.agent_evidence_max_chars,
         )
         try:
             generation = await ctx.chat.generate_structured(

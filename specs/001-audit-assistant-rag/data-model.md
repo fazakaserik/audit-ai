@@ -161,6 +161,7 @@ Stable machine-readable codes for Problem Details `code` field. Never rename or 
 | `unsafe_upload`          | 400          | path traversal, corrupt zip                          |
 | `model_timeout`          | 504          | model call exceeded budget                           |
 | `model_unavailable`      | 502          | provider error / bad structured output after retries |
+| `context_too_large`      | 413          | assembled Ask prompt exceeds the model context       |
 | `dependency_unavailable` | 503          | Postgres (or model for readiness) unreachable        |
 | `internal_error`         | 500          | unexpected                                           |
 

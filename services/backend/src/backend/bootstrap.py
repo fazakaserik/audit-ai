@@ -86,6 +86,7 @@ def _build_chat(settings: Settings) -> ChatModel:
                 model=settings.llm_model,
                 timeout_seconds=settings.model_timeout_seconds,
                 max_concurrent_calls=settings.max_concurrent_model_calls,
+                num_ctx=settings.ollama_num_ctx,
             )
         case _:
             assert_never(settings.llm_provider)

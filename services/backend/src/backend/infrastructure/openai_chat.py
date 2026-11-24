@@ -28,6 +28,10 @@ from backend.application.dto import (
 )
 from backend.domain.errors import ModelTimeoutError, ModelUnavailableError
 from backend.domain.session import LlmUsage
+from backend.infrastructure.llm.provider_errors import (
+    is_context_overflow_message,
+    map_provider_chat_error,
+)
 from backend.infrastructure.llm.retry import MAX_ATTEMPTS, RETRY_WAIT
 from backend.infrastructure.llm.tools import to_vendor_function_tools
 
@@ -37,7 +41,11 @@ TModel = TypeVar("TModel", bound=BaseModel)
 def _is_transient(exc: BaseException) -> bool:
     if isinstance(exc, (APITimeoutError, APIConnectionError, RateLimitError, InternalServerError)):
         return True
-    return bool(isinstance(exc, APIStatusError) and exc.status_code >= 500)
+    if isinstance(exc, APIStatusError):
+        if is_context_overflow_message(str(exc)):
+            return False
+        return exc.status_code >= 500
+    return False
 
 
 def _usage_from_openai(usage_raw: object | None) -> LlmUsage:
@@ -114,7 +122,7 @@ class OpenAIChatModel:
                 InternalServerError,
                 APIStatusError,
             ) as exc:
-                raise ModelUnavailableError("OpenAI chat request failed") from exc
+                raise map_provider_chat_error("OpenAI chat request failed", exc) from exc
 
     async def complete_tool_turn(
         self,
@@ -135,7 +143,7 @@ class OpenAIChatModel:
                 InternalServerError,
                 APIStatusError,
             ) as exc:
-                raise ModelUnavailableError("OpenAI chat request failed") from exc
+                raise map_provider_chat_error("OpenAI chat request failed", exc) from exc
 
     @retry(
         reraise=True,

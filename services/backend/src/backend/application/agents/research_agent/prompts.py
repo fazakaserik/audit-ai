@@ -101,15 +101,28 @@ Do not write the final JSON answer in the tool loop; a later step will ask for t
 """
 
 
-def _format_chunks(scored: Sequence[ScoredChunk]) -> str:
+def _format_chunks(scored: Sequence[ScoredChunk], *, max_chars: int | None = None) -> str:
     blocks: list[str] = []
+    used = 0
     for index, row in enumerate(scored, start=1):
         page = f", page {row.chunk.page}" if row.chunk.page is not None else ""
         heading = " > ".join(row.chunk.heading_path) if row.chunk.heading_path else ""
         meta = f"{row.document_path}{page}"
         if heading:
             meta = f"{meta} ({heading})"
-        blocks.append(f"[{index}] ({meta})\n{row.chunk.text}")
+        header = f"[{index}] ({meta})\n"
+        text = row.chunk.text
+        if max_chars is not None:
+            remaining = max_chars - used - len(header)
+            if remaining <= 0:
+                break
+            if len(text) > remaining:
+                text = f"{text[: max(0, remaining - 3)]}..."
+        block = f"{header}{text}"
+        blocks.append(block)
+        used += len(block) + 2  # account for joining "\n\n"
+        if max_chars is not None and used >= max_chars:
+            break
     return "\n\n".join(blocks)
 
 
@@ -123,10 +136,17 @@ def format_prior_answer(turn: Turn) -> str:
     return "(no answer)"
 
 
-def _format_conversation_history(prior_turns: Sequence[Turn]) -> list[str]:
+def _format_conversation_history(
+    prior_turns: Sequence[Turn],
+    *,
+    older_summary: str | None = None,
+) -> list[str]:
     lines = [
-        "Conversation history (full session; resolve follow-ups; not evidence):",
+        "Conversation history (recent turns; resolve follow-ups; not evidence):",
     ]
+    if older_summary:
+        lines.append(f"Earlier session summary: {older_summary}")
+        lines.append("")
     for turn in prior_turns:
         lines.append(f"- User: {turn.standalone_question}")
         lines.append(f"  Assistant: {format_prior_answer(turn)}")
@@ -141,10 +161,13 @@ def build_agent_messages(
     auditor_role: str | None,
     topic: str | None,
     folder_scope: str | None,
+    older_summary: str | None = None,
 ) -> tuple[ChatMessage, ...]:
     lines: list[str] = []
-    if prior_turns:
-        lines.extend(_format_conversation_history(prior_turns))
+    if prior_turns or older_summary:
+        lines.extend(
+            _format_conversation_history(prior_turns, older_summary=older_summary)
+        )
     lines.append(f"Question: {question}")
     if auditor_role:
         lines.append(f"Auditor role: {auditor_role}")
@@ -168,10 +191,14 @@ def build_generation_messages(
     topic: str | None,
     tool_facts: Sequence[str] = (),
     prior_turns: Sequence[Turn] = (),
+    older_summary: str | None = None,
+    evidence_max_chars: int | None = None,
 ) -> tuple[ChatMessage, ...]:
     context_lines: list[str] = []
-    if prior_turns:
-        context_lines.extend(_format_conversation_history(prior_turns))
+    if prior_turns or older_summary:
+        context_lines.extend(
+            _format_conversation_history(prior_turns, older_summary=older_summary)
+        )
     context_lines.append(f"Question: {question}")
     if auditor_role:
         context_lines.append(f"Auditor role: {auditor_role}")
@@ -185,7 +212,7 @@ def build_generation_messages(
         context_lines.append("")
     if scored:
         context_lines.append("Source chunks:")
-        context_lines.append(_format_chunks(scored))
+        context_lines.append(_format_chunks(scored, max_chars=evidence_max_chars))
     elif not tool_facts:
         context_lines.append("Source chunks:")
         context_lines.append("(none)")

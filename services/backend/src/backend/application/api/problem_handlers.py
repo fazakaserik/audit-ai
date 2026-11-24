@@ -23,6 +23,7 @@ _STATUS: dict[ErrorCode, int] = {
     ErrorCode.UNSAFE_UPLOAD: 400,
     ErrorCode.MODEL_TIMEOUT: 504,
     ErrorCode.MODEL_UNAVAILABLE: 502,
+    ErrorCode.CONTEXT_TOO_LARGE: 413,
     ErrorCode.DEPENDENCY_UNAVAILABLE: 503,
     ErrorCode.INTERNAL_ERROR: 500,
 }
@@ -41,6 +42,7 @@ _TITLE: dict[ErrorCode, str] = {
     ErrorCode.UNSAFE_UPLOAD: "Unsafe Upload",
     ErrorCode.MODEL_TIMEOUT: "Model Timeout",
     ErrorCode.MODEL_UNAVAILABLE: "Model Unavailable",
+    ErrorCode.CONTEXT_TOO_LARGE: "Context Too Large",
     ErrorCode.DEPENDENCY_UNAVAILABLE: "Dependency Unavailable",
     ErrorCode.INTERNAL_ERROR: "Internal Error",
 }

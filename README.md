@@ -68,6 +68,7 @@ Containers reach host Ollama via `host.docker.internal`.
 | **CPU-only**                 | Same models work; expect **minutes** per ask and high RAM use (plan on **16 GB+** system RAM). Prefer a smaller chat model if the machine struggles (e.g. `qwen2.5:3b`) and keep `nomic-embed-text` for embeddings. |
 | **Quality**                  | Local mode is slower and less consistent than cloud; still exercises the full RAG path with no paid API key.                                                                                                        |
 | **Timeouts**                 | Default `MODEL_TIMEOUT_SECONDS=120`. Raise it on CPU-only hosts if asks time out.                                                                                                                                   |
+| **Context**                  | Chat calls set `OLLAMA_NUM_CTX` (default **32768**). If asks return `413 context_too_large`, raise it; if Ollama OOMs, lower it.                                                                                    |
 
 Optional in-compose Ollama (GPU via NVIDIA Container Toolkit):  
 `docker compose -f deployment/docker-compose/compose.yaml --profile local up -d` — prefer host Ollama for day-to-day GPU use.
@@ -228,7 +229,7 @@ Details: [deployment/cloud/README.md](deployment/cloud/README.md).
 
 - No authentication or user management
 - Ask flow is a LangGraph `StateGraph` (tool loop → grade → generate → finalize); a minimal retrieve→generate graph would also satisfy the brief
-- Sessions always send **full** chat history into the model (no turn cap). Very long sessions may fail at the provider if the prompt exceeds the model context. **Next step:** a history-compression tool/step so long sessions can continue without dropping turns.
+- Sessions keep the last `SESSION_CONTEXT_TURNS` (default 5) turns verbatim and summarize older turns before Ask; generate prompts also cap evidence via `AGENT_EVIDENCE_MAX_CHARS`. If the provider still rejects the prompt as too large, the API returns `413 context_too_large` (start a new session or shorten the question).
 - Chunk sizes not corpus-tuned; OCR out of scope
 - Local compose does not autoscale ingest; cloud would scale processors from queue depth
 - Cloud mapping: [deployment/cloud/README.md](deployment/cloud/README.md)

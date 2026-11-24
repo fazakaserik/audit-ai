@@ -13,6 +13,7 @@ class ErrorCode(StrEnum):
     UNSAFE_UPLOAD = "unsafe_upload"
     MODEL_TIMEOUT = "model_timeout"
     MODEL_UNAVAILABLE = "model_unavailable"
+    CONTEXT_TOO_LARGE = "context_too_large"
     DEPENDENCY_UNAVAILABLE = "dependency_unavailable"
     INTERNAL_ERROR = "internal_error"
 
@@ -59,6 +60,12 @@ class ModelTimeoutError(DomainError):
 
 class ModelUnavailableError(DomainError):
     code = ErrorCode.MODEL_UNAVAILABLE
+
+
+class ContextTooLargeError(DomainError):
+    """Assembled prompt exceeds the model's context window."""
+
+    code = ErrorCode.CONTEXT_TOO_LARGE
 
 
 class DependencyUnavailableError(DomainError):

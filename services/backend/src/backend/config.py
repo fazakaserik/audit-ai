@@ -26,6 +26,8 @@ class Settings(BaseSettings):
 
     openai_api_key: SecretStr | None = None
     ollama_base_url: str = "http://127.0.0.1:11434"
+    # Runtime context window for Ollama chat (Ollama defaults are often far below model max).
+    ollama_num_ctx: int = Field(default=32_768, ge=2_048, le=262_144)
 
     database_url: str = "postgresql+asyncpg://audit:audit@localhost:5432/audit"
     document_storage_path: Path = Path("./data/storage")
@@ -37,6 +39,8 @@ class Settings(BaseSettings):
     agent_max_tool_rounds: int = Field(default=6, ge=1, le=20)
     agent_read_max_chars: int = Field(default=12_000, ge=500, le=200_000)
     agent_search_snippet_chars: int = Field(default=2_000, ge=240, le=20_000)
+    session_context_turns: int = Field(default=5, ge=1, le=50)
+    agent_evidence_max_chars: int = Field(default=24_000, ge=2_000, le=200_000)
 
     upload_max_bytes: int = Field(default=50 * 1024 * 1024, ge=1)
     upload_max_files: int = Field(default=200, ge=1)

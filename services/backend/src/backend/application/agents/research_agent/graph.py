@@ -22,6 +22,7 @@ from backend.application.agents.research_agent.nodes import (
     route_after_grade,
     route_after_tools,
 )
+from backend.application.agents.research_agent.history import prepare_session_context
 from backend.application.agents.research_agent.prompts import build_agent_messages
 from backend.application.agents.research_agent.resolve_question import (
     resolve_standalone_question,
@@ -114,6 +115,12 @@ async def run_graph(
     if progress_sink is not None:
         await progress_sink.stage("agent")
 
+    session_context, history_usage = await prepare_session_context(
+        history,
+        max_recent=deps.settings.session_context_turns,
+        chat=deps.chat,
+    )
+
     tool_ctx = ToolContext(
         engagement_id=engagement_id,
         folder_scope=folder,
@@ -128,10 +135,11 @@ async def run_graph(
     messages = list(
         build_agent_messages(
             question=standalone_question,
-            prior_turns=history,
+            prior_turns=session_context.recent_turns,
             auditor_role=question.auditor_role,
             topic=question.topic,
             folder_scope=str(tool_ctx.folder_scope) if tool_ctx.folder_scope else None,
+            older_summary=session_context.older_summary,
         )
     )
     ctx = NodeContext(
@@ -139,7 +147,7 @@ async def run_graph(
         settings=deps.settings,
         tool_ctx=tool_ctx,
         progress=progress_sink,
-        prior_turns=history,
+        session_context=session_context,
     )
     graph = _compile_graph(ctx)
     initial: State = {
@@ -148,7 +156,7 @@ async def run_graph(
         "messages": messages,
         "tool_rounds": 0,
         "pending_tool_calls": (),
-        "usage": LlmUsage(),
+        "usage": history_usage,
         "generation": None,
         "answer": None,
     }
