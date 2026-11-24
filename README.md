@@ -54,9 +54,9 @@ ollama pull nomic-embed-text
 
 Defaults (`deployment/docker-compose/.env.example`):
 
-- `LLM_PROVIDER=ollama` / `LLM_MODEL=qwen3.5:4b`
-- `EMBEDDING_PROVIDER=ollama` / `EMBEDDING_MODEL=nomic-embed-text`
-- `OLLAMA_BASE_URL=http://host.docker.internal:11434`
+- `LLM_MODEL=ollama_chat/qwen3.5:4b`
+- `EMBEDDING_MODEL=ollama/nomic-embed-text`
+- `LLM_API_BASE=http://host.docker.internal:11434`
 
 Containers reach host Ollama via `host.docker.internal`.
 
@@ -78,11 +78,10 @@ Optional in-compose Ollama (GPU via NVIDIA Container Toolkit):
 In `deployment/docker-compose/.env`:
 
 ```bash
-LLM_PROVIDER=openai
-LLM_MODEL=gpt-4o-mini
-EMBEDDING_PROVIDER=openai
-EMBEDDING_MODEL=text-embedding-3-small
-OPENAI_API_KEY=sk-...
+LLM_MODEL=openai/gpt-6-luna
+LLM_API_KEY=sk-...
+LLM_API_BASE=
+EMBEDDING_MODEL=openai/text-embedding-3-small
 ```
 
 ## Run (HTTP-first)
@@ -157,10 +156,10 @@ ask HTTP (via load-balancer)  →  LangGraph  →  cited answer
 
 - **`backend.domain`** — frozen pydantic feature models
 - **`backend.application`** — Protocols (`llm`, `parsing`, `repositories`, `storage`), services, RAG, HTTP API (controllers), upload-processor entrypoints
-- **`backend.infrastructure`** — Postgres/pgvector, OpenAI, Ollama, local FS, parsing
+- **`backend.infrastructure`** — Postgres/pgvector, LiteLLM chat/embed adapters, local FS, parsing
 - **`cli` / `tui`** — HTTP clients only (same contracts as `/docs`)
 
-Provider adapters are selected with `LLM_PROVIDER` / `EMBEDDING_PROVIDER`; application logic does not change.
+Chat and embeddings are configured with LiteLLM model ids (`LLM_MODEL` / `EMBEDDING_MODEL`) plus optional API key and base URL; application logic does not change.
 
 ### Research agent
 

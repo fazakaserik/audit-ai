@@ -16,8 +16,7 @@ from backend.domain.session import Turn
 
 _CFG = ConfigDict(frozen=True, strict=True, extra="forbid")
 
-# Field name is can_answer (not "sufficient") — thinking models misread "sufficient"
-# as English prose and loop on whether the instruction is a typo.
+# Kept for offline schema / history tests; the ask graph no longer generates this.
 _SYSTEM = """\
 You are an audit assistant. Base every factual claim ONLY on the tool facts and/or \
 numbered source chunks below. Do not invent facts those sources do not state.
@@ -63,7 +62,7 @@ JSON shape when you decline:
 
 
 class AnswerGenerationResult(BaseModel):
-    """Structured model output for grounded answer generation."""
+    """Structured model output for grounded answer generation (tests / legacy)."""
 
     model_config = _CFG
 
@@ -76,11 +75,12 @@ class AnswerGenerationResult(BaseModel):
 
 
 _AGENT_SYSTEM = """\
-You are an audit assistant with tools that gather evidence from engagement documents \
-(or the current time).
+You are a general audit assistant with tools for engagement documents and the \
+current time.
 
-Think briefly about what evidence you need, then emit a real tool call.
-Describing a tool in thought is not enough — you must call it.
+Decide each turn: call a tool when you need engagement data or the wall-clock \
+time; otherwise answer the user directly in plain text (greetings, thanks, \
+clarifications, and other non-document chat need no tools).
 
 Tools and what they add:
 - search_relevant_chunks: adds matching document chunks to evidence (primary tool).
@@ -94,10 +94,13 @@ dates, document terms). When the question uses everyday wording, also search the
 broader terms documents are likely to use. You may call tools multiple times. \
 Do not invent document facts.
 
-When evidence already supports the asked point, stop calling tools — a later step \
-will answer from that evidence. When a hit is incomplete for the asked detail, \
-read or search further; when tools return nothing useful, stop.
-Do not write the final JSON answer in the tool loop; a later step will ask for that.
+When answering from document evidence, cite with inline [n] markers that match the \
+evidence[n] indices from tool results. When answering from tool facts alone (for \
+example the current time), write a short clear answer with no [n] markers.
+
+When a prior message says a draft failed the evidence check, gather more evidence \
+or fix citations, then answer again. Describing a tool in thought is not enough — \
+you must call it when you need data.
 """
 
 
@@ -176,7 +179,10 @@ def build_agent_messages(
     if folder_scope:
         lines.append(f"Folder scope: {folder_scope}")
     lines.append("")
-    lines.append("Gather evidence with tools, then stop when ready to answer or decline.")
+    lines.append(
+        "Call tools if you need engagement data or the current time; "
+        "otherwise answer directly."
+    )
     return (
         ChatMessage(role="system", content=_AGENT_SYSTEM),
         ChatMessage(role="user", content="\n".join(lines)),
@@ -194,6 +200,7 @@ def build_generation_messages(
     older_summary: str | None = None,
     evidence_max_chars: int | None = None,
 ) -> tuple[ChatMessage, ...]:
+    """Build messages for structured generation (used by history/unit tests)."""
     context_lines: list[str] = []
     if prior_turns or older_summary:
         context_lines.extend(

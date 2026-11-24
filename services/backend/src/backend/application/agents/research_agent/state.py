@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import TypedDict
 
-from backend.application.agents.research_agent.prompts import AnswerGenerationResult
 from backend.application.dto import ChatMessage, ToolCall
 from backend.domain.answer import Answer, Question
 from backend.domain.session import LlmUsage
@@ -17,5 +16,6 @@ class State(TypedDict):
     tool_rounds: int
     pending_tool_calls: tuple[ToolCall, ...]
     usage: LlmUsage
-    generation: AnswerGenerationResult | None
+    draft_answer: str | None
+    check_restarts: int
     answer: Answer | None

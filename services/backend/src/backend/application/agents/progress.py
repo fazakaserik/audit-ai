@@ -10,11 +10,10 @@ from backend.application.dto import ThinkingCallbacks
 from backend.domain.document import DocumentPath
 
 AskStage = Literal[
-    "agent",
+    "think",
     "tool",
-    "generate",
+    "check",
     "suggest",
-    "finalize",
 ]
 
 

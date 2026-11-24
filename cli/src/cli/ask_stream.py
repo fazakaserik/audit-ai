@@ -34,7 +34,9 @@ class AskStreamHandlers:
     on_thinking_done: Callable[[float], None] | None = None
     on_before_final: Callable[[], None] | None = None
     work_stages: frozenset[str] = field(
-        default_factory=lambda: frozenset({"agent", "tool", "retrieve", "grade", "condense"})
+        default_factory=lambda: frozenset(
+            {"think", "tool", "check", "agent", "retrieve", "grade", "condense"}
+        )
     )
     on_work_stage: Callable[[], None] | None = None
 

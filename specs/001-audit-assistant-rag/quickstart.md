@@ -14,7 +14,7 @@ ollama pull nomic-embed-text
 ```bash
 cp deployment/docker-compose/.env.example deployment/docker-compose/.env
 # Defaults already point at host Ollama + qwen3.5:4b
-# Or set LLM_PROVIDER=openai and OPENAI_API_KEY=...
+# Or set LLM_MODEL=openai/gpt-6-luna and LLM_API_KEY=...
 
 just compose-up          # migrate → 2× api + 2× upload-processor + load-balancer + postgres
 # just compose-dev-up    # optional: compose.yaml + compose.dev.yaml (DB port, readable logs)

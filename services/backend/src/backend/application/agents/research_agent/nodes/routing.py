@@ -6,31 +6,22 @@ from typing import Literal
 
 from backend.application.agents.research_agent.state import State
 
-AfterAgent = Literal["tools", "grade_evidence"]
-AfterTools = Literal["agent", "grade_evidence"]
-AfterGrade = Literal["generate", "__end__"]
-AfterGenerate = Literal["finalize", "__end__"]
+AfterThink = Literal["tools", "check"]
+AfterTools = Literal["think"]
+AfterCheck = Literal["think", "__end__"]
 
 
-def route_after_agent(state: State) -> AfterAgent:
+def route_after_think(state: State) -> AfterThink:
     if state["pending_tool_calls"]:
         return "tools"
-    return "grade_evidence"
+    return "check"
 
 
-def route_after_tools(state: State, *, max_rounds: int) -> AfterTools:
-    if state["tool_rounds"] < max_rounds:
-        return "agent"
-    return "grade_evidence"
+def route_after_tools(_state: State) -> AfterTools:
+    return "think"
 
 
-def route_after_grade(state: State) -> AfterGrade:
+def route_after_check(state: State) -> AfterCheck:
     if state["answer"] is not None:
         return "__end__"
-    return "generate"
-
-
-def route_after_generate(state: State) -> AfterGenerate:
-    if state["answer"] is not None:
-        return "__end__"
-    return "finalize"
+    return "think"

@@ -10,7 +10,6 @@ x-app: &app
   environment:
     DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-audit}:${POSTGRES_PASSWORD:-audit}@postgres:5432/${POSTGRES_DB:-audit}
     DOCUMENT_STORAGE_PATH: /data/storage
-    OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
   extra_hosts:
     - "host.docker.internal:host-gateway"
 
@@ -36,7 +35,6 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-audit}:${POSTGRES_PASSWORD:-audit}@postgres:5432/${POSTGRES_DB:-audit}
       DOCUMENT_STORAGE_PATH: /data/storage
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
       # No model calls; keep provider defaults from env_file without requiring GPU.
     command:
       [
@@ -61,7 +59,6 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-audit}:${POSTGRES_PASSWORD:-audit}@postgres:5432/${POSTGRES_DB:-audit}
       DOCUMENT_STORAGE_PATH: /data/storage
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     volumes:
       - document_storage:/data/storage
     expose:
@@ -91,7 +88,6 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-audit}:${POSTGRES_PASSWORD:-audit}@postgres:5432/${POSTGRES_DB:-audit}
       DOCUMENT_STORAGE_PATH: /data/storage
-      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
     command: ["audit-worker"]
     volumes:
       - document_storage:/data/storage

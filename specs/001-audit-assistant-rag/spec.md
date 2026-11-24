@@ -183,12 +183,12 @@ The auditor uses an interactive terminal application, similar in feel to modern 
 - **FR-014**: System MUST answer only from chunks retrieved from the engagement's documents and MUST NOT use the model's general knowledge to supply facts.
 - **FR-014a**: Chunk retrieval MUST match both by meaning and by exact terms, so that questions containing identifiers such as invoice numbers, contract ids, amounts or names find the chunks that contain those exact terms.
 - **FR-015**: Every response MUST carry an explicit outcome: "answered" or "insufficient_evidence".
-- **FR-016**: An "answered" response MUST include at least one citation; each citation MUST identify the document path, the chunk text, the page number when the document is paginated, and a relevance score.
-- **FR-016a**: The answer text MUST mark each claim with a numbered reference (for example "[1]") that corresponds to an entry in the citation list; references that point to no citation MUST be removed, and an answer left with no valid reference MUST be treated as insufficient evidence.
+- **FR-016**: An "answered" response that relies on engagement documents MUST include at least one citation; each citation MUST identify the document path, the chunk text, the page number when the document is paginated, and a relevance score. Answers that make no document claims (greetings, meta chat, or non-document tool facts such as the current time) MAY omit citations.
+- **FR-016a**: When document citations are required, the answer text MUST mark each claim with a numbered reference (for example "[1]") that corresponds to an entry in the citation list; references that point to no citation MUST be removed, and an answer left with no valid reference MUST be treated as insufficient evidence.
 - **FR-017**: Citations MUST only reference chunks that were actually retrieved for that request.
 - **FR-018**: An "insufficient_evidence" response MUST include 1 to 3 suggested client questions or document requests, MAY include citations of partially relevant chunks, and MUST NOT include a factual answer.
 - **FR-019**: Suggested client questions MUST reflect the provided role and topic when given.
-- **FR-020**: If the ask agent finishes with no in-threshold evidence chunks (for example every `search_relevant_chunks` call returned nothing useful), the system MUST return "insufficient_evidence" without generating a factual answer.
+- **FR-020**: After the agent drafts an answer, the system MUST check whether statements that need engagement data are supported by retrieved evidence (and cited). If they are not, the system MAY send the agent back to gather more evidence or revise, up to a configured restart limit, and MUST return "insufficient_evidence" when the limit is exhausted or the draft remains ungrounded. Non-document replies (for example greetings) that make no engagement claims MAY be answered without citations.
 
 **Sessions**
 

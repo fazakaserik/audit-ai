@@ -33,9 +33,10 @@ _DEFAULT_USAGE = LlmUsage(prompt_tokens=10, completion_tokens=5, total_tokens=15
 def agent_search_tool_turns(
     *,
     query: str = "search",
+    answer: str | None = None,
     usage: LlmUsage | None = None,
 ) -> list[ToolTurnResult]:
-    """Script one search tool round followed by a terminal agent turn."""
+    """Script one search tool round followed by a terminal answer turn."""
     call_usage = usage or _DEFAULT_USAGE
     return [
         ToolTurnResult(
@@ -49,7 +50,7 @@ def agent_search_tool_turns(
             ),
             usage=call_usage,
         ),
-        ToolTurnResult(content=None, tool_calls=(), usage=call_usage),
+        ToolTurnResult(content=answer, tool_calls=(), usage=call_usage),
     ]
 
 
@@ -84,6 +85,11 @@ class FakeChatModel:
 
     Pass ``tool_turns`` to script agent tool rounds; ``auto_search`` is opt-in legacy
     heuristic behavior (defaults to off).
+
+    When a terminal tool turn has empty content, ``response.answer_text`` (if present)
+    is used as the draft answer so older tests that only set ``response`` still work.
+    When ``tools`` is empty (forced answer turn), scripted tool calls are skipped and
+    the draft comes from the next content-only turn or ``response.answer_text``.
     """
 
     def __init__(
@@ -144,6 +150,32 @@ class FakeChatModel:
         if auto_search is not None:
             self._auto_search = auto_search
 
+    def _draft_from_response(self) -> str | None:
+        response = self._response
+        if response is None and self._responses:
+            response = self._responses[0]
+        if response is None:
+            return None
+        text = getattr(response, "answer_text", None)
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+        return None
+
+    def _answer_turn(self, *, usage: LlmUsage | None = None) -> ToolTurnResult:
+        call_usage = usage or self._usage
+        if self._tool_turns:
+            while self._tool_turns and self._tool_turns[0].tool_calls:
+                self._tool_turns.pop(0)
+            if self._tool_turns:
+                turn = self._tool_turns.pop(0)
+                content = (turn.content or "").strip() or self._draft_from_response()
+                return ToolTurnResult(content=content, tool_calls=(), usage=turn.usage)
+        return ToolTurnResult(
+            content=self._draft_from_response(),
+            tool_calls=(),
+            usage=call_usage,
+        )
+
     async def generate_structured(
         self,
         messages: Sequence[ChatMessage],
@@ -192,10 +224,20 @@ class FakeChatModel:
             thinking.on_seconds(self._thinking_seconds)
         if self._error is not None:
             raise self._error
+        if not tools:
+            return self._answer_turn()
         if self._tool_turns is not None:
             if not self._tool_turns:
-                return ToolTurnResult(content=None, tool_calls=(), usage=self._usage)
-            return self._tool_turns.pop(0)
+                return ToolTurnResult(
+                    content=self._draft_from_response(),
+                    tool_calls=(),
+                    usage=self._usage,
+                )
+            turn = self._tool_turns.pop(0)
+            if turn.tool_calls:
+                return turn
+            content = (turn.content or "").strip() or self._draft_from_response()
+            return ToolTurnResult(content=content, tool_calls=(), usage=turn.usage)
         has_tool_results = any(message.role == "tool" for message in messages)
         if self._auto_search and not has_tool_results:
             query = "search"
@@ -219,7 +261,11 @@ class FakeChatModel:
                 ),
                 usage=self._usage,
             )
-        return ToolTurnResult(content=None, tool_calls=(), usage=self._usage)
+        return ToolTurnResult(
+            content=self._draft_from_response(),
+            tool_calls=(),
+            usage=self._usage,
+        )
 
 
 class FakeEmbedder:

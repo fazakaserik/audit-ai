@@ -24,7 +24,7 @@ def test_tool_progress_view_search_tree() -> None:
     buffer = StringIO()
     console = Console(file=buffer, force_terminal=True, width=80, color_system=None)
     tools = ToolProgressView()
-    render_progress_stage(console, "agent")
+    render_progress_stage(console, "think")
     tools.on_tool_call(
         console,
         name="search_relevant_chunks",
@@ -53,7 +53,7 @@ def test_tool_progress_view_search_tree() -> None:
     )
     render_thinking_done(console, 20.4)
     text = buffer.getvalue()
-    assert "Agent thinking…" in text
+    assert "Thinking…" in text
     assert "▸ Search" in text
     assert "company pay beer" in text
     assert "8 hits · 3 docs" in text

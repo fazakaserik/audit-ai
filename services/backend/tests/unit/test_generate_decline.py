@@ -1,22 +1,13 @@
-"""Agent declines cleanly when the model cannot answer after retrieval."""
+"""Ungrounded or empty drafts become insufficient after the evidence check."""
 
 from __future__ import annotations
 
+import json
 import uuid
-from collections.abc import Sequence
 from datetime import UTC, datetime
-from typing import TypeVar
-
-from pydantic import BaseModel
 
 from backend.application.agents.research_agent.graph import GraphDeps, run_graph
-from backend.application.agents.research_agent.prompts import AnswerGenerationResult
-from backend.application.dto import (
-    ChatMessage,
-    IncompleteStructuredOutputError,
-    StructuredResult,
-    ThinkingCallbacks,
-)
+from backend.application.dto import ToolCall, ToolTurnResult
 from backend.config import Settings
 from backend.domain.answer import AnswerStatus, InsufficientReason, Question
 from backend.domain.chunk import Chunk, ChunkId
@@ -30,10 +21,7 @@ from support.fakes import (
     InMemoryDocumentStorage,
     InMemoryEngagementRepository,
     InMemoryVectorIndex,
-    agent_search_tool_turns,
 )
-
-TModel = TypeVar("TModel", bound=BaseModel)
 
 
 async def _seed_hit(
@@ -74,38 +62,33 @@ def _deps(
         engagements=InMemoryEngagementRepository(),
         documents=InMemoryDocumentRepository(),
         storage=InMemoryDocumentStorage(),
-        settings=Settings(relevance_threshold=0.0),
+        settings=Settings(relevance_threshold=0.0, agent_max_check_restarts=0),
     )
 
 
-class _StructuredFailChat(FakeChatModel):
-    """Runs the normal tool loop, then fails structured generation."""
+def _search_then_blank() -> list[ToolTurnResult]:
+    return [
+        ToolTurnResult(
+            content=None,
+            tool_calls=(
+                ToolCall(
+                    id="fake_search_1",
+                    name="search_relevant_chunks",
+                    arguments=json.dumps({"query": "search"}),
+                ),
+            ),
+            usage=LlmUsage(),
+        ),
+        ToolTurnResult(content=None, tool_calls=(), usage=LlmUsage()),
+    ]
 
-    async def generate_structured(
-        self,
-        messages: Sequence[ChatMessage],
-        schema: type[TModel],
-        *,
-        thinking: ThinkingCallbacks | None = None,
-    ) -> StructuredResult[TModel]:
-        _ = (messages, schema, thinking)
-        raise IncompleteStructuredOutputError("empty content")
 
-
-async def test_model_decline_routes_to_insufficient() -> None:
+async def test_empty_draft_after_retrieval_is_insufficient() -> None:
     engagement_id = EngagementId("northwind-fy2025")
     embedder = FakeEmbedder()
     vector_index = InMemoryVectorIndex()
     await _seed_hit(vector_index, embedder, engagement_id)
-    chat = FakeChatModel(
-        tool_turns=agent_search_tool_turns(),
-        response=AnswerGenerationResult(
-            can_answer=False,
-            answer_text="",
-            decline_reason="The question is not understandable.",
-            markers_used=(),
-        ),
-    )
+    chat = FakeChatModel(tool_turns=_search_then_blank(), usage=LlmUsage())
     result = await run_graph(
         engagement_id=engagement_id,
         question=Question(text=".."),
@@ -119,16 +102,12 @@ async def test_model_decline_routes_to_insufficient() -> None:
     assert result.answer.partial_citations[0].snippet.startswith("Some policy")
 
 
-async def test_incomplete_structured_output_becomes_decline_not_crash() -> None:
+async def test_blank_answer_turn_becomes_insufficient_not_crash() -> None:
     engagement_id = EngagementId("northwind-fy2025")
     embedder = FakeEmbedder()
     vector_index = InMemoryVectorIndex()
     await _seed_hit(vector_index, embedder, engagement_id)
-    chat = _StructuredFailChat(
-        tool_turns=agent_search_tool_turns(),
-        response=AnswerGenerationResult(can_answer=True, answer_text="x [1]", markers_used=(1,)),
-        usage=LlmUsage(),
-    )
+    chat = FakeChatModel(tool_turns=_search_then_blank(), usage=LlmUsage())
     result = await run_graph(
         engagement_id=engagement_id,
         question=Question(text=".."),

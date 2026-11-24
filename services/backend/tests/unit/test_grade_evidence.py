@@ -1,4 +1,4 @@
-"""Empty retrieval yields insufficient evidence (no generate)."""
+"""Empty retrieval fails the evidence check (ungrounded draft)."""
 
 from __future__ import annotations
 
@@ -18,14 +18,15 @@ from support.fakes import (
 )
 
 
-async def test_empty_index_is_insufficient_without_generation() -> None:
+async def test_empty_index_is_insufficient_after_check() -> None:
     chat = FakeChatModel(
         tool_turns=agent_search_tool_turns(),
         response=AnswerGenerationResult(
             can_answer=True,
-            answer_text="should not appear [1]",
+            answer_text="Payment is thirty days [1].",
             markers_used=(1,),
         ),
+        # No retries so a single failed check ends the run.
     )
     result = await run_graph(
         engagement_id=EngagementId("northwind-fy2025"),
@@ -39,7 +40,7 @@ async def test_empty_index_is_insufficient_without_generation() -> None:
             engagements=InMemoryEngagementRepository(),
             documents=InMemoryDocumentRepository(),
             storage=InMemoryDocumentStorage(),
-            settings=Settings(relevance_threshold=0.0),
+            settings=Settings(relevance_threshold=0.0, agent_max_check_restarts=0),
         ),
     )
     assert result.answer.status == AnswerStatus.INSUFFICIENT_EVIDENCE

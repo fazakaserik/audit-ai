@@ -1,15 +1,15 @@
-"""Unit tests for Ollama structured payload extraction (thinking fallback)."""
+"""Unit tests for structured payload extraction (thinking fallback)."""
 
 from __future__ import annotations
 
 import pytest
 
 from backend.domain.errors import ModelUnavailableError
-from backend.infrastructure.ollama_chat import _extract_json_text
+from backend.infrastructure.llm.json_extract import extract_json_text
 
 
 def test_extract_prefers_content() -> None:
-    text = _extract_json_text(
+    text = extract_json_text(
         content='{"can_answer": true, "answer_text": "ok", "markers_used": [1]}',
         thinking='{"can_answer": false}',
     )
@@ -17,7 +17,7 @@ def test_extract_prefers_content() -> None:
 
 
 def test_extract_falls_back_to_thinking_json() -> None:
-    text = _extract_json_text(
+    text = extract_json_text(
         content="",
         thinking='{"can_answer": false, "answer_text": "", "markers_used": []}',
     )
@@ -31,7 +31,7 @@ def test_extract_json_embedded_in_thinking_prose() -> None:
         '"markers_used": [1]}\n'
         "done"
     )
-    text = _extract_json_text(content=None, thinking=thinking)
+    text = extract_json_text(content=None, thinking=thinking)
     assert '"answer_text"' in text
 
 
@@ -40,10 +40,10 @@ def test_extract_prefers_last_json_object_in_prose() -> None:
         'Earlier draft {"can_answer": false, "answer_text": ""}\n'
         'Final {"can_answer": true, "answer_text": "ok", "markers_used": [1]}'
     )
-    text = _extract_json_text(content=None, thinking=thinking)
+    text = extract_json_text(content=None, thinking=thinking)
     assert '"can_answer": true' in text
 
 
 def test_extract_raises_when_no_json() -> None:
     with pytest.raises(ModelUnavailableError, match="empty content"):
-        _extract_json_text(content="", thinking="no json here")
+        extract_json_text(content="", thinking="no json here")

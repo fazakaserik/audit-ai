@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import assert_never
 
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from backend.application.llm.chat_model import ChatModel
@@ -16,12 +16,9 @@ from backend.application.storage.document_storage import DocumentStorage
 from backend.application.wiring import SessionBound as SessionBound
 from backend.application.wiring import wire_session_bound
 from backend.config import Settings
-from backend.domain.providers import LlmProvider
+from backend.infrastructure.litellm_chat import LiteLLMChatModel
+from backend.infrastructure.litellm_embed import LiteLLMEmbedder
 from backend.infrastructure.local_fs import LocalDocumentStorage
-from backend.infrastructure.ollama_chat import OllamaChatModel
-from backend.infrastructure.ollama_embed import OllamaEmbedder
-from backend.infrastructure.openai_chat import OpenAIChatModel
-from backend.infrastructure.openai_embed import OpenAIEmbedder
 from backend.infrastructure.parsing.archive import build_archive_extractor
 from backend.infrastructure.parsing.chunking import build_document_chunker
 from backend.infrastructure.parsing.parsers.default import build_document_parser
@@ -69,49 +66,34 @@ class Container:
         )
 
 
+def _secret_or_none(value: SecretStr | None) -> str | None:
+    if value is None:
+        return None
+    text = value.get_secret_value()
+    return text if text else None
+
+
 def _build_chat(settings: Settings) -> ChatModel:
-    match settings.llm_provider:
-        case LlmProvider.OPENAI:
-            key = settings.openai_api_key
-            assert key is not None
-            return OpenAIChatModel(
-                api_key=key.get_secret_value(),
-                model=settings.llm_model,
-                timeout_seconds=settings.model_timeout_seconds,
-                max_concurrent_calls=settings.max_concurrent_model_calls,
-            )
-        case LlmProvider.OLLAMA:
-            return OllamaChatModel(
-                base_url=settings.ollama_base_url,
-                model=settings.llm_model,
-                timeout_seconds=settings.model_timeout_seconds,
-                max_concurrent_calls=settings.max_concurrent_model_calls,
-                num_ctx=settings.ollama_num_ctx,
-            )
-        case _:
-            assert_never(settings.llm_provider)
+    return LiteLLMChatModel(
+        model=settings.llm_model,
+        api_key=_secret_or_none(settings.llm_api_key),
+        api_base=settings.llm_api_base,
+        timeout_seconds=settings.model_timeout_seconds,
+        max_concurrent_calls=settings.max_concurrent_model_calls,
+        num_ctx=settings.ollama_num_ctx,
+    )
 
 
 def _build_embedder(settings: Settings) -> Embedder:
-    match settings.embedding_provider:
-        case LlmProvider.OPENAI:
-            key = settings.openai_api_key
-            assert key is not None
-            return OpenAIEmbedder(
-                api_key=key.get_secret_value(),
-                model=settings.embedding_model,
-                timeout_seconds=settings.model_timeout_seconds,
-                max_concurrent_calls=settings.max_concurrent_model_calls,
-            )
-        case LlmProvider.OLLAMA:
-            return OllamaEmbedder(
-                base_url=settings.ollama_base_url,
-                model=settings.embedding_model,
-                timeout_seconds=settings.model_timeout_seconds,
-                max_concurrent_calls=settings.max_concurrent_model_calls,
-            )
-        case _:
-            assert_never(settings.embedding_provider)
+    return LiteLLMEmbedder(
+        model=settings.embedding_model,
+        api_key=_secret_or_none(settings.embedding_api_key)
+        or _secret_or_none(settings.llm_api_key),
+        api_base=settings.embedding_api_base or settings.llm_api_base,
+        timeout_seconds=settings.model_timeout_seconds,
+        max_concurrent_calls=settings.max_concurrent_model_calls,
+        dimensions_override=settings.embedding_dimensions,
+    )
 
 
 def build_container(settings: Settings) -> Container:

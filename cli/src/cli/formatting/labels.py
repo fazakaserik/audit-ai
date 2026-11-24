@@ -9,11 +9,14 @@ TOOL_LABELS: dict[str, str] = {
 }
 
 _STAGE_LABELS: dict[str, str] = {
-    "agent": "Agent thinking…",
+    "think": "Thinking…",
     "tool": "Running tools…",
-    "generate": "Generate answer…",
+    "check": "Checking evidence…",
     "suggest": "Suggest client questions…",
-    "finalize": "Finalize answer…",
+    # Legacy stage names (older persisted streams / tests).
+    "agent": "Thinking…",
+    "generate": "Thinking…",
+    "finalize": "Checking evidence…",
     "condense": "Condense question…",
     "retrieve": "Retrieve chunks…",
     "grade": "Grade evidence…",

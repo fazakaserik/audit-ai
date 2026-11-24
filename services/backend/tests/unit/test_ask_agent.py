@@ -29,11 +29,16 @@ from support.fakes import (
 )
 
 
-def _settings(*, agent_max_tool_rounds: int = 6) -> Settings:
+def _settings(
+    *,
+    agent_max_tool_rounds: int = 6,
+    agent_max_check_restarts: int = 2,
+) -> Settings:
     return Settings(
         relevance_threshold=0.0,
         retrieval_top_k=8,
         agent_max_tool_rounds=agent_max_tool_rounds,
+        agent_max_check_restarts=agent_max_check_restarts,
     )
 
 
@@ -130,7 +135,7 @@ async def test_agent_empty_search_is_insufficient() -> None:
         tool_turns=agent_search_tool_turns(),
         response=AnswerGenerationResult(
             can_answer=True,
-            answer_text="should not run",
+            answer_text="Invented answer [1].",
             markers_used=(1,),
         ),
     )
@@ -139,10 +144,36 @@ async def test_agent_empty_search_is_insufficient() -> None:
         question=Question(text="Anything?"),
         folder_scope=None,
         prior_turns=(),
-        deps=_deps(chat=chat, vector_index=InMemoryVectorIndex()),
+        deps=_deps(
+            chat=chat,
+            vector_index=InMemoryVectorIndex(),
+            settings=_settings(agent_max_check_restarts=0),
+        ),
     )
     assert result.answer.status == AnswerStatus.INSUFFICIENT_EVIDENCE
     assert result.answer.reason == InsufficientReason.NO_RELEVANT_CHUNKS
+    assert not chat.calls
+
+
+async def test_greeting_answers_without_tools() -> None:
+    chat = FakeChatModel(
+        auto_search=False,
+        tool_turns=[
+            ToolTurnResult(content="Hi! How can I help with this engagement?", tool_calls=(), usage=LlmUsage()),
+        ],
+    )
+    result = await run_graph(
+        engagement_id=EngagementId("northwind-fy2025"),
+        question=Question(text="hi"),
+        folder_scope=None,
+        prior_turns=(),
+        deps=_deps(chat=chat),
+    )
+    assert result.answer.status == AnswerStatus.ANSWERED
+    assert result.answer.citations == ()
+    assert "Hi" in result.answer.text
+    assert len(chat.tool_turn_calls) == 1
+    assert chat.tool_turn_calls[0][1]  # tools were offered
     assert not chat.calls
 
 
@@ -237,7 +268,76 @@ async def test_agent_max_rounds_stops_tool_loop() -> None:
         ),
     )
     assert result.answer.status == AnswerStatus.ANSWERED
-    assert len(chat.tool_turn_calls) == 2
+    # Two tool-capable thinks + one forced answer turn after the round cap.
+    assert len(chat.tool_turn_calls) == 3
+    assert chat.tool_turn_calls[-1][1] == ()
+
+
+async def test_check_restart_then_grounded_answer() -> None:
+    engagement_id = EngagementId("northwind-fy2025")
+    embedder = FakeEmbedder()
+    vector_index = InMemoryVectorIndex()
+    await _index(
+        vector_index,
+        embedder,
+        engagement_id=engagement_id,
+        path="contracts/a.pdf",
+        text="Payment is due within thirty days.",
+    )
+    chat = FakeChatModel(
+        auto_search=False,
+        tool_turns=[
+            # Cited claim with no evidence yet — check fails and restarts think.
+            ToolTurnResult(content="Thirty days [1].", tool_calls=(), usage=LlmUsage()),
+            ToolTurnResult(
+                content=None,
+                tool_calls=(
+                    ToolCall(
+                        id="c1",
+                        name="search_relevant_chunks",
+                        arguments=json.dumps({"query": "payment terms"}),
+                    ),
+                ),
+                usage=LlmUsage(),
+            ),
+            ToolTurnResult(content="Thirty days [1].", tool_calls=(), usage=LlmUsage()),
+        ],
+    )
+    result = await run_graph(
+        engagement_id=engagement_id,
+        question=Question(text="What are the payment terms?"),
+        folder_scope=None,
+        prior_turns=(),
+        deps=_deps(
+            chat=chat,
+            embedder=embedder,
+            vector_index=vector_index,
+            settings=_settings(agent_max_check_restarts=2),
+        ),
+    )
+    assert result.answer.status == AnswerStatus.ANSWERED
+    assert "[1]" in result.answer.text
+    assert len(chat.tool_turn_calls) >= 3
+
+
+async def test_check_restarts_exhausted_is_insufficient() -> None:
+    chat = FakeChatModel(
+        auto_search=False,
+        tool_turns=[
+            ToolTurnResult(content="Still inventing facts [1].", tool_calls=(), usage=LlmUsage()),
+            ToolTurnResult(content="Still inventing facts [1].", tool_calls=(), usage=LlmUsage()),
+            ToolTurnResult(content="Still inventing facts [1].", tool_calls=(), usage=LlmUsage()),
+        ],
+    )
+    result = await run_graph(
+        engagement_id=EngagementId("northwind-fy2025"),
+        question=Question(text="What are the payment terms?"),
+        folder_scope=None,
+        prior_turns=(),
+        deps=_deps(chat=chat, settings=_settings(agent_max_check_restarts=1)),
+    )
+    assert result.answer.status == AnswerStatus.INSUFFICIENT_EVIDENCE
+    assert result.answer.reason == InsufficientReason.NO_RELEVANT_CHUNKS
 
 
 async def test_agent_list_then_read_then_search() -> None:
@@ -363,7 +463,7 @@ async def test_agent_current_time_answers_without_chunks() -> None:
     assert result.answer.status == AnswerStatus.ANSWERED
     assert result.answer.citations == ()
     assert "2026" in result.answer.text
-    assert chat.calls  # generation ran
+    assert not chat.calls  # think drafts the answer; no separate generate call
 
 
 async def test_agent_read_pdf_loads_indexed_chunks_into_evidence() -> None:
