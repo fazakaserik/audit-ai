@@ -93,11 +93,14 @@ def _expand_incoming(
     for incoming in files:
         if archives.is_zip_upload(filename=incoming.filename, data=incoming.data):
             remaining_files = settings.upload_max_files - len(planned)
+            remaining_bytes = max(
+                0, settings.upload_max_bytes - sum(len(data) for _, data in planned)
+            )
             archives.list_zip_member_paths(incoming.data, max_files=remaining_files)
             for rel, payload in archives.extract_zip_files(
                 incoming.data,
                 max_file_bytes=settings.upload_max_file_bytes,
-                max_total_bytes=settings.upload_max_bytes,
+                max_total_bytes=remaining_bytes,
                 max_files=remaining_files,
             ):
                 planned.append((_join_folder(target_folder, rel), payload))

@@ -247,6 +247,14 @@ paths:
                 type: string
         "404":
           $ref: "#/components/responses/Problem"
+        "422":
+          description: >
+            Markdown conversion exceeded representation limits
+            (representation_limit_exceeded)
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemDetails"
     delete:
       tags: [documents]
       operationId: deleteDocument
@@ -1040,6 +1048,7 @@ components:
             - conflict
             - payload_too_large
             - unsafe_upload
+            - representation_limit_exceeded
             - model_timeout
             - model_unavailable
             - context_too_large
