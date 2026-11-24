@@ -45,6 +45,8 @@ async def test_embed_rejects_mismatched_vector_length() -> None:
         usage=None,
     )
     mock = AsyncMock(return_value=response)
-    with patch("backend.infrastructure.litellm_embed.litellm.aembedding", new=mock):
-        with pytest.raises(ModelUnavailableError, match="Embedding length"):
-            await embedder.embed(["hello"])
+    with (
+        patch("backend.infrastructure.litellm_embed.litellm.aembedding", new=mock),
+        pytest.raises(ModelUnavailableError, match="Embedding length"),
+    ):
+        await embedder.embed(["hello"])
