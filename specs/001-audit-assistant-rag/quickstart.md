@@ -37,7 +37,7 @@ curl -s http://localhost:8000/health/ready
 
 Expected: live `{"status":"ok"}`; ready includes `postgres` and `embeddings` checks.
 
-Interactive OpenAPI (default `ENABLE_API_DOCS=true`): http://localhost:8000/docs
+Interactive OpenAPI at http://localhost:8000/docs when `.env` sets `ENABLE_API_DOCS=true` (as in `.env.example`) or you use `just compose-dev-up` (Settings default is off; production `compose.yaml` does not enable docs).
 
 ## 2. Seed sample engagement
 
